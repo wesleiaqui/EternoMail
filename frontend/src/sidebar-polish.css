@@ -1,0 +1,428 @@
+/*
+ * Sidebar polish and scroll-performance overrides.
+ *
+ * This file is intentionally loaded after app.css. The project still carries
+ * some legacy sidebar rules, so keeping the final visual pass isolated makes
+ * it easy to tune the rebuilt navigation without touching unrelated themes.
+ */
+
+/* -------------------------------------------------------------------------
+   Native scrolling
+   ------------------------------------------------------------------------- */
+
+.sidebar-rebuilt-content,
+.sidebar-all-folders-scroll,
+.message-list-scroll,
+.spark-viewer-scroll,
+.conversation-viewer-content {
+  scroll-behavior: auto !important;
+  overscroll-behavior: contain;
+}
+
+/* Rows used to animate gradients + shadows whenever a new row passed under
+   the mouse while the list was scrolling. On WebKitGTK that produces a lot of
+   repaint work and makes wheel/scrollbar movement feel like it is stepping
+   through frames. Keep hover feedback, but make it a cheap color change. */
+.message-list-scroll [data-conversation-row] {
+  transition: background-color 70ms linear, border-color 70ms linear !important;
+  box-shadow: none !important;
+}
+
+[data-theme="dark"] .message-list-scroll [data-conversation-row]:hover,
+:root.dark .message-list-scroll [data-conversation-row]:hover {
+  background: #2d3037 !important;
+  border-color: #41454e !important;
+  box-shadow: none !important;
+}
+
+[data-theme="dark"] .message-list-scroll [data-conversation-row].bg-primary\/20,
+:root.dark .message-list-scroll [data-conversation-row].bg-primary\/20 {
+  background: #1f466a !important;
+  border-color: #4d7ea6 !important;
+  box-shadow: none !important;
+}
+
+/* Category cards keep their border but do not need an extra composited shadow
+   while the parent scroll container is moving. */
+[data-theme="dark"] .inbox-display-category,
+:root.dark .inbox-display-category,
+[data-theme="dark"] .message-list-card,
+:root.dark .message-list-card {
+  box-shadow: none !important;
+}
+
+/* -------------------------------------------------------------------------
+   Rebuilt sidebar — expanded
+   ------------------------------------------------------------------------- */
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) {
+  --sidebar-row-height: 2.55rem;
+  --sidebar-account-height: 2.35rem;
+  --sidebar-label-size: 0.94rem;
+  --sidebar-account-size: 0.82rem;
+  --sidebar-icon-size: 1.25rem;
+}
+
+.spark-sidebar-rebuilt.sidebar-density-medium:not(.spark-sidebar-collapsed) {
+  --sidebar-row-height: 2.75rem;
+  --sidebar-account-height: 2.5rem;
+  --sidebar-label-size: 0.98rem;
+  --sidebar-account-size: 0.88rem;
+  --sidebar-icon-size: 1.3rem;
+}
+
+.spark-sidebar-rebuilt.sidebar-density-large:not(.spark-sidebar-collapsed) {
+  --sidebar-row-height: 2.95rem;
+  --sidebar-account-height: 2.7rem;
+  --sidebar-label-size: 1.04rem;
+  --sidebar-account-size: 0.94rem;
+  --sidebar-icon-size: 1.38rem;
+}
+
+/* The reference navigation begins directly with Home. Keep the mobile Back
+   button functional: with Compose hidden the toolbar simply collapses to zero
+   height unless that Back button exists. */
+.spark-sidebar-rebuilt .sidebar-compose-button {
+  display: none !important;
+}
+
+.spark-sidebar-rebuilt .sidebar-rebuilt-toolbar {
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-rebuilt-content {
+  padding: 0.9rem 0.8rem 0.75rem !important;
+  scrollbar-gutter: stable;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-primary-navigation {
+  gap: 0.22rem;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-primary-link,
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-more-button,
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-refresh-entry,
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-settings-entry,
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-collapse-nav-button {
+  min-height: var(--sidebar-row-height) !important;
+  gap: 0.7rem !important;
+  padding: 0.5rem 0.7rem !important;
+  border-radius: 0.68rem !important;
+  font-size: var(--sidebar-label-size) !important;
+  font-weight: 500;
+  line-height: 1.15rem;
+  transition: background-color 90ms linear, color 90ms linear !important;
+}
+
+/* Home/Calendar line up with the Inbox icon, while Inbox keeps a dedicated
+   disclosure-chevron column on the far left like the reference sidebar. */
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-primary-navigation > .sidebar-primary-link {
+  padding-left: 1.88rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-primary-link > svg:not(.sidebar-primary-chevron),
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-more-button > svg {
+  width: var(--sidebar-icon-size) !important;
+  height: var(--sidebar-icon-size) !important;
+  flex: 0 0 var(--sidebar-icon-size);
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-home-link {
+  margin-bottom: 0.38rem;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-unified-section {
+  margin: 0 0 0.55rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-entry {
+  min-height: var(--sidebar-row-height) !important;
+  padding: 0.42rem 0.55rem !important;
+  gap: 0 !important;
+  border-radius: 0.68rem !important;
+  font-size: var(--sidebar-label-size) !important;
+  font-weight: 500;
+  transition: background-color 90ms linear, color 90ms linear !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-toggle {
+  position: relative;
+  display: inline-flex;
+  width: 1.55rem;
+  min-width: 1.55rem;
+  height: 1.55rem;
+  margin: 0 0.42rem 0 0 !important;
+  padding: 0 !important;
+  align-items: center;
+  justify-content: center;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-toggle > svg {
+  width: 1rem !important;
+  height: 1rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-entry > button:last-child {
+  min-width: 0;
+  gap: 0.72rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-entry > button:last-child > svg {
+  width: var(--sidebar-icon-size) !important;
+  height: var(--sidebar-icon-size) !important;
+  flex: 0 0 var(--sidebar-icon-size);
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-entry [data-sidebar-label] {
+  font-size: var(--sidebar-label-size) !important;
+  font-weight: 500 !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-accounts {
+  display: flex !important;
+  flex-direction: column;
+  gap: 0.12rem !important;
+  margin: 0.12rem 0 0.62rem 1.72rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-account {
+  min-height: var(--sidebar-account-height) !important;
+  gap: 0.58rem !important;
+  padding: 0.38rem 0.7rem !important;
+  border-radius: 0.68rem !important;
+  font-size: var(--sidebar-account-size) !important;
+  font-weight: 500;
+  line-height: 1.1rem;
+  transition: background-color 90ms linear, color 90ms linear !important;
+}
+
+/* The selected account in the reference is a full blue pill, not a pale tint. */
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-account.bg-primary\/10 {
+  background: hsl(var(--primary)) !important;
+  color: hsl(var(--primary-foreground)) !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-account.bg-primary\/10:hover {
+  background: hsl(var(--primary) / 0.92) !important;
+  color: hsl(var(--primary-foreground)) !important;
+}
+
+/* Unread values are aligned at the right edge as quiet numbers rather than
+   miniature badges, matching the visual hierarchy in the reference. */
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-account [data-sidebar-badge] {
+  min-width: 1.4rem;
+  margin-left: auto;
+  padding: 0 !important;
+  background: transparent !important;
+  color: currentColor !important;
+  border-radius: 0 !important;
+  font-size: 0.78rem !important;
+  font-weight: 600 !important;
+  text-align: right;
+  opacity: 0.78;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-folder-group-row {
+  min-height: var(--sidebar-row-height);
+  align-items: center;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-folder-toggle {
+  width: 1.55rem !important;
+  min-width: 1.55rem !important;
+  min-height: var(--sidebar-row-height) !important;
+  padding: 0 !important;
+  border-radius: 0.5rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-folder-group-link {
+  min-height: var(--sidebar-row-height) !important;
+  padding-left: 0.45rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-primary-separator {
+  height: 0.55rem !important;
+  margin: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-primary-heading {
+  margin: 0.92rem 0 0.28rem 1.86rem !important;
+  font-size: 0.78rem !important;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+/* Keep scrollbar chrome out of the labels. It appears only when the user is
+   actually interacting with the navigation. */
+.spark-sidebar-rebuilt .sidebar-rebuilt-content {
+  scrollbar-color: transparent transparent;
+}
+
+.spark-sidebar-rebuilt .sidebar-rebuilt-content:hover {
+  scrollbar-color: #5d626c transparent;
+}
+
+.spark-sidebar-rebuilt .sidebar-rebuilt-content::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.spark-sidebar-rebuilt .sidebar-rebuilt-content:hover::-webkit-scrollbar-thumb {
+  background: #5d626c;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* -------------------------------------------------------------------------
+   Rebuilt sidebar — compact rail
+   ------------------------------------------------------------------------- */
+
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-rebuilt-content {
+  padding: 0.95rem 0.5rem 0.65rem !important;
+}
+
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-primary-navigation {
+  gap: 0.7rem !important;
+}
+
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-primary-link,
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-collapse-nav-button,
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-inbox-rail-button {
+  width: 2.15rem !important;
+  min-width: 2.15rem !important;
+  height: 2.15rem !important;
+  min-height: 2.15rem !important;
+  border-radius: 0.68rem !important;
+  transition: background-color 80ms linear, color 80ms linear !important;
+}
+
+/* The compact reference contains the daily destinations only. */
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-more-button {
+  display: none !important;
+}
+
+/* The reference uses a rounded three-line menu control instead of double
+   chevrons. Draw it in CSS so no extra icon asset or component state is needed. */
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-collapse-nav-button {
+  position: relative;
+  background: hsl(var(--muted) / 0.75);
+  color: hsl(var(--foreground));
+}
+
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-collapse-nav-button > svg {
+  display: none !important;
+}
+
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-collapse-nav-button::before {
+  content: '';
+  display: block;
+  width: 1rem;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 -0.31rem 0 currentColor, 0 0.31rem 0 currentColor;
+}
+
+/* Image 1 keeps the account avatar as the only footer action in compact mode. */
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-refresh-entry {
+  display: none !important;
+}
+
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-bottom-actions {
+  min-height: 3.5rem;
+  padding: 0.35rem 0 0.6rem !important;
+  justify-content: flex-end;
+}
+
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-settings-entry {
+  width: 2.15rem !important;
+  min-width: 2.15rem !important;
+  height: 2.15rem !important;
+  min-height: 2.15rem !important;
+  border-radius: 999px !important;
+}
+
+/* -------------------------------------------------------------------------
+   Dark palette matching the supplied references
+   ------------------------------------------------------------------------- */
+
+[data-theme="dark"] .spark-sidebar-rebuilt,
+:root.dark .spark-sidebar-rebuilt {
+  background: #202124 !important;
+  color: #d6d9df;
+}
+
+[data-theme="dark"] .spark-sidebar-rebuilt.spark-sidebar-collapsed,
+:root.dark .spark-sidebar-rebuilt.spark-sidebar-collapsed,
+[data-theme="dark"] .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-bottom-actions,
+:root.dark .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-bottom-actions {
+  background: #17181b !important;
+}
+
+[data-theme="dark"] .spark-sidebar-rebuilt .sidebar-rebuilt-content,
+:root.dark .spark-sidebar-rebuilt .sidebar-rebuilt-content,
+[data-theme="dark"] .spark-sidebar-rebuilt .sidebar-bottom-actions,
+:root.dark .spark-sidebar-rebuilt .sidebar-bottom-actions {
+  background: inherit !important;
+}
+
+[data-theme="dark"] .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-primary-link,
+[data-theme="dark"] .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-more-button,
+[data-theme="dark"] .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-refresh-entry,
+[data-theme="dark"] .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-settings-entry,
+[data-theme="dark"] .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-collapse-nav-button,
+:root.dark .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-primary-link,
+:root.dark .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-more-button,
+:root.dark .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-refresh-entry,
+:root.dark .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-settings-entry,
+:root.dark .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-collapse-nav-button {
+  color: #b8bec9;
+}
+
+[data-theme="dark"] .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-primary-link:hover,
+[data-theme="dark"] .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-more-button:hover,
+[data-theme="dark"] .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-refresh-entry:hover,
+[data-theme="dark"] .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-settings-entry:hover,
+:root.dark .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-primary-link:hover,
+:root.dark .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-more-button:hover,
+:root.dark .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-refresh-entry:hover,
+:root.dark .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-settings-entry:hover {
+  background: #2b2d31 !important;
+  color: #eef0f4 !important;
+}
+
+[data-theme="dark"] .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-account,
+:root.dark .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-account {
+  color: #aeb4bf;
+}
+
+[data-theme="dark"] .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-account:hover,
+:root.dark .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-account:hover {
+  background: #2b2d31 !important;
+  color: #e5e8ed !important;
+}
+
+[data-theme="dark"] .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-primary-link,
+[data-theme="dark"] .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-inbox-rail-button,
+:root.dark .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-primary-link,
+:root.dark .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-inbox-rail-button {
+  color: #aeb6c2;
+}
+
+[data-theme="dark"] .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-primary-link:hover,
+[data-theme="dark"] .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-inbox-rail-button:hover,
+:root.dark .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-primary-link:hover,
+:root.dark .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-inbox-rail-button:hover {
+  background: #292b2f !important;
+  color: #f0f2f5 !important;
+}
+
+[data-theme="dark"] .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-inbox-rail-button-selected,
+:root.dark .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-inbox-rail-button-selected {
+  background: #0c64dc !important;
+  color: #ffffff !important;
+}
