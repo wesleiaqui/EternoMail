@@ -1,0 +1,213 @@
+/* Final density + usability pass for the rebuilt sidebar.
+ * Loaded after sidebar-polish.css so it intentionally wins over the earlier
+ * reference-matching experiment without changing the scroll-performance fixes.
+ */
+
+/* -------------------------------------------------------------------------
+   Expanded sidebar: keep the same hierarchy, just reduce the visual zoom.
+   ------------------------------------------------------------------------- */
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) {
+  --sidebar-row-height: 2.18rem !important;
+  --sidebar-account-height: 1.95rem !important;
+  --sidebar-label-size: 0.84rem !important;
+  --sidebar-account-size: 0.72rem !important;
+  --sidebar-icon-size: 1.08rem !important;
+}
+
+.spark-sidebar-rebuilt.sidebar-density-medium:not(.spark-sidebar-collapsed) {
+  --sidebar-row-height: 2.28rem !important;
+  --sidebar-account-height: 2.02rem !important;
+  --sidebar-label-size: 0.86rem !important;
+  --sidebar-account-size: 0.74rem !important;
+  --sidebar-icon-size: 1.1rem !important;
+}
+
+.spark-sidebar-rebuilt.sidebar-density-large:not(.spark-sidebar-collapsed) {
+  --sidebar-row-height: 2.42rem !important;
+  --sidebar-account-height: 2.12rem !important;
+  --sidebar-label-size: 0.9rem !important;
+  --sidebar-account-size: 0.78rem !important;
+  --sidebar-icon-size: 1.16rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-rebuilt-content {
+  padding: 0.46rem 0.65rem 0.62rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-primary-navigation {
+  gap: 0.12rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-primary-link,
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-more-button,
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-refresh-entry,
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-settings-entry,
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-collapse-nav-button {
+  gap: 0.52rem !important;
+  padding: 0.32rem 0.52rem !important;
+  border-radius: 0.6rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-primary-navigation > .sidebar-primary-link {
+  padding-left: 1.62rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-home-link {
+  margin-bottom: 0.16rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-unified-section {
+  margin-bottom: 0.28rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-entry {
+  padding: 0.3rem 0.46rem !important;
+  border-radius: 0.6rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-toggle,
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-folder-toggle {
+  width: 1.3rem !important;
+  min-width: 1.3rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-toggle {
+  height: 1.3rem !important;
+  margin-right: 0.28rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-toggle > svg {
+  width: 0.86rem !important;
+  height: 0.86rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-entry > button:last-child {
+  gap: 0.52rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-accounts {
+  gap: 0.04rem !important;
+  margin: 0.06rem 0 0.32rem 1.48rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-account {
+  gap: 0.46rem !important;
+  padding: 0.2rem 0.52rem !important;
+  border-radius: 0.58rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-inbox-account [data-sidebar-badge] {
+  font-size: 0.7rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-folder-group-link {
+  padding-left: 0.32rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-primary-separator {
+  height: 0.32rem !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-primary-heading {
+  margin: 0.56rem 0 0.16rem 1.62rem !important;
+  font-size: 0.7rem !important;
+}
+
+/* -------------------------------------------------------------------------
+   Compose: restore the action that the previous polish pass hid.
+   ------------------------------------------------------------------------- */
+
+.spark-sidebar-rebuilt .sidebar-rebuilt-toolbar {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  min-height: auto !important;
+  padding: 0.34rem 0.62rem 0.18rem !important;
+  border: 0 !important;
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 4;
+}
+
+.spark-sidebar-rebuilt .sidebar-compose-button {
+  display: inline-flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-compose-button {
+  width: 100% !important;
+  min-height: 2.18rem !important;
+  height: 2.18rem !important;
+  gap: 0.46rem !important;
+  padding: 0 0.62rem !important;
+  border-radius: 0.64rem !important;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+}
+
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-compose-button svg {
+  width: 1.06rem !important;
+  height: 1.06rem !important;
+}
+
+/* -------------------------------------------------------------------------
+   Compact rail: slightly smaller than the previous pass, but still easy to hit.
+   ------------------------------------------------------------------------- */
+
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-rebuilt-toolbar {
+  padding: 0.18rem 0.35rem 0.08rem !important;
+  justify-content: center;
+}
+
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button {
+  width: 1.95rem !important;
+  min-width: 1.95rem !important;
+  height: 1.95rem !important;
+  min-height: 1.95rem !important;
+  flex: 0 0 1.95rem !important;
+  padding: 0 !important;
+  border-radius: 0.62rem !important;
+  justify-content: center;
+  box-shadow: none !important;
+}
+
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button [data-sidebar-label] {
+  display: none !important;
+}
+
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button svg {
+  width: 1.06rem !important;
+  height: 1.06rem !important;
+}
+
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-rebuilt-content {
+  padding: 0.42rem 0.4rem 0.5rem !important;
+}
+
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-primary-navigation {
+  gap: 0.46rem !important;
+}
+
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-primary-link,
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-collapse-nav-button,
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-inbox-rail-button,
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-settings-entry {
+  width: 1.95rem !important;
+  min-width: 1.95rem !important;
+  height: 1.95rem !important;
+  min-height: 1.95rem !important;
+  border-radius: 0.62rem !important;
+}
+
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-primary-link > svg:not(.sidebar-primary-chevron),
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-inbox-rail-button > svg {
+  width: 1.02rem !important;
+  height: 1.02rem !important;
+}
+
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-bottom-actions {
+  min-height: 3rem !important;
+  padding: 0.24rem 0 0.46rem !important;
+}
