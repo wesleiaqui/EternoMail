@@ -1,0 +1,88 @@
+/* Follow-up fixes from the recorded UI review.
+ * Loaded after the sidebar polish files so these targeted overrides win
+ * without changing the layout/density work that is already approved.
+ */
+
+/* Compact rail: Compose should look like the other rail actions. The blue
+ * fill came from the expanded Compose primary-button style leaking into the
+ * collapsed state. Keep the icon, but use the same neutral/hover treatment as
+ * Home, Calendar and the other compact rail buttons. */
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button {
+  background: transparent !important;
+  color: hsl(var(--muted-foreground)) !important;
+}
+
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button:hover,
+.spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button:focus-visible {
+  background: hsl(var(--muted)) !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+[data-theme="dark"] .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button,
+:root.dark .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button {
+  background: transparent !important;
+  color: #b8bec9 !important;
+}
+
+[data-theme="dark"] .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button:hover,
+[data-theme="dark"] .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button:focus-visible,
+:root.dark .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button:hover,
+:root.dark .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button:focus-visible {
+  background: #2b2d32 !important;
+  color: #f2f5fa !important;
+}
+
+/* WebKitGTK uses overlay scrollbars by default. In the recording the message
+ * list thumb becomes visible while scrolling and then disappears again, which
+ * reads as a flash/flicker. Force this scroll area into a stable gutter and
+ * provide a fully styled WebKit scrollbar instead of relying on the native
+ * overlay appearance. */
+.message-list-scroll {
+  overflow-y: scroll !important;
+  scrollbar-gutter: stable !important;
+  scrollbar-color: #5d626c transparent !important;
+  scrollbar-width: thin;
+}
+
+.message-list-scroll::-webkit-scrollbar {
+  width: 10px !important;
+  min-width: 10px !important;
+  background: transparent !important;
+  -webkit-appearance: none !important;
+}
+
+.message-list-scroll::-webkit-scrollbar-track {
+  background: transparent !important;
+  -webkit-appearance: none !important;
+}
+
+.message-list-scroll::-webkit-scrollbar-thumb {
+  min-height: 42px;
+  background: #5d626c !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+  border-radius: 9999px !important;
+  -webkit-appearance: none !important;
+}
+
+.message-list-scroll::-webkit-scrollbar-thumb:hover {
+  background: #747983 !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+}
+
+/* The sidebar had a separate hover-only scrollbar rule. Make its thumb stable
+ * too so moving the pointer across the sidebar cannot toggle the scrollbar on
+ * and off. */
+.spark-sidebar-rebuilt .sidebar-rebuilt-content,
+.spark-sidebar-rebuilt .sidebar-rebuilt-content:hover {
+  scrollbar-color: #4f545d transparent !important;
+}
+
+.spark-sidebar-rebuilt .sidebar-rebuilt-content::-webkit-scrollbar-thumb,
+.spark-sidebar-rebuilt .sidebar-rebuilt-content:hover::-webkit-scrollbar-thumb {
+  background: #4f545d !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+  border-radius: 9999px !important;
+}
