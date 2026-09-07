@@ -71,6 +71,9 @@
   let totalCount = $state(0)
   let loading = $state(false)
   let error = $state<string | null>(null)
+  // Immediate UI lock for manual syncs. Backend progress events may arrive
+  // slightly later, especially for unified folders.
+  let manualSyncing = $state(false)
   let selectedThreadId = $state<string | null>(null)
   let lastLoadedFolderId = $state<string | null>(null) // Track folder changes
   let loadGeneration = $state(0) // Invalidates stale async results when folder changes mid-load (#200)
@@ -677,6 +680,13 @@
   // Check if viewing unified inbox
   const isUnifiedView = $derived(accountId === 'unified' && !!folderId)
 
+  // Unified sync fans out to real accounts, so accountStore.isAnySyncing is
+  // also part of the busy state. This keeps Sync now disabled until the
+  // operation is actually finished.
+  const syncBusy = $derived(
+    manualSyncing || syncing || (isUnifiedView && accountStore.isAnySyncing)
+  )
+
   // A bound backend call can occasionally stall while SQLite is recovering a
   // lock after a hot reload. Never leave the message pane in a permanent
   // loading state: surface a retryable error instead.
@@ -795,31 +805,34 @@
   }
 
   export async function syncFolder() {
-    if (isUnifiedView) {
-      await SyncUnifiedFolder(folderId!)
-      await loadConversations(Math.max(conversations.length, PAGE_SIZE))
-      return
-    }
+    // Prevent repeated clicks while the Wails/backend progress event catches up.
+    if (manualSyncing) return
+
     // virtual:archive is derived from All Mail; it is never a valid IMAP
     // folder ID and must not reach SyncFolder.
-    if (folderId === 'virtual:archive') {
+    if (!isUnifiedView && folderId === 'virtual:archive') {
       await loadConversations(Math.max(conversations.length, PAGE_SIZE))
       return
     }
-    if (!accountId || !folderId) return
 
+    if (!isUnifiedView && (!accountId || !folderId)) return
+
+    manualSyncing = true
     error = null
 
     try {
-      // SyncFolder returns after headers sync, but body fetch continues in background
-      // The account store tracks sync:progress and folder:synced events to manage syncing state
-      // Preserve the loaded window + scroll position (#348) — manual sync must
-      // not collapse "Load more" pagination.
       const scrollTop = listContainerRef?.scrollTop ?? 0
       const totalLoaded = Math.max(conversations.length, PAGE_SIZE)
-      await SyncFolder(accountId, folderId)
+
+      if (isUnifiedView) {
+        await SyncUnifiedFolder(folderId!)
+      } else {
+        await SyncFolder(accountId!, folderId!)
+      }
+
       offset = 0
       await loadConversations(totalLoaded)
+
       if (listContainerRef) {
         requestAnimationFrame(() => {
           listContainerRef!.scrollTop = scrollTop
@@ -828,8 +841,9 @@
     } catch (err) {
       console.error('Failed to sync folder:', err)
       error = $_('viewer.failedToLoadMessages')
+    } finally {
+      manualSyncing = false
     }
-    // No need to manage syncing state - account store handles it via events
   }
 
   // Cancel folder sync
@@ -926,9 +940,21 @@
 
       searchResults = results || []
       searchTotalCount = count
-      // Auto-select first search result for keyboard navigation
+      // Auto-select first search result for keyboard navigation.
       if (searchResults.length > 0) {
         selectedThreadId = searchResults[0].threadId
+      } else if (
+        accountStore.isOnline &&
+        filterMode === '' &&
+        query === searchQuery.trim() &&
+        (!isUnifiedView || folderId === 'inbox')
+      ) {
+        // The local database only contains the configured sync window.
+        // Transparently fall back to IMAP when it has no match so old mail
+        // can be found without requiring a separate "Search server" click.
+        serverSearchMode = true
+        lastServerQuery = query
+        await performServerSearch()
       }
     } catch (err) {
       console.error('Search failed:', err)
@@ -2063,7 +2089,15 @@
 
   <!-- Conversation List -->
   <div bind:this={listContainerRef} class="message-list-scroll flex-1 min-h-0 overflow-y-auto scrollbar-thin" onscroll={handleListScroll}>
-    <div class="message-list-card" class:inbox-category-list={canUseInboxDisplay && inboxDisplayMode === 'categories'} class:inbox-chronological-list={canUseInboxDisplay && inboxDisplayMode === 'chronological'}>
+    <div
+      class={cn(
+        'message-list-card',
+        !loading && !error && !isSearchMode && conversations.length === 0 &&
+          'flex items-center justify-center'
+      )}
+      class:inbox-category-list={canUseInboxDisplay && conversations.length > 0 && inboxDisplayMode === 'categories'}
+      class:inbox-chronological-list={canUseInboxDisplay && conversations.length > 0 && inboxDisplayMode === 'chronological'}
+    >
     {#if loading && conversations.length === 0 && !isSearchMode}
       <div class="flex items-center justify-center h-32">
         <Icon icon="mdi:loading" class="w-6 h-6 animate-spin text-muted-foreground" />
@@ -2242,15 +2276,21 @@
         </button>
       </div>
     {:else if conversations.length === 0}
-      <div class="flex flex-col items-center justify-center h-full text-muted-foreground">
+      <div class="flex flex-col items-center justify-center text-muted-foreground">
         <Icon icon="mdi:inbox-outline" class="w-12 h-12 mb-2" />
         <p>{$_('messageList.noMessages')}</p>
         <button
-          class="mt-2 text-sm text-primary hover:underline"
+          class="mt-2 inline-flex items-center gap-2 text-sm text-primary hover:underline disabled:opacity-60 disabled:cursor-wait disabled:no-underline"
           onclick={syncFolder}
-          disabled={syncing}
+          disabled={syncBusy}
+          aria-busy={syncBusy}
         >
-          {$_('messageList.syncNow')}
+          {#if syncBusy}
+            <Icon icon="mdi:loading" class="w-4 h-4 animate-spin" />
+            {$_('sidebar.syncing')}
+          {:else}
+            {$_('messageList.syncNow')}
+          {/if}
         </button>
       </div>
     {:else if canUseInboxDisplay}

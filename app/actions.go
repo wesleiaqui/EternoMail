@@ -287,6 +287,10 @@ func (a *App) syncFlagsToIMAP(messages []*message.Message, folderID, flagType st
 
 // MoveToFolder moves messages to a specified folder
 func (a *App) MoveToFolder(messageIDs []string, destFolderID string) error {
+	return a.moveToFolder(messageIDs, destFolderID, true)
+}
+
+func (a *App) moveToFolder(messageIDs []string, destFolderID string, recordUndo bool) error {
 	log := logging.WithComponent("app")
 
 	if len(messageIDs) == 0 {
@@ -300,7 +304,7 @@ func (a *App) MoveToFolder(messageIDs []string, destFolderID string) error {
 	// fires exactly once per partition with a correct full-batch
 	// classification.
 	if spans, _ := a.messageStore.SpansMultipleAccounts(messageIDs); spans {
-		return a.moveToFolderCrossAccount(messageIDs, destFolderID)
+		return a.moveToFolderCrossAccount(messageIDs, destFolderID, recordUndo)
 	}
 
 	messages, err := a.messageStore.GetByIDs(messageIDs)
@@ -399,68 +403,165 @@ func (a *App) MoveToFolder(messageIDs []string, destFolderID string) error {
 		}
 	}()
 
-	// Sync to IMAP in background (COPY + DELETE), then sync destination to get correct UIDs.
-	// Use SyncFolder instead of calling SyncMessages/FetchBodiesInBackground directly
-	// so that back-to-back moves to the same folder are serialized — the second call
-	// cancels the first and starts fresh, preventing the first sync from deleting
-	// locally-moved messages whose IMAP COPY hasn't completed yet.
+	// The visible move is local-first: return to the frontend immediately.
+	// Remote IMAP work and destination reconciliation stay in the background.
+	// Undo receives the completion barrier below and waits only if the user
+	// clicks Undo before reconciliation has finished.
+	moveCompletion := undo.NewMoveCompletion()
+
 	go func() {
-		defer recoverPanic("app.actions", "move messages on IMAP")
+		defer func() {
+			if r := recover(); r != nil {
+				err := fmt.Errorf("panic during background move: %v", r)
+				log.Error().Err(err).Msg("Background move panicked")
+				moveCompletion.Complete(err)
+			}
+		}()
+
 		for sourceFolderID, msgs := range byFolder {
 			if err := a.moveMessagesToIMAP(msgs, sourceFolderID, destFolder); err != nil {
-				log.Error().Err(err).
+				log.Error().
+					Err(err).
 					Str("sourceFolderID", sourceFolderID).
 					Str("destFolderID", destFolderID).
 					Msg("Failed to move messages on IMAP")
+				moveCompletion.Complete(err)
 				return
 			}
 		}
 
-		// Sync destination folder so moved messages get correct UIDs (headers + bodies).
-		// Clear the debounce timestamp so this request isn't silently dropped.
-		if len(messages) > 0 {
-			accountID := messages[0].AccountID
-			syncKey := accountID + ":" + destFolderID
-			a.syncMu.Lock()
-			delete(a.syncLastRequest, syncKey)
-			a.syncMu.Unlock()
-
-			if err := a.SyncFolder(accountID, destFolderID); err != nil && err != context.Canceled {
-				log.Warn().Err(err).Str("destFolderID", destFolderID).Msg("Failed to sync destination folder after move")
-			}
-
-			// Clean up temporary negative-UID rows left by MoveMessages.
-			// The sync above fetched the real messages with correct UIDs.
-			if err := a.messageStore.DeleteTempUIDs(destFolderID); err != nil {
-				log.Warn().Err(err).Str("destFolderID", destFolderID).Msg("Failed to clean up temp UIDs after move")
-			}
+		if len(messages) == 0 {
+			moveCompletion.Complete(nil)
+			return
 		}
+
+		// Multiple fast moves to the same destination share one delayed
+		// destination sync instead of cancelling/restarting it for every click.
+		a.scheduleMoveDestinationSync(
+			messages[0].AccountID,
+			destFolderID,
+			moveCompletion,
+		)
 	}()
 
-	// Create undo command for each source folder
-	for sourceFolderID, msgs := range byFolder {
-		rfc822IDs := make([]string, 0, len(msgs))
-		for _, m := range msgs {
-			if m.MessageID != "" {
-				rfc822IDs = append(rfc822IDs, m.MessageID)
+	if recordUndo {
+		// Create undo command for each source folder
+		for sourceFolderID, msgs := range byFolder {
+			rfc822IDs := make([]string, 0, len(msgs))
+			for _, m := range msgs {
+				if m.MessageID != "" {
+					rfc822IDs = append(rfc822IDs, m.MessageID)
+				}
 			}
-		}
-		if len(rfc822IDs) == 0 {
-			continue
-		}
+			if len(rfc822IDs) == 0 {
+				continue
+			}
 
-		cmd := undo.NewMoveCommand(
-			a,
-			msgs[0].AccountID,
-			rfc822IDs,
-			sourceFolderID,
-			destFolderID,
-			fmt.Sprintf("Move to %s", destFolder.Name),
-		)
-		a.undoStack.Push(cmd)
+			cmd := undo.NewMoveCommand(
+				a,
+				msgs[0].AccountID,
+				rfc822IDs,
+				sourceFolderID,
+				destFolderID,
+				fmt.Sprintf("Move to %s", destFolder.Name),
+				moveCompletion,
+			)
+			a.undoStack.Push(cmd)
+		}
 	}
 
 	return nil
+}
+
+const moveDestinationSyncDelay = 750 * time.Millisecond
+
+// scheduleMoveDestinationSync coalesces a burst of moves to the same folder.
+// Example: five Done clicks in quick succession still update the UI five times
+// locally, but produce only one expensive destination-folder reconciliation.
+func (a *App) scheduleMoveDestinationSync(
+	accountID string,
+	destFolderID string,
+	completion *undo.MoveCompletion,
+) {
+	key := accountID + ":" + destFolderID
+
+	a.moveSyncMu.Lock()
+
+	if a.moveSyncTimers == nil {
+		a.moveSyncTimers = make(map[string]*time.Timer)
+	}
+	if a.moveSyncWaiters == nil {
+		a.moveSyncWaiters = make(map[string][]*undo.MoveCompletion)
+	}
+
+	a.moveSyncWaiters[key] = append(a.moveSyncWaiters[key], completion)
+
+	if timer, ok := a.moveSyncTimers[key]; ok {
+		timer.Stop()
+	}
+
+	a.moveSyncTimers[key] = time.AfterFunc(moveDestinationSyncDelay, func() {
+		a.flushMoveDestinationSync(key, accountID, destFolderID)
+	})
+
+	a.moveSyncMu.Unlock()
+}
+
+func (a *App) flushMoveDestinationSync(key, accountID, destFolderID string) {
+	// Never let two move-triggered destination reconciliations cancel each
+	// other. A later burst waits here rather than restarting the active sync.
+	a.moveSyncRunMu.Lock()
+	defer a.moveSyncRunMu.Unlock()
+
+	a.moveSyncMu.Lock()
+
+	waiters := append(
+		[]*undo.MoveCompletion(nil),
+		a.moveSyncWaiters[key]...,
+	)
+
+	delete(a.moveSyncWaiters, key)
+	delete(a.moveSyncTimers, key)
+
+	a.moveSyncMu.Unlock()
+
+	var syncErr error
+
+	// Move reconciliation must not be discarded by SyncFolder's normal
+	// 500ms debounce. It runs only once after the burst has settled.
+	for attempt := 0; attempt < 3; attempt++ {
+		a.syncMu.Lock()
+		delete(a.syncLastRequest, key)
+		a.syncMu.Unlock()
+
+		syncErr = a.SyncFolder(accountID, destFolderID)
+		if syncErr != context.Canceled {
+			break
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	if syncErr == nil {
+		// Header synchronization has replaced the temporary negative UIDs with
+		// the actual server UIDs, so Undo can now safely reverse the move.
+		if err := a.messageStore.DeleteTempUIDs(destFolderID); err != nil {
+			syncErr = err
+		}
+	}
+
+	for _, waiter := range waiters {
+		waiter.Complete(syncErr)
+	}
+
+	if syncErr != nil {
+		reconcileLog := logging.WithComponent("app.moveReconcile")
+		reconcileLog.Error().
+			Err(syncErr).
+			Str("accountID", accountID).
+			Str("destFolderID", destFolderID).
+			Msg("Failed to reconcile moved messages")
+	}
 }
 
 // isGmailAccount checks if the account uses Gmail's IMAP server.
@@ -501,43 +602,16 @@ func (a *App) moveMessagesToIMAP(messages []*message.Message, sourceFolderID str
 		Msg("Starting IMAP move operation")
 
 	accountID := messages[0].AccountID
-	isGmail := a.isGmailAccount(accountID)
-	destIsTrashOrSpam := destFolder.Type == folder.TypeTrash || destFolder.Type == folder.TypeSpam
 
-	// For Gmail + dest is Trash/Spam: partition messages by whether they have
-	// copies in other folders. Messages with copies only need label removal
-	// (DELETE without COPY). Messages without copies need a real move (COPY + DELETE).
-	var moveUIDs, labelRemovalUIDs []goImap.UID
-	if isGmail && destIsTrashOrSpam {
-		for _, m := range messages {
-			hasCopies := false
-			if m.MessageID != "" {
-				var copyErr error
-				hasCopies, copyErr = a.messageStore.HasCopiesInOtherFolders(m.MessageID, sourceFolderID, accountID)
-				if copyErr != nil {
-					log.Warn().Err(copyErr).Str("message_ref", logging.ShortHash(m.MessageID)).Msg("Failed to check for copies, treating as sole copy")
-				}
-			}
-			if hasCopies {
-				labelRemovalUIDs = append(labelRemovalUIDs, goImap.UID(m.UID))
-				continue
-			}
-			moveUIDs = append(moveUIDs, goImap.UID(m.UID))
-		}
-		log.Info().
-			Int("moveCount", len(moveUIDs)).
-			Int("labelRemovalCount", len(labelRemovalUIDs)).
-			Msg("Gmail: partitioned messages for trash/spam operation")
+	// Trash and Spam are real destination mailboxes even on Gmail. Removing
+	// only the current label leaves the message in All Mail, which makes a
+	// delete from Inbox behave like Archive. Always COPY to the requested
+	// destination and DELETE from the current mailbox.
+	moveUIDs := make([]goImap.UID, 0, len(messages))
+	for _, m := range messages {
+		moveUIDs = append(moveUIDs, goImap.UID(m.UID))
 	}
-	if !isGmail || !destIsTrashOrSpam {
-		for _, m := range messages {
-			moveUIDs = append(moveUIDs, goImap.UID(m.UID))
-		}
-	}
-
-	// Combine all UIDs that need DELETE from source
-	allUIDs := append(moveUIDs, labelRemovalUIDs...)
-	if len(allUIDs) == 0 {
+	if len(moveUIDs) == 0 {
 		return nil
 	}
 
@@ -554,7 +628,7 @@ func (a *App) moveMessagesToIMAP(messages []*message.Message, sourceFolderID str
 			return fmt.Errorf("failed to select source mailbox: %w", err)
 		}
 
-		// COPY only the messages that need a real move (not label-removal-only)
+		// COPY every selected message to the destination mailbox.
 		if len(moveUIDs) > 0 {
 			log.Debug().Str("destMailbox", destFolder.Path).Int("count", len(moveUIDs)).Msg("Copying messages to destination")
 			if _, err := conn.CopyMessages(moveUIDs, destFolder.Path); err != nil {
@@ -563,9 +637,9 @@ func (a *App) moveMessagesToIMAP(messages []*message.Message, sourceFolderID str
 			log.Debug().Msg("Messages copied successfully")
 		}
 
-		// DELETE all UIDs from source (both moved and label-removed)
-		log.Debug().Int("count", len(allUIDs)).Msg("Deleting messages from source (marking deleted + expunge)")
-		if err := conn.DeleteMessagesByUID(allUIDs); err != nil {
+		// DELETE the source copies after the destination COPY succeeds.
+		log.Debug().Int("count", len(moveUIDs)).Msg("Deleting messages from source (marking deleted + expunge)")
+		if err := conn.DeleteMessagesByUID(moveUIDs); err != nil {
 			return fmt.Errorf("failed to delete messages from source: %w", err)
 		}
 
@@ -863,64 +937,19 @@ func (a *App) Trash(messageIDs []string) (bool, error) {
 	return a.gmailTrashOrSpam(messageIDs, trashFolder)
 }
 
-// gmailTrashOrSpam handles Gmail-specific trash/spam behavior.
-// Messages with copies in other folders get label-removed (DELETE only).
-// Messages without copies get moved to the destination folder (COPY + DELETE).
-// Returns true if at least one message was moved to dest (show undo toast).
+// gmailTrashOrSpam performs a real move to Gmail's Trash/Spam mailbox.
+// Merely deleting the current IMAP label would leave the message in All Mail,
+// which is archive semantics rather than delete/spam semantics.
 func (a *App) gmailTrashOrSpam(messageIDs []string, destFolder *folder.Folder) (bool, error) {
-	log := logging.WithComponent("app.gmailTrashOrSpam")
-
-	allMessages, err := a.messageStore.GetByIDs(messageIDs)
-	if err != nil {
-		return false, fmt.Errorf("failed to get messages: %w", err)
-	}
-	if len(allMessages) == 0 {
+	if len(messageIDs) == 0 {
 		return false, nil
 	}
 
-	accountID := allMessages[0].AccountID
-
-	// Partition: copies (exist in other folders) vs non-copies (sole copy)
-	var copyIDs, nonCopyIDs []string
-	var copyMsgs []*message.Message
-	for _, m := range allMessages {
-		hasCopies := false
-		if m.MessageID != "" {
-			hasCopies, err = a.messageStore.HasCopiesInOtherFolders(m.MessageID, m.FolderID, accountID)
-			if err != nil {
-				log.Warn().Err(err).Str("message_ref", logging.ShortHash(m.MessageID)).Msg("Failed to check for copies, treating as sole copy")
-			}
-		}
-		if hasCopies {
-			copyIDs = append(copyIDs, m.ID)
-			copyMsgs = append(copyMsgs, m)
-			continue
-		}
-		nonCopyIDs = append(nonCopyIDs, m.ID)
+	if err := a.MoveToFolder(messageIDs, destFolder.ID); err != nil {
+		return false, err
 	}
 
-	log.Info().
-		Int("copyCount", len(copyIDs)).
-		Int("nonCopyCount", len(nonCopyIDs)).
-		Str("destFolder", destFolder.Name).
-		Msg("Gmail: partitioned messages for trash/spam")
-
-	// Handle copies: just remove the label (delete locally + IMAP DELETE without COPY)
-	if len(copyIDs) > 0 {
-		if err := a.gmailRemoveLabel(copyMsgs); err != nil {
-			log.Error().Err(err).Msg("Failed to remove Gmail labels for copies")
-			return len(nonCopyIDs) > 0, err
-		}
-	}
-
-	// Handle non-copies: normal move to trash/spam
-	if len(nonCopyIDs) > 0 {
-		if err := a.MoveToFolder(nonCopyIDs, destFolder.ID); err != nil {
-			return true, err
-		}
-	}
-
-	return len(nonCopyIDs) > 0, nil
+	return true, nil
 }
 
 // gmailRemoveLabel removes messages from their current folder (label) on Gmail.
@@ -1353,14 +1382,14 @@ func (a *App) markAsNotSpamCrossAccount(messageIDs []string) error {
 //
 // Each partition's outcome is independent — a Gmail partition's failure
 // doesn't block an IMAP partition's success.
-func (a *App) moveToFolderCrossAccount(messageIDs []string, destFolderID string) error {
+func (a *App) moveToFolderCrossAccount(messageIDs []string, destFolderID string, recordUndo bool) error {
 	byAccount, err := a.partitionByAccount(messageIDs)
 	if err != nil {
 		return err
 	}
 	var firstErr error
 	for _, ids := range byAccount {
-		if err := a.MoveToFolder(ids, destFolderID); err != nil && firstErr == nil {
+		if err := a.moveToFolder(ids, destFolderID, recordUndo); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}

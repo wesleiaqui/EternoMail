@@ -67,10 +67,10 @@ export function detectSystemLocale(): string {
 /**
  * Initialize i18n and wait for the initial locale to load.
  * Must be awaited before mounting the Svelte app, otherwise $_ throws.
- * @param savedLocale - Previously saved locale code from backend settings, or undefined for auto-detect
+ * @param savedLocale - Previously saved locale code from backend settings, or undefined for English
  */
 export async function initI18n(savedLocale?: string): Promise<void> {
-  const initialLocale = savedLocale || detectSystemLocale()
+  const initialLocale = savedLocale || 'en'
 
   // Register every discovered extension's locale loaders before init() so
   // their messages are merged into the active locale on first wait.

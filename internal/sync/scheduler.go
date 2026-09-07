@@ -376,8 +376,8 @@ func (s *Scheduler) getAccountSyncFolders(acc *account.Account) ([]*folder.Folde
 	if acc.SyncFoldersEnabled {
 		return s.folderStore.ListSubscribed(acc.ID)
 	}
-	// Default: core folders only (backward compatible)
-	coreTypes := []folder.Type{folder.TypeInbox, folder.TypeDrafts, folder.TypeSent}
+	// Default: core folders including Trash
+	coreTypes := []folder.Type{folder.TypeInbox, folder.TypeDrafts, folder.TypeSent, folder.TypeTrash}
 	var folders []*folder.Folder
 	for _, ft := range coreTypes {
 		f, err := s.folderStore.GetByType(acc.ID, ft)

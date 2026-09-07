@@ -759,6 +759,166 @@
     return focusedMessageId ?? getLastMessageId()
   }
 
+  // Archive/Done actions fired in a short burst share one visual toast.
+  // Each backend move remains an independent undo command; this only groups
+  // their presentation so rapid triage doesn't flood the screen with cards.
+  const ARCHIVE_TOAST_BATCH_MS = 1800
+
+  const archiveUndoCounts = new Map<string, number>()
+  const archiveToastCleanupTimers =
+    new Map<string, ReturnType<typeof setTimeout>>()
+
+  let activeArchiveToastId: string | null = null
+  let activeArchiveToastAt = 0
+
+  function scheduleArchiveToastCleanup(toastId: string) {
+    const existing = archiveToastCleanupTimers.get(toastId)
+    if (existing) clearTimeout(existing)
+
+    archiveToastCleanupTimers.set(
+      toastId,
+      setTimeout(() => {
+        archiveUndoCounts.delete(toastId)
+        archiveToastCleanupTimers.delete(toastId)
+
+        if (activeArchiveToastId === toastId) {
+          activeArchiveToastId = null
+          activeArchiveToastAt = 0
+        }
+      }, 10000)
+    )
+  }
+
+  function clearArchiveToastTracking(toastId: string) {
+    archiveUndoCounts.delete(toastId)
+
+    const timer = archiveToastCleanupTimers.get(toastId)
+    if (timer) {
+      clearTimeout(timer)
+      archiveToastCleanupTimers.delete(toastId)
+    }
+
+    if (activeArchiveToastId === toastId) {
+      activeArchiveToastId = null
+      activeArchiveToastAt = 0
+    }
+  }
+
+  function showArchiveUndoToast() {
+    const now = Date.now()
+    const baseMessage = $_('toast.conversationArchived')
+
+    if (
+      activeArchiveToastId &&
+      archiveUndoCounts.has(activeArchiveToastId) &&
+      now - activeArchiveToastAt <= ARCHIVE_TOAST_BATCH_MS
+    ) {
+      const toastId = activeArchiveToastId
+      const count = (archiveUndoCounts.get(toastId) ?? 1) + 1
+
+      archiveUndoCounts.set(toastId, count)
+      activeArchiveToastAt = now
+
+      toasts.replace(
+        toastId,
+        {
+          message: `${baseMessage} (${count})`,
+          type: 'success',
+          actions: [
+            {
+              label: $_('common.undo'),
+              onClick: () => handleArchiveBatchUndo(toastId)
+            }
+          ],
+          duration: 8000
+        })
+
+      scheduleArchiveToastCleanup(toastId)
+      return
+    }
+
+    let toastId = ''
+
+    toastId = toasts.success(baseMessage, [
+      {
+        label: $_('common.undo'),
+        onClick: () => handleArchiveBatchUndo(toastId)
+      }
+    ])
+
+    archiveUndoCounts.set(toastId, 1)
+    activeArchiveToastId = toastId
+    activeArchiveToastAt = now
+    scheduleArchiveToastCleanup(toastId)
+  }
+
+  async function handleArchiveBatchUndo(toastId: string) {
+    const undoCount = archiveUndoCounts.get(toastId) ?? 1
+
+    // This burst is closed as soon as Undo is clicked. Any subsequent Done
+    // starts a fresh toast instead of joining an Undo already in progress.
+    clearArchiveToastTracking(toastId)
+
+    // Reuse the card that the user clicked and remove its button while the
+    // backend waits for pending IMAP reconciliation.
+    toasts.replace(
+      toastId,
+      {
+        actions: [],
+        duration: 20000
+      })
+
+    let description = ''
+    let completed = 0
+
+    try {
+      for (let i = 0; i < undoCount; i++) {
+        description = await Undo()
+        completed++
+      }
+
+      const displayDescription =
+        undoCount > 1
+          ? `${undoCount} × ${description}`
+          : description
+
+      // Important: update the existing Conversation archived notification.
+      // Do NOT create another toast for the Undo result.
+      toasts.replace(
+        toastId,
+        {
+          message: $_('toast.undone', {
+            values: { description: displayDescription }
+          }),
+          type: 'success',
+          actions: [],
+          duration: 4000
+        })
+
+      if (threadId && folderId) {
+        await loadConversation(threadId, folderId)
+      }
+
+      onActionComplete?.()
+    } catch (err) {
+      console.error('Archive batch undo failed:', err)
+
+      // The same card also becomes the error notification.
+      toasts.replace(
+        toastId,
+        {
+          message: $_('toast.undoFailed'),
+          type: 'error',
+          actions: [],
+          duration: 5000
+        })
+
+      if (completed > 0) {
+        onActionComplete?.()
+      }
+    }
+  }
+
   // Action button handlers
   function handleReply() {
     const messageId = getTargetMessageId()
@@ -781,15 +941,28 @@
     }
   }
 
+  function showUndoableSuccess(message: string) {
+    let toastId = ''
+
+    toastId = toasts.success(message, [
+      {
+        label: $_('common.undo'),
+        onClick: () => {
+          void handleUndo(toastId)
+        }
+      }
+    ])
+
+    return toastId
+  }
+
   async function handleArchive() {
     if (!conversation?.messages) return
     const messageIds = conversation.messages.map(m => m.id)
 
     try {
       await Archive(messageIds)
-      toasts.success($_('toast.conversationArchived'), [
-        { label: $_('common.undo'), onClick: handleUndo }
-      ])
+      showArchiveUndoToast()
       onActionComplete?.(true)
     } catch (err) {
       console.error('Archive failed:', err)
@@ -803,7 +976,7 @@
 
     try {
       await RemoveFromInbox(messageIds)
-      toasts.success($_('toast.conversationArchived'), [{ label: $_('common.undo'), onClick: handleUndo }])
+      showArchiveUndoToast()
       onActionComplete?.(true)
     } catch (err) {
       console.error('Done failed:', err)
@@ -823,8 +996,11 @@
       try {
         const movedToTrash = await Trash(messageIds)
         const toastMsg = movedToTrash ? $_('toast.movedToTrash') : $_('toast.deletedFromFolder')
-        const actions = movedToTrash ? [{ label: $_('common.undo'), onClick: handleUndo }] : []
-        toasts.success(toastMsg, actions)
+        if (movedToTrash) {
+          showUndoableSuccess(toastMsg)
+        } else {
+          toasts.success(toastMsg)
+        }
         onActionComplete?.(true)
       } catch (err) {
         console.error('Delete failed:', err)
@@ -869,8 +1045,11 @@
       try {
         const movedToTrash = await Trash([focusedMessageId])
         const toastMsg = movedToTrash ? $_('toast.movedToTrash') : $_('toast.deletedFromFolder')
-        const actions = movedToTrash ? [{ label: $_('common.undo'), onClick: handleUndo }] : []
-        toasts.success(toastMsg, actions)
+        if (movedToTrash) {
+          showUndoableSuccess(toastMsg)
+        } else {
+          toasts.success(toastMsg)
+        }
         focusedMessageId = null
         // Will auto-reload via messages:deleted event
       } catch (err) {
@@ -888,17 +1067,18 @@
       if (isSpamFolder) {
         // If we're in spam folder, mark as NOT spam
         await MarkAsNotSpam(messageIds)
-        toasts.success($_('toast.markedAsNotSpam'), [
-          { label: $_('common.undo'), onClick: handleUndo }
-        ])
+        showUndoableSuccess($_('toast.markedAsNotSpam'))
         onActionComplete?.(true)
         return
       }
       // Otherwise, mark as spam
       const movedToSpam = await MarkAsSpam(messageIds)
       const toastMsg = movedToSpam ? $_('toast.markedAsSpam') : $_('toast.deletedFromFolder')
-      const actions = movedToSpam ? [{ label: $_('common.undo'), onClick: handleUndo }] : []
-      toasts.success(toastMsg, actions)
+      if (movedToSpam) {
+        showUndoableSuccess(toastMsg)
+      } else {
+        toasts.success(toastMsg)
+      }
       onActionComplete?.(true)
     } catch (err) {
       console.error('Spam toggle failed:', err)
@@ -959,10 +1139,27 @@
     }
   }
 
-  async function handleUndo() {
+  async function handleUndo(toastId?: string) {
     try {
       const description = await Undo()
-      toasts.success($_('toast.undone', { values: { description } }))
+      const message = $_('toast.undone', { values: { description } })
+
+      // Undo triggered from a toast should transform that same toast instead
+      // of adding another card to the notification stack.
+      if (toastId) {
+        const replaced = toasts.replace(toastId, {
+          message,
+          type: 'success'
+        })
+
+        // Fallback for a toast that expired while Undo was running.
+        if (!replaced) {
+          toasts.success(message)
+        }
+      } else {
+        toasts.success(message)
+      }
+
       // Reload conversation to show updated state
       if (threadId && folderId) {
         await loadConversation(threadId, folderId)
@@ -970,7 +1167,19 @@
       onActionComplete?.()
     } catch (err) {
       console.error('Undo failed:', err)
-      toasts.error($_('toast.undoFailed'))
+
+      if (toastId) {
+        const replaced = toasts.replace(toastId, {
+          message: $_('toast.undoFailed'),
+          type: 'error'
+        })
+
+        if (!replaced) {
+          toasts.error($_('toast.undoFailed'))
+        }
+      } else {
+        toasts.error($_('toast.undoFailed'))
+      }
     }
   }
 
@@ -1008,42 +1217,6 @@
         .body { font-size: 12px; }
         .body img { max-width: 100%; height: auto; }
         @page { margin: 14mm; }
-
-  :global(.viewer-toolbar-action) {
-    position: relative;
-  }
-
-  :global(.viewer-toolbar-action::after) {
-    content: attr(data-tooltip);
-    position: absolute;
-    left: 50%;
-    top: calc(100% + 0.5rem);
-    z-index: 80;
-    transform: translate(-50%, -2px);
-    width: max-content;
-    max-width: 13rem;
-    padding: 0.32rem 0.5rem;
-    border: 1px solid hsl(var(--border));
-    border-radius: 0.4rem;
-    background: hsl(var(--popover));
-    color: hsl(var(--popover-foreground));
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.28);
-    font-size: 0.7rem;
-    font-weight: 500;
-    line-height: 1rem;
-    white-space: nowrap;
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-    transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
-  }
-
-  :global(.viewer-toolbar-action:hover::after),
-  :global(.viewer-toolbar-action:focus-visible::after) {
-    opacity: 1;
-    visibility: visible;
-    transform: translate(-50%, 0);
-  }
 
 </style></head>
       <body><h1>${escapeHtmlText(subject)}</h1>${blocks.join('')}</body></html>`
@@ -1361,7 +1534,7 @@
       <div class="flex items-center gap-2">
         {#if showBackButton}
           <button
-            class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-colors mr-1"
+            class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95 mr-1"
             data-tooltip={$_('responsive.back')}
             aria-label={$_('aria.backToList')}
             onclick={onBack}
@@ -1371,7 +1544,7 @@
           <div class="w-px h-5 bg-border mx-1"></div>
         {/if}
         <button
-          class="viewer-toolbar-action p-2 rounded-md bg-muted/70 hover:bg-muted transition-colors"
+          class="viewer-toolbar-action p-2 rounded-md bg-muted/70 hover:bg-muted transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95"
           data-tooltip={$_('common.done')}
           aria-label={$_('common.done')}
           onclick={handleDone}
@@ -1379,7 +1552,7 @@
           <Icon icon="mdi:check" class="w-5 h-5 text-muted-foreground" />
         </button>
         <button
-          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-colors"
+          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95"
           data-tooltip={$_('viewer.reply')}
           aria-label={$_('viewer.reply')}
           onclick={handleReply}
@@ -1387,7 +1560,7 @@
           <Icon icon="mdi:reply" class="w-5 h-5 text-muted-foreground" />
         </button>
         <button
-          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-colors"
+          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95"
           data-tooltip={$_('viewer.replyAll')}
           aria-label={$_('viewer.replyAll')}
           onclick={handleReplyAll}
@@ -1395,7 +1568,7 @@
           <Icon icon="mdi:reply-all" class="w-5 h-5 text-muted-foreground" />
         </button>
         <button
-          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-colors"
+          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95"
           data-tooltip={$_('viewer.forward')}
           aria-label={$_('viewer.forward')}
           onclick={handleForward}
@@ -1405,7 +1578,7 @@
 
         <div class="w-px h-5 bg-border mx-1"></div>
         <button
-          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-colors"
+          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95"
           data-tooltip={$_('viewer.archive')}
           aria-label={$_('viewer.archive')}
           onclick={handleArchive}
@@ -1413,7 +1586,7 @@
           <Icon icon="mdi:archive-outline" class="w-5 h-5 text-muted-foreground" />
         </button>
         <button
-          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-colors"
+          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95"
           data-tooltip={$_(isTrashFolder ? 'viewer.deletePermanently' : 'viewer.delete')}
           aria-label={$_(isTrashFolder ? 'viewer.deletePermanently' : 'viewer.delete')}
           onclick={handleDelete}
@@ -1421,7 +1594,7 @@
           <Icon icon={isTrashFolder ? 'mdi:delete-forever' : 'mdi:delete-outline'} class="w-5 h-5 text-muted-foreground" />
         </button>
         <button
-          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-colors"
+          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95"
           data-tooltip={$_(isSpamFolder ? 'viewer.markAsNotSpam' : 'viewer.markAsSpam')}
           aria-label={$_(isSpamFolder ? 'viewer.markAsNotSpam' : 'viewer.markAsSpam')}
           onclick={handleSpam}
@@ -1432,7 +1605,7 @@
         <div class="w-px h-5 bg-border mx-1"></div>
 
         <button
-          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-colors"
+          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95"
           data-tooltip={$_(allStarred ? 'viewer.removeStar' : 'viewer.star')}
           aria-label={$_(allStarred ? 'viewer.removeStar' : 'viewer.star')}
           onclick={handleStar}
@@ -1440,7 +1613,7 @@
           <Icon icon={allStarred ? 'mdi:star' : 'mdi:star-outline'} class="w-5 h-5 {allStarred ? 'text-yellow-500' : 'text-muted-foreground'}" />
         </button>
         <button
-          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-colors"
+          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95"
           data-tooltip={$_(allRead ? 'viewer.markAsUnread' : 'viewer.markAsRead')}
           aria-label={$_(allRead ? 'viewer.markAsUnread' : 'viewer.markAsRead')}
           onclick={handleMarkRead}
@@ -1452,7 +1625,7 @@
       <div class="flex items-center gap-2">
         {#if conversation.messages && conversation.messages.length > 1}
           <button
-            class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-colors"
+            class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95"
             data-tooltip={$_('viewer.expandAll')}
             aria-label={$_('viewer.expandAll')}
             onclick={expandAll}
@@ -1460,7 +1633,7 @@
             <Icon icon="mdi:unfold-more-horizontal" class="w-5 h-5 text-muted-foreground" />
           </button>
           <button
-            class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-colors"
+            class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95"
             data-tooltip={$_('viewer.collapseAll')}
             aria-label={$_('viewer.collapseAll')}
             onclick={collapseAll}
@@ -1469,7 +1642,7 @@
           </button>
         {/if}
         <button
-          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-colors"
+          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95"
           data-tooltip={inFocusMode && focusModeKind === 'thread' ? $_('viewer.exitFocus') : $_('viewer.focusThread')}
           aria-label={inFocusMode && focusModeKind === 'thread' ? $_('viewer.exitFocus') : $_('viewer.focusThread')}
           onclick={onToggleThreadFocus}
@@ -1477,7 +1650,7 @@
           <Icon icon={inFocusMode && focusModeKind === 'thread' ? 'mdi:fullscreen-exit' : 'mdi:fullscreen'} class="w-5 h-5 text-muted-foreground" />
         </button>
         <button
-          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-colors"
+          class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95"
           data-tooltip={$_('viewer.print')}
           aria-label={$_('viewer.print')}
           onclick={handlePrint}
@@ -1925,3 +2098,56 @@
   onConfirm={handleConfirmPermanentDelete}
   onCancel={() => showDeleteConfirm = false}
 />
+
+
+<style>
+  .viewer-toolbar-action :global(svg) {
+    transition: color 150ms ease, transform 150ms ease;
+  }
+
+  .viewer-toolbar-action:hover :global(svg),
+  .viewer-toolbar-action:focus-visible :global(svg) {
+    color: hsl(var(--foreground));
+  }
+
+  /* Viewer toolbar tooltips */
+  .viewer-toolbar-action {
+    position: relative;
+  }
+
+  .viewer-toolbar-action::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 50%;
+    top: calc(100% + 0.5rem);
+    z-index: 100;
+    transform: translate(-50%, -3px);
+    width: max-content;
+    max-width: 14rem;
+    padding: 0.35rem 0.55rem;
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.4rem;
+    background: hsl(var(--popover));
+    color: hsl(var(--popover-foreground));
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.3);
+    font-size: 0.72rem;
+    font-weight: 500;
+    line-height: 1rem;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      opacity 120ms ease,
+      transform 120ms ease,
+      visibility 120ms ease;
+  }
+
+  .viewer-toolbar-action:hover::after,
+  .viewer-toolbar-action:focus-visible::after {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, 0);
+  }
+
+</style>

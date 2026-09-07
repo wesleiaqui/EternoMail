@@ -283,6 +283,11 @@
 
   function isPrimaryFolderSelected(type: string): boolean {
     if (selectedAccountId === 'unified' && selectedFolderId === type) return true
+
+    // The legacy Snoozed shortcut uses the synthetic "all" type, but a real
+    // account All Mail folder selected from More > All folders is not Snoozed.
+    if (type === 'all') return false
+
     for (const item of accountStore.accounts) {
       const target = findAccountFolder(item, type)
       if (target?.id === selectedFolderId) return true

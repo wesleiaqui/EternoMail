@@ -279,7 +279,7 @@ func (a *App) ForceSyncFolder(accountID, folderID string) error {
 
 // SyncAccountComplete performs a comprehensive sync of an account:
 // 1. Syncs folder list from IMAP
-// 2. Syncs core folders' messages (Inbox, Drafts, Sent)
+// 2. Syncs core folders' messages (Inbox, Drafts, Sent, Trash)
 func (a *App) SyncAccountComplete(accountID string) error {
 	log := logging.WithComponent("app.masterSync")
 	startedAt := time.Now()
@@ -364,7 +364,7 @@ func (a *App) SyncAccountComplete(accountID string) error {
 // Three-way logic:
 //   - SyncAllFolders=true → all folders
 //   - SyncFoldersEnabled=true → subscribed folders (respects IMAP subscriptions)
-//   - default → core only (Inbox, Drafts, Sent) — backward compatible
+//   - default → core only (Inbox, Drafts, Sent, Trash)
 func (a *App) getSyncFolders(accountID string) ([]*folder.Folder, error) {
 	acct, err := a.accountStore.Get(accountID)
 	if err != nil {
@@ -379,9 +379,9 @@ func (a *App) getSyncFolders(accountID string) ([]*folder.Folder, error) {
 	return a.getCoreOnlyFolders(accountID)
 }
 
-// getCoreOnlyFolders returns core folders (Inbox, Drafts, Sent) — the default sync behavior.
+// getCoreOnlyFolders returns core folders (Inbox, Drafts, Sent, Trash) — the default sync behavior.
 func (a *App) getCoreOnlyFolders(accountID string) ([]*folder.Folder, error) {
-	coreTypes := []folder.Type{folder.TypeInbox, folder.TypeDrafts, folder.TypeSent}
+	coreTypes := []folder.Type{folder.TypeInbox, folder.TypeDrafts, folder.TypeSent, folder.TypeTrash}
 	var folders []*folder.Folder
 	for _, ft := range coreTypes {
 		f, err := a.folderStore.GetByType(accountID, ft)

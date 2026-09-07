@@ -665,7 +665,7 @@ func (s *Store) RemoveSpellcheckCustomWord(word string) error {
 }
 
 // GetLanguage returns the saved language preference (locale code)
-// Returns empty string if not set (frontend uses system detection)
+// Returns empty string if not set (frontend defaults to English)
 func (s *Store) GetLanguage() (string, error) {
 	return s.Get(KeyLanguage)
 }

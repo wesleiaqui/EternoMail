@@ -3,6 +3,7 @@ package undo
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/emersion/go-imap/v2"
 	imapPkg "github.com/hkdb/aerion/internal/imap"
@@ -121,6 +122,44 @@ func (c *FlagChangeCommand) Undo() error {
 	return nil
 }
 
+// MoveCompletion lets the UI-facing move return immediately while Undo
+// waits only when the remote IMAP move is still being reconciled.
+type MoveCompletion struct {
+	done chan struct{}
+	once sync.Once
+	mu   sync.RWMutex
+	err  error
+}
+
+func NewMoveCompletion() *MoveCompletion {
+	return &MoveCompletion{done: make(chan struct{})}
+}
+
+func (c *MoveCompletion) Complete(err error) {
+	if c == nil {
+		return
+	}
+
+	c.once.Do(func() {
+		c.mu.Lock()
+		c.err = err
+		c.mu.Unlock()
+		close(c.done)
+	})
+}
+
+func (c *MoveCompletion) Wait() error {
+	if c == nil {
+		return nil
+	}
+
+	<-c.done
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.err
+}
+
 // MoveCommand handles moving messages between folders
 type MoveCommand struct {
 	BaseCommand
@@ -129,6 +168,7 @@ type MoveCommand struct {
 	rfc822MessageIDs []string // RFC822 Message-ID headers for reliable lookup
 	sourceFolderID   string
 	destFolderID     string
+	completion       *MoveCompletion
 }
 
 // NewMoveCommand creates a new MoveCommand
@@ -139,7 +179,13 @@ func NewMoveCommand(
 	sourceFolderID string,
 	destFolderID string,
 	description string,
+	completion ...*MoveCompletion,
 ) *MoveCommand {
+	var moveCompletion *MoveCompletion
+	if len(completion) > 0 {
+		moveCompletion = completion[0]
+	}
+
 	return &MoveCommand{
 		BaseCommand:      NewBaseCommand(description),
 		undoCtx:          undoCtx,
@@ -147,6 +193,7 @@ func NewMoveCommand(
 		rfc822MessageIDs: rfc822MessageIDs,
 		sourceFolderID:   sourceFolderID,
 		destFolderID:     destFolderID,
+		completion:       moveCompletion,
 	}
 }
 
@@ -156,6 +203,15 @@ func (c *MoveCommand) Execute() error { return nil }
 // Undo reverses the move by finding current messages in the destination folder
 // and moving them back using the standard move pipeline.
 func (c *MoveCommand) Undo() error {
+	// The local-first move returns before IMAP reconciliation finishes.
+	// If Undo is clicked immediately, wait here rather than blocking the
+	// original user action and its success toast.
+	if c.completion != nil {
+		if err := c.completion.Wait(); err != nil {
+			return fmt.Errorf("original move did not complete: %w", err)
+		}
+	}
+
 	// Find current local message IDs by RFC822 Message-ID in the destination folder
 	localMsgIDs, err := c.undoCtx.FindLocalMessageIDs(c.accountID, c.destFolderID, c.rfc822MessageIDs)
 	if err != nil {

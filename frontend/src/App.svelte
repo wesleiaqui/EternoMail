@@ -903,7 +903,15 @@
     if (isResizingSidebar) {
       sidebarWidth = Math.max(paneConstraints.sidebar.min, Math.min(paneConstraints.sidebar.max, e.clientX))
     } else if (isResizingList) {
-      listWidth = Math.max(paneConstraints.list.min, Math.min(paneConstraints.list.max, e.clientX - sidebarWidth))
+      // Measure from the list pane's real rendered position instead of
+      // subtracting the configured sidebar width. The configured value is
+      // different from the rendered 56px width when the sidebar is collapsed,
+      // which caused the divider to jump on the first mouse movement.
+      const listLeft = messageListContainerRef?.getBoundingClientRect().left ?? 0
+      listWidth = Math.max(
+        paneConstraints.list.min,
+        Math.min(paneConstraints.list.max, e.clientX - listLeft)
+      )
     }
   }
 
@@ -1103,6 +1111,10 @@
           messageListRef?.toggleFolderSync()
           return
         case 'a':
+          // Preserve the browser's native Select All inside text fields.
+          // The application-level Ctrl/Cmd+A shortcut is only for mail panes.
+          if (!e.shiftKey && inInput) return
+
           if (e.shiftKey) {
             // Ctrl-Shift-A: Toggle sync all accounts (start sync or cancel if already running)
             e.preventDefault()

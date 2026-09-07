@@ -315,6 +315,15 @@ type App struct {
 	wakeSyncing     bool                          // guards syncAfterWake against concurrent calls
 	syncMu          goSync.Mutex                  // protects sync maps
 
+	// Move reconciliation is intentionally separate from regular sync.
+	// Rapid local-first actions (Done/Archive/Trash/Spam) are coalesced so
+	// several moves to the same destination trigger one destination refresh
+	// instead of repeatedly cancelling and restarting SyncFolder.
+	moveSyncMu      goSync.Mutex
+	moveSyncRunMu   goSync.Mutex
+	moveSyncTimers  map[string]*time.Timer
+	moveSyncWaiters map[string][]*undo.MoveCompletion
+
 	// Suppresses the IDLE echo of our own flag writes: when Aerion STOREs a flag
 	// change it stamps the account here, so the incoming IDLE FETCH echo of that
 	// same change doesn't trigger a re-sync (only other clients' changes do).
