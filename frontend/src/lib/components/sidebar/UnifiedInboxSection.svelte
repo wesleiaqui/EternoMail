@@ -94,6 +94,7 @@
       <button
         class="sidebar-inbox-toggle p-0.5 -ml-0.5 rounded transition-colors"
         onclick={(e) => { e.stopPropagation(); toggleExpanded() }}
+        aria-label={expanded ? $_('sidebar.collapse') : $_('sidebar.expand')}
       >
         <Icon
           icon={expanded ? 'mdi:chevron-down' : 'mdi:chevron-right'}
@@ -129,7 +130,7 @@
                 <Avatar
                   email={acc.account.email}
                   name={acc.account.name}
-                  size={16}
+                  size={20}
                   photoData={avatarPhoto?.data}
                   photoMediaType={avatarPhoto?.mediaType}
                 />
