@@ -3,18 +3,17 @@
  * without changing the layout/density work that is already approved.
  */
 
-/* Compose keeps the primary blue treatment in the compact rail. The issue in
- * the expanded screenshot is the toolbar surface behind the button, not the
- * Compose button itself. */
+/* Compose stays blue in the compact rail, but uses the exact same active blue
+ * as the selected Inbox button so the rail has one consistent accent color. */
 .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button {
-  background: hsl(var(--primary)) !important;
-  color: hsl(var(--primary-foreground)) !important;
+  background: #0c64dc !important;
+  color: #ffffff !important;
 }
 
 .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button:hover,
 .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button:focus-visible {
-  background: hsl(var(--primary) / 0.9) !important;
-  color: hsl(var(--primary-foreground)) !important;
+  background: #0c64dc !important;
+  color: #ffffff !important;
 }
 
 /* In expanded mode app.css still gives .sidebar-rebuilt-toolbar its old
