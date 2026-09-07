@@ -1,5 +1,7 @@
 import './app.css'
 import './sidebar-polish.css'
+import './sidebar-polish-final.css'
+import './sidebar-tooltips'
 import { initI18n } from './lib/i18n'
 import App from './App.svelte'
 import { mount } from 'svelte'
