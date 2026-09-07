@@ -53,7 +53,9 @@ json_version() {
         }' "$file"
 }
 
-check_value "app/state.go" "$(awk -F'"' '/^const Version = / { print $2; exit }' "$ROOT_DIR/app/state.go")"
+# app/state.go intentionally keeps Version="development" in source. main.go
+# initializes that runtime variable from the embedded repository VERSION file,
+# so VERSION itself is the authoritative Go/runtime version value.
 check_value "frontend/package.json" "$(json_version "$ROOT_DIR/frontend/package.json")"
 check_value "frontend/package-lock.json root" "$(json_version "$ROOT_DIR/frontend/package-lock.json")"
 check_value "frontend/package-lock.json package root" "$(json_version "$ROOT_DIR/frontend/package-lock.json" 2)"
