@@ -3,33 +3,33 @@
  * without changing the layout/density work that is already approved.
  */
 
-/* Compact rail: Compose should look like the other rail actions. The blue
- * fill came from the expanded Compose primary-button style leaking into the
- * collapsed state. Keep the icon, but use the same neutral/hover treatment as
- * Home, Calendar and the other compact rail buttons. */
+/* Compose keeps the primary blue treatment in the compact rail. The issue in
+ * the expanded screenshot is the toolbar surface behind the button, not the
+ * Compose button itself. */
 .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button {
-  background: transparent !important;
-  color: hsl(var(--muted-foreground)) !important;
+  background: hsl(var(--primary)) !important;
+  color: hsl(var(--primary-foreground)) !important;
 }
 
 .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button:hover,
 .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button:focus-visible {
-  background: hsl(var(--muted)) !important;
-  color: hsl(var(--foreground)) !important;
+  background: hsl(var(--primary) / 0.9) !important;
+  color: hsl(var(--primary-foreground)) !important;
 }
 
-[data-theme="dark"] .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button,
-:root.dark .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button {
-  background: transparent !important;
-  color: #b8bec9 !important;
+/* In expanded mode app.css still gives .sidebar-rebuilt-toolbar its old
+ * #15161b surface, while the rebuilt sidebar itself now uses #202124. That
+ * creates the darker horizontal band visible behind Compose. Let the toolbar
+ * inherit the exact sidebar surface so it reads as one continuous panel. */
+.spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-rebuilt-toolbar {
+  background: inherit !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
 }
 
-[data-theme="dark"] .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button:hover,
-[data-theme="dark"] .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button:focus-visible,
-:root.dark .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button:hover,
-:root.dark .spark-sidebar-rebuilt.spark-sidebar-collapsed .sidebar-compose-button:focus-visible {
-  background: #2b2d32 !important;
-  color: #f2f5fa !important;
+[data-theme="dark"] .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-rebuilt-toolbar,
+:root.dark .spark-sidebar-rebuilt:not(.spark-sidebar-collapsed) .sidebar-rebuilt-toolbar {
+  background: #202124 !important;
 }
 
 /* WebKitGTK uses overlay scrollbars by default. In the recording the message
