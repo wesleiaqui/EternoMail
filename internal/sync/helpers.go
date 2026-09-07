@@ -34,6 +34,7 @@ func applyFlagsToMessage(m *message.Message, flags []imap.Flag) {
 
 // applyEnvelopeToMessage sets envelope fields on a Message from an IMAP envelope
 func applyEnvelopeToMessage(m *message.Message, envelope *imap.Envelope) {
+	defer sanitizeMessageHeaders(m)
 	if envelope == nil {
 		return
 	}
@@ -76,13 +77,13 @@ func addressListToJSON(addrs []imap.Address) string {
 	list := make([]addr, len(addrs))
 	for i, a := range addrs {
 		list[i] = addr{
-			Name:  decodeMIMEWord(a.Name),
-			Email: a.Addr(),
+			Name:  sanitizeHeader(decodeMIMEWord(a.Name)),
+			Email: sanitizeHeader(a.Addr()),
 		}
 	}
 
 	data, _ := json.Marshal(list)
-	return string(data)
+	return sanitizeAddressJSON(string(data))
 }
 
 // generateSnippet creates a preview snippet from message body

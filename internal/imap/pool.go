@@ -283,11 +283,25 @@ acquireLoop:
 			p.mu.Lock()
 			p.removeWaiterLocked(accountID, waiter)
 			p.mu.Unlock()
+			select {
+			case result := <-waiter:
+				if result.conn != nil {
+					p.Release(result.conn)
+				}
+			default:
+			}
 			return nil, ctx.Err()
 		case <-timer.C:
 			p.mu.Lock()
 			p.removeWaiterLocked(accountID, waiter)
 			p.mu.Unlock()
+			select {
+			case result := <-waiter:
+				if result.conn != nil {
+					p.Release(result.conn)
+				}
+			default:
+			}
 			p.log.Warn().Str("account", accountID).Dur("timeout", p.config.WaiterTimeout).Msg("Timed out waiting for connection from pool")
 			return nil, fmt.Errorf("timed out waiting for connection from pool")
 		}
@@ -451,6 +465,12 @@ func (p *Pool) Release(conn *PooledConnection) {
 	}
 
 	releaseStarted := time.Now()
+	// Publish availability and transfer ownership under the same pool lock.
+	// Otherwise an acquirer can reserve the connection before a waiter receives it.
+	poolLockStarted := time.Now()
+	p.mu.Lock()
+	poolLockWait := time.Since(poolLockStarted)
+	defer p.mu.Unlock()
 	connectionLockStarted := time.Now()
 	conn.mu.Lock()
 	connectionLockWait := time.Since(connectionLockStarted)
@@ -459,11 +479,6 @@ func (p *Pool) Release(conn *PooledConnection) {
 	trackedClient := conn.client != nil && conn.client.client != nil
 	healthCheckSkippedRecent := !conn.lastHealthCheck.IsZero() && time.Since(conn.lastHealthCheck) < healthCheckTTL
 	conn.mu.Unlock()
-
-	poolLockStarted := time.Now()
-	p.mu.Lock()
-	poolLockWait := time.Since(poolLockStarted)
-	defer p.mu.Unlock()
 
 	// Release deliberately avoids a network round trip. A subsequent acquire
 	// validates stale connections outside p.mu; a recently created or checked

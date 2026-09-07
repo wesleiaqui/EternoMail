@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
 	"sync"
@@ -205,7 +206,7 @@ func (s *CallbackServer) handleCallback(w http.ResponseWriter, r *http.Request) 
 			Msg("OAuth callback received error")
 
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintf(w, errorPageHTML, result.Error, result.ErrorDescription)
+		fmt.Fprintf(w, errorPageHTML, html.EscapeString(result.Error), html.EscapeString(result.ErrorDescription))
 		return
 	}
 

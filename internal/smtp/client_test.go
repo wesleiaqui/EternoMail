@@ -213,3 +213,28 @@ func TestForcedMechanismFailsWithoutFallback(t *testing.T) {
 		})
 	}
 }
+
+func TestStartTLSRequiredRejectsPlaintext(t *testing.T) {
+	authCmd := make(chan string, 1)
+	listener := fakeSMTPServer(t, "PLAIN LOGIN", false, authCmd)
+	defer listener.Close()
+	config := DefaultConfig()
+	config.Host = "127.0.0.1"
+	config.Port = listener.Addr().(*net.TCPAddr).Port
+	config.Security = SecurityStartTLS
+	config.ReadTimeout = time.Second
+	config.WriteTimeout = time.Second
+	client := NewClient(config)
+	err := client.Connect()
+	if err == nil || !strings.Contains(err.Error(), "STARTTLS required") {
+		t.Fatalf("Connect error = %v", err)
+	}
+	if err := client.client.Noop(); err == nil {
+		t.Fatal("plaintext connection remains open")
+	}
+	select {
+	case cmd := <-authCmd:
+		t.Fatalf("sent credentials without TLS: %s", cmd)
+	default:
+	}
+}

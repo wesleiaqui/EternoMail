@@ -45,6 +45,7 @@ type Scheduler struct {
 	cancel        context.CancelFunc
 	wg            sync.WaitGroup
 	running       bool
+	stopDone      chan struct{}
 	runningMu     sync.Mutex
 	checkInterval time.Duration
 
@@ -92,7 +93,7 @@ func (s *Scheduler) Start(ctx context.Context) {
 	s.runningMu.Lock()
 	defer s.runningMu.Unlock()
 
-	if s.running {
+	if s.running || s.stopDone != nil {
 		s.log.Warn().Msg("Scheduler already running")
 		return
 	}
@@ -101,7 +102,7 @@ func (s *Scheduler) Start(ctx context.Context) {
 	s.running = true
 
 	s.wg.Add(1)
-	go s.run()
+	go s.run(s.ctx)
 
 	s.log.Info().Msg("Email sync scheduler started")
 }
@@ -109,28 +110,54 @@ func (s *Scheduler) Start(ctx context.Context) {
 // Stop stops the background sync scheduler
 func (s *Scheduler) Stop() {
 	s.runningMu.Lock()
-	defer s.runningMu.Unlock()
-
-	if !s.running {
+	if done := s.stopDone; done != nil {
+		s.runningMu.Unlock()
+		<-done
 		return
 	}
-
-	s.cancel()
-	s.wg.Wait()
+	if !s.running {
+		s.runningMu.Unlock()
+		return
+	}
 	s.running = false
-
+	done := make(chan struct{})
+	s.stopDone = done
+	s.cancel()
+	s.runningMu.Unlock()
+	s.wg.Wait()
+	s.runningMu.Lock()
+	s.stopDone = nil
+	close(done)
+	s.runningMu.Unlock()
 	s.log.Info().Msg("Email sync scheduler stopped")
 }
 
+// startAccountSync registers work before Stop can start waiting.
+func (s *Scheduler) startAccountSync(acc *account.Account) {
+	s.runningMu.Lock()
+	defer s.runningMu.Unlock()
+	if !s.running || s.ctx.Err() != nil {
+		return
+	}
+	ctx := s.ctx
+	s.wg.Add(1)
+	go func(ctx context.Context) {
+		defer s.wg.Done()
+		if ctx.Err() == nil {
+			s.syncAccountInbox(ctx, acc)
+		}
+	}(ctx)
+}
+
 // run is the main scheduler loop
-func (s *Scheduler) run() {
+func (s *Scheduler) run(ctx context.Context) {
 	defer s.wg.Done()
 
 	// Initial sync on startup (after a short delay to let the app initialize)
 	select {
 	case <-time.After(10 * time.Second):
-		s.syncDueAccounts()
-	case <-s.ctx.Done():
+		s.syncDueAccounts(ctx)
+	case <-ctx.Done():
 		return
 	}
 
@@ -141,15 +168,18 @@ func (s *Scheduler) run() {
 	for {
 		select {
 		case <-ticker.C:
-			s.syncDueAccounts()
-		case <-s.ctx.Done():
+			s.syncDueAccounts(ctx)
+		case <-ctx.Done():
 			return
 		}
 	}
 }
 
 // syncDueAccounts checks all accounts and syncs those that are due
-func (s *Scheduler) syncDueAccounts() {
+func (s *Scheduler) syncDueAccounts(ctx context.Context) {
+	if ctx.Err() != nil {
+		return
+	}
 	// Skip sync tick if we know we're offline
 	if s.isConnected != nil && !s.isConnected() {
 		s.log.Debug().Msg("Skipping sync tick — offline")
@@ -163,6 +193,9 @@ func (s *Scheduler) syncDueAccounts() {
 	}
 
 	for _, acc := range accounts {
+		if ctx.Err() != nil {
+			return
+		}
 		if !acc.Enabled {
 			continue
 		}
@@ -180,7 +213,7 @@ func (s *Scheduler) syncDueAccounts() {
 		s.log.Debug().Str("account_id", acc.ID).Msg("Account is due for sync")
 
 		// Sync in background (don't block the scheduler)
-		go s.syncAccountInbox(acc)
+		s.startAccountSync(acc)
 	}
 }
 
@@ -209,7 +242,7 @@ func (s *Scheduler) isSyncDue(acc *account.Account) bool {
 }
 
 // syncAccountInbox syncs the INBOX for an account
-func (s *Scheduler) syncAccountInbox(acc *account.Account) {
+func (s *Scheduler) syncAccountInbox(parent context.Context, acc *account.Account) {
 	// Prevent concurrent syncs for the same account
 	s.syncingMu.Lock()
 	if s.syncing[acc.ID] {
@@ -222,7 +255,7 @@ func (s *Scheduler) syncAccountInbox(acc *account.Account) {
 
 	// Create a cancellable context with timeout for this sync operation
 	// 30 minute timeout prevents syncs from running forever if connection hangs
-	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Minute)
+	ctx, cancel := context.WithTimeout(parent, 30*time.Minute)
 	s.syncCancelMu.Lock()
 	s.syncCancels[acc.ID] = cancel
 	s.syncCancelMu.Unlock()
@@ -348,9 +381,14 @@ func (s *Scheduler) syncAdditionalFolders(ctx context.Context, acc *account.Acco
 			break
 		}
 
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			wg.Wait()
+			return
+		}
 		wg.Add(1)
-		sem <- struct{}{}
-		go func(f *folder.Folder) {
+		go func(ctx context.Context, f *folder.Folder) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
@@ -363,7 +401,7 @@ func (s *Scheduler) syncAdditionalFolders(ctx context.Context, acc *account.Acco
 			if s.syncCompletedCallback != nil {
 				s.syncCompletedCallback(acc.ID, f.ID, nil)
 			}
-		}(f)
+		}(ctx, f)
 	}
 	wg.Wait()
 }
@@ -399,7 +437,7 @@ func (s *Scheduler) TriggerSync(accountID string) {
 		return
 	}
 
-	go s.syncAccountInbox(acc)
+	s.startAccountSync(acc)
 }
 
 // CancelSync cancels any running sync for the specified account
@@ -422,7 +460,7 @@ func (s *Scheduler) TriggerSyncAll() {
 
 	for _, acc := range accounts {
 		if acc.Enabled {
-			go s.syncAccountInbox(acc)
+			s.startAccountSync(acc)
 		}
 	}
 }
@@ -430,6 +468,16 @@ func (s *Scheduler) TriggerSyncAll() {
 // SyncAccountInboxBlocking syncs INBOX and returns new mail info (blocking)
 // This is useful for IDLE-triggered syncs where we want to wait for completion
 func (s *Scheduler) SyncAccountInboxBlocking(accountID string) (*NewMailInfo, error) {
+	s.runningMu.Lock()
+	if !s.running {
+		s.runningMu.Unlock()
+		return nil, context.Canceled
+	}
+	parent := s.ctx
+	s.wg.Add(1)
+	s.runningMu.Unlock()
+	defer s.wg.Done()
+
 	acc, err := s.accountStore.Get(accountID)
 	if err != nil {
 		return nil, err
@@ -447,7 +495,7 @@ func (s *Scheduler) SyncAccountInboxBlocking(accountID string) (*NewMailInfo, er
 
 	// Create a cancellable context with timeout for this sync operation
 	// 30 minute timeout prevents syncs from running forever if connection hangs
-	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Minute)
+	ctx, cancel := context.WithTimeout(parent, 30*time.Minute)
 	s.syncCancelMu.Lock()
 	s.syncCancels[acc.ID] = cancel
 	s.syncCancelMu.Unlock()

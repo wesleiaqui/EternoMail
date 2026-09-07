@@ -156,12 +156,12 @@ func (s *Store) HasUserClientCreds(configID string) bool {
 // Idempotent — succeeds even when nothing was stored.
 func (s *Store) ClearUserClientCreds(configID string) error {
 	if s.keyringEnabled {
-		_ = gokeyring.Delete(serviceName, userOAuthKeyringPrefix+configID)
+		s.deleteKeyringEntry(userOAuthKeyringPrefix + configID)
 	}
 	s.clearUserClientCredsDB(configID)
 	return nil
 }
 
 func (s *Store) clearUserClientCredsDB(configID string) {
-	_, _ = s.db.Exec(`DELETE FROM user_oauth_clients WHERE config_id = ?`, configID)
+	s.execCleanup(`DELETE FROM user_oauth_clients WHERE config_id = ?`, configID)
 }

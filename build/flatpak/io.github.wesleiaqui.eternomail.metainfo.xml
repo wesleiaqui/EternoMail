@@ -309,6 +309,17 @@
   </provides>
 
   <releases>
+    <release version="0.3.6" date="2026-09-07">
+      <description>
+        <ul>
+          <li>Refined expanded and compact sidebar navigation and Compose styling</li>
+          <li>Improved message-list scrolling and scrollbar stability on Linux</li>
+          <li>Improved message move, Trash and Undo responsiveness</li>
+          <li>Fixed Gmail Trash and Spam destination behavior</li>
+          <li>Refined conversation viewer interactions and interface feedback</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.5" date="2026-09-06">
       <description>
         <ul>

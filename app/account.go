@@ -272,6 +272,13 @@ func (a *App) UpdateAccount(id string, config account.AccountConfig) (*account.A
 // RemoveAccount deletes an account and all its data
 func (a *App) RemoveAccount(id string) error {
 	log := logging.WithComponent("app")
+	if acc, err := a.accountStore.Get(id); err != nil {
+		log.Warn().Err(err).Msg("Failed to inspect account before credential cleanup")
+	} else if acc != nil && a.pendingOAuthEmail == acc.Email {
+		a.pendingOAuthTokens.Clear()
+		a.pendingOAuthTokens = nil
+		a.pendingOAuthEmail = ""
+	}
 
 	// Cascade: delete any shared mailboxes linked to this account
 	sharedMailboxes, _ := a.accountStore.ListBySharedMailboxParent(id)
@@ -290,15 +297,15 @@ func (a *App) RemoveAccount(id string) error {
 	// Close any IMAP connections for this account
 	a.imapPool.CloseAccount(id)
 
+	// Delete credentials from credential store
+	if err := a.credStore.DeleteAllCredentials(id); err != nil {
+		log.Warn().Err(err).Str("account_id", id).Msg("Failed to delete credentials")
+	}
+
 	// Delete from database (cascades to folders, messages, etc.)
 	if err := a.accountStore.Delete(id); err != nil {
 		log.Error().Err(err).Str("account_id", id).Msg("Failed to delete account")
 		return err
-	}
-
-	// Delete credentials from credential store
-	if err := a.credStore.DeleteAllCredentials(id); err != nil {
-		log.Warn().Err(err).Str("account_id", id).Msg("Failed to delete credentials")
 	}
 
 	// Scale database connection pool after removing account

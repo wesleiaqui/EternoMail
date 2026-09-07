@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hkdb/aerion/internal/logging"
@@ -46,6 +47,7 @@ type UserInfo struct {
 // Manager handles OAuth2 authorization flows
 type Manager struct {
 	log            zerolog.Logger
+	mu             sync.Mutex // protects activeSession and callbackServer
 	activeSession  *AuthSession
 	callbackServer *CallbackServer
 	httpClient     *http.Client
@@ -110,14 +112,14 @@ func (m *Manager) startAuthFlowInternal(ctx context.Context, providerName string
 	if redirectHost == "" {
 		redirectHost = "localhost"
 	}
-	m.callbackServer = NewCallbackServer()
-	port, err := m.callbackServer.Start(ctx, redirectHost)
+	callbackServer := NewCallbackServer()
+	port, err := callbackServer.Start(ctx, redirectHost)
 	if err != nil {
 		return "", fmt.Errorf("failed to start callback server: %w", err)
 	}
 
 	// Create session
-	m.activeSession = &AuthSession{
+	session := &AuthSession{
 		Provider:       providerName,
 		State:          state,
 		CodeVerifier:   verifier,
@@ -125,9 +127,18 @@ func (m *Manager) startAuthFlowInternal(ctx context.Context, providerName string
 		CreatedAt:      time.Now(),
 		ProviderConfig: customConfig,
 	}
+	m.mu.Lock()
+	previousServer := m.callbackServer
+	m.callbackServer = callbackServer
+	m.activeSession = session
+	m.mu.Unlock()
+	// A concurrent start may have published a server after CancelAuthFlow.
+	if previousServer != nil {
+		previousServer.Stop()
+	}
 
 	// Build authorization URL
-	authURL := buildAuthURL(provider, state, challenge, m.activeSession.RedirectURI)
+	authURL := buildAuthURL(provider, state, challenge, session.RedirectURI)
 
 	m.log.Info().
 		Str("provider", providerName).
@@ -140,11 +151,12 @@ func (m *Manager) startAuthFlowInternal(ctx context.Context, providerName string
 // WaitForCallback waits for the OAuth callback and exchanges the code for tokens
 // Returns the tokens and user email on success
 func (m *Manager) WaitForCallback(ctx context.Context) (*TokenResponse, string, error) {
-	if m.activeSession == nil || m.callbackServer == nil {
+	m.mu.Lock()
+	session, callbackServer := m.activeSession, m.callbackServer
+	m.mu.Unlock()
+	if session == nil || callbackServer == nil {
 		return nil, "", fmt.Errorf("no active OAuth session")
 	}
-
-	session := m.activeSession
 
 	// Use custom provider config if available, otherwise look up by name
 	var provider ProviderConfig
@@ -159,7 +171,7 @@ func (m *Manager) WaitForCallback(ctx context.Context) (*TokenResponse, string, 
 	}
 
 	// Wait for callback
-	result, err := m.callbackServer.WaitForCallback(ctx)
+	result, err := callbackServer.WaitForCallback(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("callback failed: %w", err)
 	}
@@ -188,7 +200,12 @@ func (m *Manager) WaitForCallback(ctx context.Context) (*TokenResponse, string, 
 	}
 
 	// Clear session
-	m.activeSession = nil
+	m.mu.Lock()
+	if m.activeSession == session {
+		m.activeSession = nil
+		m.callbackServer = nil
+	}
+	m.mu.Unlock()
 
 	m.log.Info().
 		Str("provider", session.Provider).
@@ -200,11 +217,14 @@ func (m *Manager) WaitForCallback(ctx context.Context) (*TokenResponse, string, 
 
 // CancelAuthFlow cancels any active OAuth flow
 func (m *Manager) CancelAuthFlow() {
-	if m.callbackServer != nil {
-		m.callbackServer.Stop()
-		m.callbackServer = nil
-	}
+	m.mu.Lock()
+	callbackServer := m.callbackServer
+	m.callbackServer = nil
 	m.activeSession = nil
+	m.mu.Unlock()
+	if callbackServer != nil {
+		callbackServer.Stop()
+	}
 }
 
 // RefreshToken uses a refresh token to obtain a new access token. Provider is
@@ -280,6 +300,8 @@ func (m *Manager) RefreshTokenWithProvider(provider ProviderConfig, refreshToken
 
 // HasActiveSession returns true if there's an active OAuth session
 func (m *Manager) HasActiveSession() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.activeSession != nil
 }
 

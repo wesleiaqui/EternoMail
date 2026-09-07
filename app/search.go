@@ -19,12 +19,18 @@ import (
 // SearchConversations searches for conversations in a folder using full-text search
 // Returns matching conversations with highlighted text
 func (a *App) SearchConversations(accountID, folderID, query string, offset, limit int, filter string) ([]*message.ConversationSearchResult, error) {
+	if err := a.validateSearchFolder(accountID, folderID); err != nil {
+		return nil, err
+	}
 	results, _, err := a.messageStore.SearchConversations(folderID, query, offset, limit, filter)
 	return results, err
 }
 
 // GetSearchCount returns the total count of search results in a folder
 func (a *App) GetSearchCount(accountID, folderID, query, filter string) (int, error) {
+	if err := a.validateSearchFolder(accountID, folderID); err != nil {
+		return 0, err
+	}
 	_, count, err := a.messageStore.SearchConversations(folderID, query, 0, 0, filter)
 	return count, err
 }
@@ -129,4 +135,15 @@ func (a *App) FetchServerMessage(accountID, folderID string, uid int) (*message.
 	ctx, cancel := context.WithTimeout(a.ctx, 30*time.Second)
 	defer cancel()
 	return a.syncEngine.FetchServerMessage(ctx, accountID, folderID, uint32(uid))
+}
+
+func (a *App) validateSearchFolder(accountID, folderID string) error {
+	f, err := a.folderStore.Get(folderID)
+	if err != nil {
+		return err
+	}
+	if f == nil || f.AccountID != accountID {
+		return fmt.Errorf("folder does not belong to account")
+	}
+	return nil
 }

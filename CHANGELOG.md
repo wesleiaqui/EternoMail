@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## Eterno Mail — v0.3.6
+
+- Improved expanded and compact sidebar sizing, icon alignment, tooltips and the Compose button for clearer navigation.
+- Fixed unstable message-list scrolling and scrollbar behavior on Linux/WebKitGTK.
+- Made message moves and Trash actions update the local view promptly, with safer IMAP reconciliation.
+- Improved Undo reliability when restoring moved messages.
+- Fixed Gmail Trash and Spam actions targeting incorrect destination mailboxes.
+- Refined conversation-viewer interactions and action feedback.
+- Added release notes for the installed version directly to the What's New dialog, using the project's changelog.
+- Fixed HTML and JavaScript injection through OAuth callback error codes and descriptions.
+- Fixed concurrent OAuth session access during login and cancellation, and prevented an older callback from clearing a newer session.
+- Required SMTP STARTTLS connections now close with an error when the server does not offer encryption, preventing plaintext fallback.
+- Hardened attachment saving against unsafe filenames, parent-directory traversal and symlinks escaping the destination; Save All sanitizes filenames before building paths.
+- Fixed attachment downloads with empty or short message IDs and prevented simultaneous downloads from overwriting the same default filename.
+- Added S/MIME verification against system trust roots and stopped caching certificates classified as unknown signers. Existing self-signed and expired-certificate exceptions now require a valid cryptographic signature.
+
+### Security
+- `internal/crypto`: device key now uses a versioned format (v2). Existing
+  installations with the legacy format (v1) are automatically migrated on
+  first startup: all database credentials are transparently re-encrypted with
+  the new key derivation — no user action required.
+  Legacy v1 support will be removed in Aerion 0.5.0.
+
 ## Eterno Mail — v0.3.5
 
 - Fixed first-launch interaction becoming blocked after dismissing the startup dialogs.

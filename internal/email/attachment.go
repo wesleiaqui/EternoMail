@@ -3,11 +3,10 @@ package email
 
 import (
 	"bytes"
-	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"mime"
-	"mime/quotedprintable"
 	"path/filepath"
 	"strings"
 
@@ -33,6 +32,9 @@ type AttachmentData struct {
 
 // ExtractAttachments extracts all attachments from a raw email message
 func (e *AttachmentExtractor) ExtractAttachments(messageID string, raw []byte) ([]*AttachmentData, error) {
+	if len(raw) > maxAttachmentBytes {
+		return nil, fmt.Errorf("message exceeds attachment extraction limit")
+	}
 	reader := bytes.NewReader(raw)
 
 	entity, err := gomessage.Read(reader)
@@ -52,16 +54,29 @@ func (e *AttachmentExtractor) ExtractAttachments(messageID string, raw []byte) (
 
 // extractFromMultipart extracts attachments from a multipart message
 func (e *AttachmentExtractor) extractFromMultipart(messageID string, mr gomessage.MultipartReader) []*AttachmentData {
+	return e.extractFromMultipartDepth(messageID, mr, 0)
+}
+
+func (e *AttachmentExtractor) extractFromMultipartDepth(messageID string, mr gomessage.MultipartReader, depth int) []*AttachmentData {
+	if depth >= 64 {
+		return nil
+	}
 	var attachments []*AttachmentData
 
+	errorsInARow := 0
 	for {
 		part, err := mr.NextPart()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
+			errorsInARow++
+			if errorsInARow >= 20 {
+				break
+			}
 			continue
 		}
+		errorsInARow = 0
 
 		contentType, params, _ := mime.ParseMediaType(part.Header.Get("Content-Type"))
 		disposition, dispParams, _ := mime.ParseMediaType(part.Header.Get("Content-Disposition"))
@@ -70,7 +85,7 @@ func (e *AttachmentExtractor) extractFromMultipart(messageID string, mr gomessag
 		// Handle nested multipart
 		if strings.HasPrefix(contentType, "multipart/") {
 			if nestedMr := part.MultipartReader(); nestedMr != nil {
-				nested := e.extractFromMultipart(messageID, nestedMr)
+				nested := e.extractFromMultipartDepth(messageID, nestedMr, depth+1)
 				attachments = append(attachments, nested...)
 			}
 			continue
@@ -118,14 +133,13 @@ func (e *AttachmentExtractor) extractFromMultipart(messageID string, mr gomessag
 			}
 
 			// Read content
-			content, err := io.ReadAll(part.Body)
+			content, err := readAttachmentContent(part.Body)
 			if err != nil {
 				continue
 			}
 
-			// Decode content if transfer-encoded
-			transferEncoding := strings.ToLower(part.Header.Get("Content-Transfer-Encoding"))
-			decodedContent := decodeContent(content, transferEncoding)
+			// The MIME reader has already applied transfer decoding.
+			decodedContent := content // go-message already decoded Content-Transfer-Encoding
 
 			att := &message.Attachment{
 				ID:          uuid.New().String(),
@@ -159,7 +173,18 @@ type TNEFAttachment struct {
 // source of TNEF decoding shared by the sync extractor, the on-demand extractor,
 // and the downloader, so the three paths can never diverge on filename/type — the
 // invariant that lets sync store a name the downloader can later resolve.
-func DecodeTNEFAttachments(data []byte) []TNEFAttachment {
+func DecodeTNEFAttachments(data []byte) (result []TNEFAttachment) {
+	// The legacy decoder slices untrusted offsets and may panic on truncated
+	// attributes. Confine that failure to this optional attachment container.
+	defer func() {
+		if recover() != nil {
+			result = nil
+		}
+	}()
+	if !validTNEFEnvelope(data) {
+		return nil
+	}
+
 	tnefData, err := tnef.Decode(data)
 	if err != nil {
 		return nil
@@ -190,7 +215,7 @@ func DecodeTNEFAttachments(data []byte) []TNEFAttachment {
 
 // extractFromTNEF extracts attachments from a TNEF (winmail.dat) file
 func (e *AttachmentExtractor) extractFromTNEF(messageID string, reader io.Reader) []*AttachmentData {
-	data, err := io.ReadAll(reader)
+	data, err := readAttachmentContent(reader)
 	if err != nil {
 		return nil
 	}
@@ -213,31 +238,34 @@ func (e *AttachmentExtractor) extractFromTNEF(messageID string, reader io.Reader
 	return attachments
 }
 
-// decodeContent decodes content based on transfer encoding
-func decodeContent(content []byte, encoding string) []byte {
-	switch encoding {
-	case "base64":
-		decoded := make([]byte, base64.StdEncoding.DecodedLen(len(content)))
-		n, err := base64.StdEncoding.Decode(decoded, content)
-		if err != nil {
-			return content
-		}
-		return decoded[:n]
-	case "quoted-printable":
-		reader := quotedprintable.NewReader(bytes.NewReader(content))
-		decoded, err := io.ReadAll(reader)
-		if err != nil {
-			return content
-		}
-		return decoded
-	default:
-		return content
-	}
-}
-
 // decodeRFC2047 decodes RFC 2047 encoded strings (like filenames)
 func decodeRFC2047(s string) (string, error) {
 	dec := new(mime.WordDecoder)
 	return dec.DecodeHeader(s)
 }
 
+// Validate lengths and property counts before entering the legacy decoder.
+// In particular, its MAPI loop keeps iterating after the input is exhausted.
+func validTNEFEnvelope(data []byte) bool {
+	if len(data) < 6 || len(data) > maxAttachmentBytes || binary.LittleEndian.Uint32(data[:4]) != 0x223e9f78 {
+		return false
+	}
+	for offset := 6; offset < len(data); {
+		if len(data)-offset < 11 {
+			return false
+		}
+		size := uint64(binary.LittleEndian.Uint32(data[offset+5 : offset+9]))
+		if size > uint64(len(data)-offset-11) {
+			return false
+		}
+		name := binary.LittleEndian.Uint16(data[offset+1 : offset+3])
+		if name == 0x9003 {
+			payload := data[offset+9 : offset+9+int(size)]
+			if len(payload) < 4 || uint64(binary.LittleEndian.Uint32(payload[:4])) > uint64((len(payload)-4)/4) {
+				return false
+			}
+		}
+		offset += 11 + int(size)
+	}
+	return true
+}

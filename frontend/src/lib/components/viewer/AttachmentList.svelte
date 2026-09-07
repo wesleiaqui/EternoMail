@@ -45,15 +45,18 @@
   })
 
   async function loadAttachments(msgId: string) {
+    attachments = []
     loading = true
     try {
       const result = await GetAttachments(msgId)
+      if (messageId !== msgId) return
       attachments = result || []
     } catch (err) {
       console.error('Failed to load attachments:', err)
+      if (messageId !== msgId) return
       attachments = []
     } finally {
-      loading = false
+      if (messageId === msgId) loading = false
     }
   }
 

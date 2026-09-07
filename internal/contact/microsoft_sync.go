@@ -2,6 +2,7 @@
 package contact
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 // MicrosoftContactsSyncer syncs contacts from Microsoft Graph API.
 // Uses the /me/contacts endpoint to fetch all user's Outlook contacts.
 type MicrosoftContactsSyncer struct {
+	ctx        context.Context
 	httpClient *http.Client
 	log        zerolog.Logger
 }
@@ -52,7 +54,7 @@ func (s *MicrosoftContactsSyncer) SyncContactsDelta(accessToken, deltaLink strin
 	var finalDeltaLink string
 
 	for nextLink != "" {
-		req, err := http.NewRequest("GET", nextLink, nil)
+		req, err := http.NewRequestWithContext(s.syncContext(), "GET", nextLink, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create request: %w", err)
 		}
@@ -65,7 +67,7 @@ func (s *MicrosoftContactsSyncer) SyncContactsDelta(accessToken, deltaLink strin
 		}
 
 		// Handle 410 Gone or 404 - delta token expired, need full sync
-		if resp.StatusCode == http.StatusGone || (resp.StatusCode == http.StatusNotFound && !isFullSync) {
+		if !isFullSync && (resp.StatusCode == http.StatusGone || resp.StatusCode == http.StatusNotFound) {
 			resp.Body.Close()
 			s.log.Warn().Msg("Microsoft delta link expired, falling back to full sync")
 			return s.SyncContactsDelta(accessToken, "")
@@ -169,7 +171,7 @@ func (s *MicrosoftContactsSyncer) enrichPhotos(accessToken string, records []Syn
 			continue
 		}
 		photoURL := "https://graph.microsoft.com/v1.0/me/contacts/" + url.PathEscape(sr.RemoteID) + "/photo/$value"
-		req, err := http.NewRequest("GET", photoURL, nil)
+		req, err := http.NewRequestWithContext(s.syncContext(), "GET", photoURL, nil)
 		if err != nil {
 			continue
 		}
@@ -287,4 +289,18 @@ type msGraphAddress struct {
 	State           string `json:"state"`
 	PostalCode      string `json:"postalCode"`
 	CountryOrRegion string `json:"countryOrRegion"`
+}
+
+// SyncContactsDeltaContext preserves the caller's cancellation across pages,
+// expired-token fallback and photo downloads without mutating the shared syncer.
+func (s *MicrosoftContactsSyncer) SyncContactsDeltaContext(ctx context.Context, accessToken, cursor string) (*SyncResult, error) {
+	scoped := *s
+	scoped.ctx = ctx
+	return scoped.SyncContactsDelta(accessToken, cursor)
+}
+func (s *MicrosoftContactsSyncer) syncContext() context.Context {
+	if s.ctx != nil {
+		return s.ctx
+	}
+	return context.Background()
 }

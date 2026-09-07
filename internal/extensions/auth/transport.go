@@ -33,7 +33,8 @@ func (t *bearerRefreshTransport) RoundTrip(req *http.Request) (*http.Response, e
 		return nil, fmt.Errorf("auth broker: read tokens: %w", err)
 	}
 
-	resp, err := t.do(req, tokens.AccessToken)
+	usedToken := tokens.AccessToken
+	resp, err := t.do(req, usedToken)
 	if err != nil {
 		return nil, err
 	}
@@ -41,8 +42,13 @@ func (t *bearerRefreshTransport) RoundTrip(req *http.Request) (*http.Response, e
 		return resp, nil
 	}
 
-	// 401: drain + close body before retrying
-	_, _ = io.Copy(io.Discard, resp.Body)
+	// A consumed streaming body cannot be retried safely. Return the original
+	// 401 to the caller instead of sending an empty/truncated mutation.
+	if req.Body != nil && req.Body != http.NoBody && req.GetBody == nil {
+		return resp, nil
+	}
+	// Bound draining a hostile 401 body; connection reuse is best-effort.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
 	_ = resp.Body.Close()
 
 	// Refresh under lock to avoid thundering herd.
@@ -53,6 +59,10 @@ func (t *bearerRefreshTransport) RoundTrip(req *http.Request) (*http.Response, e
 	tokens, err = t.credStore.GetOAuthTokensForClientConfig(t.accountID, t.clientConfigID)
 	if err != nil {
 		return nil, fmt.Errorf("auth broker: re-read tokens before refresh: %w", err)
+	}
+
+	if tokens.AccessToken != usedToken {
+		return t.retry(req, tokens.AccessToken)
 	}
 
 	provider, err := t.resolveProvider()
@@ -72,7 +82,7 @@ func (t *bearerRefreshTransport) RoundTrip(req *http.Request) (*http.Response, e
 		return nil, fmt.Errorf("auth broker: persist refreshed tokens: %w", err)
 	}
 
-	return t.do(req, refreshed.AccessToken)
+	return t.retry(req, refreshed.AccessToken)
 }
 
 // resolveProvider returns the OAuth2 provider config for refreshing this account's
@@ -115,4 +125,16 @@ func (t *bearerRefreshTransport) do(req *http.Request, accessToken string) (*htt
 		base = http.DefaultTransport
 	}
 	return base.RoundTrip(cloned)
+}
+
+func (t *bearerRefreshTransport) retry(req *http.Request, token string) (*http.Response, error) {
+	replay := req.Clone(req.Context())
+	if req.Body != nil && req.Body != http.NoBody {
+		body, err := req.GetBody()
+		if err != nil {
+			return nil, fmt.Errorf("auth broker: replay request: %w", err)
+		}
+		replay.Body = body
+	}
+	return t.do(replay, token)
 }

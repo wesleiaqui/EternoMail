@@ -62,13 +62,14 @@ type IdleConnection struct {
 	log            zerolog.Logger
 
 	// State
-	mu      sync.Mutex
-	running bool
-	stopCh  chan struct{}
-	doneCh  chan struct{} // Closed when goroutine exits
-	folder  string        // Currently watching folder (usually "INBOX")
-	client  *imapclient.Client
-	events  chan<- MailEvent
+	mu       sync.Mutex
+	running  bool
+	stopping bool
+	stopCh   chan struct{}
+	doneCh   chan struct{} // Closed when goroutine exits
+	folder   string        // Currently watching folder (usually "INBOX")
+	client   *imapclient.Client
+	events   chan<- MailEvent
 }
 
 // newIdleConnection creates a new IDLE connection for an account
@@ -105,6 +106,7 @@ func (ic *IdleConnection) Start(ctx context.Context, events chan<- MailEvent) {
 		return
 	}
 	ic.running = true
+	ic.stopping = false
 	ic.stopCh = make(chan struct{})
 	ic.doneCh = make(chan struct{})
 	ic.events = events
@@ -121,8 +123,10 @@ func (ic *IdleConnection) Stop() {
 		return
 	}
 
-	ic.running = false
-	close(ic.stopCh)
+	if !ic.stopping {
+		ic.stopping = true
+		close(ic.stopCh)
+	}
 	doneCh := ic.doneCh
 	timeout := ic.config.ShutdownTimeout
 	ic.mu.Unlock()
@@ -159,7 +163,7 @@ func (ic *IdleConnection) run(ctx context.Context) {
 		ic.mu.Unlock()
 	}()
 
-	backoff := ic.config.ReconnectBackoff
+	backoff := min(ic.config.ReconnectBackoff, ic.config.MaxReconnectBackoff)
 	attempts := 0
 
 	for {
@@ -199,7 +203,7 @@ func (ic *IdleConnection) run(ctx context.Context) {
 
 			select {
 			case <-time.After(backoff):
-				backoff = min(backoff*2, ic.config.MaxReconnectBackoff)
+				backoff = nextReconnectBackoff(backoff, ic.config.MaxReconnectBackoff)
 				continue
 			case <-ctx.Done():
 				return
@@ -209,7 +213,7 @@ func (ic *IdleConnection) run(ctx context.Context) {
 		}
 
 		// Reset backoff on successful connection
-		backoff = ic.config.ReconnectBackoff
+		backoff = min(ic.config.ReconnectBackoff, ic.config.MaxReconnectBackoff)
 		attempts = 0
 
 		// Run IDLE cycle
@@ -273,7 +277,10 @@ func (ic *IdleConnection) ensureConnected(ctx context.Context) error {
 			// re-sync flags (debounced). We must consume the streamed data.
 			Fetch: func(msg *imapclient.FetchMessageData) {
 				seqNum := msg.SeqNum
-				_, _ = msg.Collect()
+				if _, err := msg.Collect(); err != nil {
+					ic.log.Warn().Err(err).Msg("Failed to collect unsolicited FETCH")
+					return
+				}
 				ic.log.Debug().Uint32("seqNum", seqNum).Msg("Flags changed notification (FETCH)")
 				ic.sendEvent(MailEvent{
 					Type:      EventFlagsChanged,
@@ -559,11 +566,7 @@ func (m *IdleManager) StartAccount(accountID, accountName string) {
 	conn.isConnected = m.isConnected
 	m.connections[accountID] = conn
 
-	m.wg.Add(1)
-	go func() {
-		defer m.wg.Done()
-		conn.Start(m.ctx, m.events)
-	}()
+	conn.Start(m.ctx, m.events)
 
 	m.log.Info().Str("account_id", accountID).Msg("Started IDLE for account")
 }
@@ -584,4 +587,12 @@ func (m *IdleManager) StopAccount(accountID string) {
 func (m *IdleManager) RestartAccount(accountID, accountName string) {
 	m.StopAccount(accountID)
 	m.StartAccount(accountID, accountName)
+}
+
+// nextReconnectBackoff doubles without overflowing time.Duration.
+func nextReconnectBackoff(current, maximum time.Duration) time.Duration {
+	if current >= maximum-current {
+		return maximum
+	}
+	return current * 2
 }

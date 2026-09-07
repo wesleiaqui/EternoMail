@@ -1,6 +1,7 @@
 <script lang="ts">
   // Load offline icon data before anything else
   import './lib/iconify-offline'
+  import { clearCache as clearInlineAttachmentCache } from './lib/stores/inlineAttachmentCache'
 
   import { onMount, tick, untrack } from 'svelte'
   import Icon from '@iconify/svelte'
@@ -606,6 +607,7 @@
     folderName: string,
     folderType: string
   ) {
+    if (selectedAccountId !== accountId) clearInlineAttachmentCache()
     selectedAccountId = accountId
     selectedFolderId = folderId
     selectedFolderName = folderName
@@ -636,6 +638,7 @@
     folderName: string,
     folderType: string
   ) {
+    if (selectedAccountId !== accountId) clearInlineAttachmentCache()
     selectedAccountId = accountId
     selectedFolderId = folderId
     selectedFolderName = folderName
@@ -666,6 +669,7 @@
   // Top-level special folders are synthetic aggregate views; child rows keep
   // selecting their real account/folder pair.
   function handleUnifiedSpecialFolderSelect(folderType: string, displayName: string) {
+    clearInlineAttachmentCache()
     selectedAccountId = 'unified'
     selectedFolderId = folderType
     // Sidebar passes its stable translation key. Persist the type as the

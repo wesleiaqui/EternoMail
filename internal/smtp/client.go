@@ -177,7 +177,8 @@ func (c *Client) Connect() error {
 			}
 			c.log.Debug().Msg("Upgraded connection to TLS via STARTTLS")
 		} else {
-			c.log.Warn().Msg("STARTTLS not supported by server")
+			c.client.Close()
+			return fmt.Errorf("STARTTLS required but not announced by server %s: refusing plaintext connection", c.config.Host)
 		}
 	}
 

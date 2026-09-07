@@ -57,6 +57,9 @@ func (tm *TokenManager) Validate(provided string) bool {
 	tm.mu.RUnlock()
 
 	// Use constant-time comparison to prevent timing attacks
+	if expected == "" || provided == "" {
+		return false
+	}
 	return subtle.ConstantTimeCompare([]byte(expected), []byte(provided)) == 1
 }
 

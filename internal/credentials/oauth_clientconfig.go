@@ -132,8 +132,8 @@ func (s *Store) GetOAuthTokensForClientConfig(accountID, clientConfigID string) 
 // account (e.g., deleting Calendar tokens leaves Mail tokens intact).
 func (s *Store) DeleteOAuthTokensForClientConfig(accountID, clientConfigID string) error {
 	if s.keyringEnabled {
-		_ = gokeyring.Delete(serviceName, accountID+":"+clientConfigID+":access_token")
-		_ = gokeyring.Delete(serviceName, accountID+":"+clientConfigID+":refresh_token")
+		s.deleteKeyringEntry(accountID + ":" + clientConfigID + ":access_token")
+		s.deleteKeyringEntry(accountID + ":" + clientConfigID + ":refresh_token")
 	}
 
 	_, err := s.db.Exec(
@@ -300,6 +300,10 @@ func (s *Store) getOAuthRefreshTokenForClientConfig(accountID, clientConfigID st
 // always runs first and must precede any token-write helper for a non-mail
 // slot.
 func (s *Store) setEncryptedTokenColumnForClientConfig(accountID, clientConfigID, column, token string) error {
+	query, err := tokenColumnQuery(column, true)
+	if err != nil {
+		return err
+	}
 	encrypted, err := s.encryptor.Encrypt(token)
 	if err != nil {
 		return fmt.Errorf("encrypt %s for %s/%s: %w", column, accountID, clientConfigID, err)
@@ -307,13 +311,16 @@ func (s *Store) setEncryptedTokenColumnForClientConfig(accountID, clientConfigID
 	// column is a fixed identifier (NOT user input) — only this file calls
 	// it and the two valid values are the literal strings above.
 	res, err := s.db.Exec(
-		"UPDATE oauth_tokens SET "+column+" = ? WHERE account_id = ? AND client_config_id = ?",
+		query,
 		encrypted, accountID, clientConfigID,
 	)
 	if err != nil {
 		return fmt.Errorf("store encrypted %s: %w", column, err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check stored token row: %w", err)
+	}
 	if n == 0 {
 		return fmt.Errorf("oauth_tokens row missing for %s/%s (metadata UPSERT must run first)", accountID, clientConfigID)
 	}
@@ -325,9 +332,13 @@ func (s *Store) setEncryptedTokenColumnForClientConfig(accountID, clientConfigID
 // the row doesn't exist OR when the column is NULL/empty (i.e., keyring
 // path was used at write time).
 func (s *Store) getEncryptedTokenColumnForClientConfig(accountID, clientConfigID, column string) (string, error) {
+	query, err := tokenColumnQuery(column, false)
+	if err != nil {
+		return "", err
+	}
 	var encrypted sql.NullString
-	err := s.db.QueryRow(
-		"SELECT "+column+" FROM oauth_tokens WHERE account_id = ? AND client_config_id = ?",
+	err = s.db.QueryRow(
+		query,
 		accountID, clientConfigID,
 	).Scan(&encrypted)
 	if err == sql.ErrNoRows {
@@ -344,4 +355,22 @@ func (s *Store) getEncryptedTokenColumnForClientConfig(accountID, clientConfigID
 		return "", fmt.Errorf("decrypt %s: %w", column, err)
 	}
 	return plaintext, nil
+}
+
+// SQL identifiers cannot be bound as values; select only complete static queries.
+func tokenColumnQuery(column string, write bool) (string, error) {
+	switch column {
+	case "encrypted_access_token":
+		if write {
+			return "UPDATE oauth_tokens SET encrypted_access_token = ? WHERE account_id = ? AND client_config_id = ?", nil
+		}
+		return "SELECT encrypted_access_token FROM oauth_tokens WHERE account_id = ? AND client_config_id = ?", nil
+	case "encrypted_refresh_token":
+		if write {
+			return "UPDATE oauth_tokens SET encrypted_refresh_token = ? WHERE account_id = ? AND client_config_id = ?", nil
+		}
+		return "SELECT encrypted_refresh_token FROM oauth_tokens WHERE account_id = ? AND client_config_id = ?", nil
+	default:
+		return "", fmt.Errorf("unsupported token column")
+	}
 }

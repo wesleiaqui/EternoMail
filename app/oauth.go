@@ -244,6 +244,7 @@ func (a *App) CompleteOAuthAccountSetup(provider, email, accountName, displayNam
 	a.persistOAuthStableID(acc.ID, a.pendingOAuthTokens)
 
 	// Clear pending tokens
+	a.pendingOAuthTokens.Clear()
 	a.pendingOAuthTokens = nil
 	a.pendingOAuthEmail = ""
 
@@ -434,6 +435,7 @@ func (a *App) CompleteCustomOAuthAccountSetup(config account.AccountConfig) (*ac
 	// Capture the stable account identity (oid+tid) for incremental-consent validation.
 	a.persistOAuthStableID(acc.ID, a.pendingOAuthTokens)
 
+	a.pendingOAuthTokens.Clear()
 	a.pendingOAuthTokens = nil
 	a.pendingOAuthEmail = ""
 	a.pendingCustomProvider = nil
@@ -516,6 +518,7 @@ func (a *App) SavePendingOAuthTokens(accountID string) error {
 		Msg("Pending OAuth tokens saved to account")
 
 	// Clear pending tokens
+	a.pendingOAuthTokens.Clear()
 	a.pendingOAuthTokens = nil
 	a.pendingOAuthEmail = ""
 
@@ -530,6 +533,7 @@ func (a *App) CancelOAuthFlow() {
 	a.oauth2Manager.CancelAuthFlow()
 
 	// Clear any pending tokens
+	a.pendingOAuthTokens.Clear()
 	a.pendingOAuthTokens = nil
 	a.pendingOAuthEmail = ""
 

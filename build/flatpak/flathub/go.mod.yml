@@ -98,35 +98,35 @@
   type: archive
   url: https://proxy.golang.org/golang.org/x/crypto/@v/v0.53.0.zip
 - dest: vendor/golang.org/x/image
-  sha256: dfa6f0db97442ba5f22a385e8f226334f79373cd59d2e3b91f8cdaa1d122d2be
+  sha256: e6988c7fd5f3ec02ae27d07e6ae6542e0d9ed7a6844b4e6a952518eafc618d8e
   strip-components: 3
   type: archive
-  url: https://proxy.golang.org/golang.org/x/image/@v/v0.41.0.zip
+  url: https://proxy.golang.org/golang.org/x/image/@v/v0.45.0.zip
 - dest: vendor/golang.org/x/net
   sha256: bbc975b3ec9cd86892cfc515badc125657e135c00162d0da5de33f6d07930464
   strip-components: 3
   type: archive
   url: https://proxy.golang.org/golang.org/x/net/@v/v0.56.0.zip
 - dest: vendor/golang.org/x/sys
-  sha256: 36dc83b6bc5884d260cdbd9d09e597b1eed64d15dfdc374ca6e31aef99d533d7
+  sha256: cdac013ddced0262926ec29ffcda645da39670e61c7e5b761e572b6b1809bb1b
   strip-components: 3
   type: archive
-  url: https://proxy.golang.org/golang.org/x/sys/@v/v0.46.0.zip
+  url: https://proxy.golang.org/golang.org/x/sys/@v/v0.47.0.zip
 - dest: vendor/golang.org/x/text
-  sha256: cbfa33111dfa6cbafef63103b82c544d35df425824ac94ea19629a12bdbf0523
+  sha256: e63f35daaae749d0ffff97a295ad8f4837a662938a46b7a87f18a88e85a5cbf9
   strip-components: 3
   type: archive
-  url: https://proxy.golang.org/golang.org/x/text/@v/v0.39.0.zip
+  url: https://proxy.golang.org/golang.org/x/text/@v/v0.41.0.zip
 - dest: vendor/modernc.org/sqlite
   sha256: eca92adf703ca9be15a14df79f9a739331b8fc9fa8eaa8d016a78d963e5863c6
   strip-components: 2
   type: archive
   url: https://proxy.golang.org/modernc.org/sqlite/@v/v1.42.2.zip
 - dest: vendor/software.sslmate.com/src/go-pkcs12
-  sha256: 9665bc3461beb6f36f2d1b8ce3e1d597c165c9d829d4217621b1c6a8a12bc647
+  sha256: 266282fde9c58ccbff6ad01f4f5987fdea92016c79b3d311bdf8abb34a7a5fe5
   strip-components: 3
   type: archive
-  url: https://proxy.golang.org/software.sslmate.com/src/go-pkcs12/@v/v0.7.0.zip
+  url: https://proxy.golang.org/software.sslmate.com/src/go-pkcs12/@v/v0.7.2.zip
 - dest: vendor/al.essio.dev/pkg/shellescape
   sha256: 9bd1a52897da18bc38686340bda65cbbb628588214e9b3a5bd464adb3e6e2295
   strip-components: 3

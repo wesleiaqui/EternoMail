@@ -3,7 +3,10 @@ package credentials
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/hkdb/aerion/internal/crypto"
 	"github.com/hkdb/aerion/internal/logging"
@@ -25,9 +28,24 @@ type Store struct {
 // It tries to use the OS keyring, falling back to encrypted database storage
 func NewStore(db *sql.DB, dataDir string) (*Store, error) {
 	log := logging.WithComponent("credentials")
+	lock, err := crypto.LockCredentialMigration(dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("lock credential migration: %w", err)
+	}
+	defer lock.Close()
+
+	// A missing key is only normal for an empty credential store. Generating a
+	// replacement would permanently orphan existing fallback credentials.
+	if _, err := os.Lstat(filepath.Join(dataDir, "device.key")); os.IsNotExist(err) {
+		if err := rejectMissingCredentialKey(db); err != nil {
+			return nil, err
+		}
+	} else if err != nil {
+		return nil, fmt.Errorf("inspect credential key: %w", err)
+	}
 
 	// Create encryptor for fallback storage
-	encryptor, err := crypto.NewEncryptor(dataDir)
+	encryptor, legacyEncryptor, keyVersion, err := crypto.NewEncryptor(dataDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create encryptor: %w", err)
 	}
@@ -40,12 +58,22 @@ func NewStore(db *sql.DB, dataDir string) (*Store, error) {
 		log.Warn().Msg("OS keyring not available, using encrypted database storage")
 	}
 
-	return &Store{
+	store := &Store{
 		db:             db,
 		encryptor:      encryptor,
 		keyringEnabled: keyringEnabled,
 		log:            log,
-	}, nil
+	}
+	if keyVersion == crypto.KeyVersionLegacy {
+		if err := store.reencryptAllCredentials(legacyEncryptor, encryptor); err != nil {
+			return nil, fmt.Errorf("credential re-encryption failed after key migration: %w", err)
+		}
+		if err := crypto.CompleteKeyMigration(dataDir); err != nil {
+			return nil, fmt.Errorf("finalize credential key migration: %w", err)
+		}
+		log.Info().Msg("All database credentials re-encrypted with new key derivation (v2)")
+	}
+	return store, nil
 }
 
 // testKeyring checks if the OS keyring is available and functional
@@ -60,7 +88,10 @@ func testKeyring() bool {
 	}
 
 	// Clean up test value
-	_ = gokeyring.Delete(serviceName, testKey)
+	if err := gokeyring.Delete(serviceName, testKey); err != nil {
+		log := logging.WithComponent("credentials")
+		log.Warn().Msg("Failed to remove keyring probe")
+	}
 
 	return true
 }
@@ -145,7 +176,7 @@ func (s *Store) GetPassword(accountID string) (string, error) {
 func (s *Store) DeletePassword(accountID string) error {
 	// Delete from OS keyring
 	if s.keyringEnabled {
-		_ = gokeyring.Delete(serviceName, accountID)
+		s.deleteKeyringEntry(accountID)
 	}
 
 	// Delete from database
@@ -156,16 +187,12 @@ func (s *Store) DeletePassword(accountID string) error {
 
 // clearDBPassword clears the encrypted password from the database
 func (s *Store) clearDBPassword(accountID string) {
-	_, _ = s.db.Exec("UPDATE accounts SET encrypted_password = NULL WHERE id = ?", accountID)
+	s.execCleanup("UPDATE accounts SET encrypted_password = NULL WHERE id = ?", accountID)
 }
 
 // DeleteAllCredentials removes all credentials for an account
 func (s *Store) DeleteAllCredentials(accountID string) error {
-	_ = s.DeletePassword(accountID)
-	_ = s.DeleteSMTPPassword(accountID)
-	_ = s.DeleteOAuthTokens(accountID)
-	_ = s.DeleteCustomOAuthProvider(accountID)
-	return nil
+	return errors.Join(s.DeletePassword(accountID), s.DeleteSMTPPassword(accountID), s.DeleteOAuthTokens(accountID), s.DeleteCustomOAuthProvider(accountID))
 }
 
 // smtpPasswordKeyringKey returns the keyring slot used for the
@@ -249,7 +276,7 @@ func (s *Store) GetSMTPPassword(accountID string) (string, error) {
 // Idempotent.
 func (s *Store) DeleteSMTPPassword(accountID string) error {
 	if s.keyringEnabled {
-		_ = gokeyring.Delete(serviceName, smtpPasswordKeyringKey(accountID))
+		s.deleteKeyringEntry(smtpPasswordKeyringKey(accountID))
 	}
 	s.clearDBSMTPPassword(accountID)
 	return nil
@@ -257,7 +284,7 @@ func (s *Store) DeleteSMTPPassword(accountID string) error {
 
 // clearDBSMTPPassword clears the encrypted SMTP password from the database.
 func (s *Store) clearDBSMTPPassword(accountID string) {
-	_, _ = s.db.Exec("UPDATE accounts SET encrypted_smtp_password = NULL WHERE id = ?", accountID)
+	s.execCleanup("UPDATE accounts SET encrypted_smtp_password = NULL WHERE id = ?", accountID)
 }
 
 // IsKeyringEnabled returns whether the OS keyring is being used
@@ -348,7 +375,7 @@ func (s *Store) DeleteSMIMEPrivateKey(certID string) error {
 	keyringKey := "smime:" + certID + ":private_key"
 
 	if s.keyringEnabled {
-		_ = gokeyring.Delete(serviceName, keyringKey)
+		s.deleteKeyringEntry(keyringKey)
 	}
 
 	s.clearSMIMEDBPrivateKey(certID)
@@ -357,7 +384,7 @@ func (s *Store) DeleteSMIMEPrivateKey(certID string) error {
 
 // clearSMIMEDBPrivateKey clears the encrypted private key from the database
 func (s *Store) clearSMIMEDBPrivateKey(certID string) {
-	_, _ = s.db.Exec("UPDATE smime_certificates SET encrypted_private_key = NULL WHERE id = ?", certID)
+	s.execCleanup("UPDATE smime_certificates SET encrypted_private_key = NULL WHERE id = ?", certID)
 }
 
 // SetPGPPrivateKey stores a PGP private key for a keypair
@@ -443,7 +470,7 @@ func (s *Store) DeletePGPPrivateKey(keyID string) error {
 	keyringKey := "pgp:" + keyID + ":private_key"
 
 	if s.keyringEnabled {
-		_ = gokeyring.Delete(serviceName, keyringKey)
+		s.deleteKeyringEntry(keyringKey)
 	}
 
 	s.clearPGPDBPrivateKey(keyID)
@@ -452,7 +479,7 @@ func (s *Store) DeletePGPPrivateKey(keyID string) error {
 
 // clearPGPDBPrivateKey clears the encrypted private key from the database
 func (s *Store) clearPGPDBPrivateKey(keyID string) {
-	_, _ = s.db.Exec("UPDATE pgp_keys SET encrypted_private_key = NULL WHERE id = ?", keyID)
+	s.execCleanup("UPDATE pgp_keys SET encrypted_private_key = NULL WHERE id = ?", keyID)
 }
 
 // --- Extension-secret storage (host-internal helpers used by app/coreimpl.go
@@ -525,7 +552,7 @@ func (s *Store) SetExtensionSecret(extension, key, value string) error {
 		// Roll the keyring entry back if we wrote one, so on-disk state stays
 		// consistent.
 		if storedInKeyring {
-			_ = gokeyring.Delete(serviceName, "ext:"+extension+":"+key)
+			s.deleteKeyringEntry("ext:" + extension + ":" + key)
 		}
 		return fmt.Errorf("persist extension secret: %w", err)
 	}
@@ -725,7 +752,7 @@ func (s *Store) GetCardDAVPassword(sourceID string) (string, error) {
 func (s *Store) DeleteCardDAVPassword(sourceID string) error {
 	// Delete from OS keyring
 	if s.keyringEnabled {
-		_ = gokeyring.Delete(serviceName, "carddav:"+sourceID)
+		s.deleteKeyringEntry("carddav:" + sourceID)
 	}
 
 	// Delete from database
@@ -736,5 +763,17 @@ func (s *Store) DeleteCardDAVPassword(sourceID string) error {
 
 // clearCardDAVDBPassword clears the encrypted password from the contact_sources table
 func (s *Store) clearCardDAVDBPassword(sourceID string) {
-	_, _ = s.db.Exec("UPDATE contact_sources SET encrypted_password = NULL WHERE id = ?", sourceID)
+	s.execCleanup("UPDATE contact_sources SET encrypted_password = NULL WHERE id = ?", sourceID)
+}
+
+// execCleanup makes best-effort credential cleanup failures observable.
+func (s *Store) execCleanup(query string, args ...any) {
+	if _, err := s.db.Exec(query, args...); err != nil {
+		s.log.Warn().Err(err).Msg("Failed to clear credential database entry")
+	}
+}
+func (s *Store) deleteKeyringEntry(key string) {
+	if err := gokeyring.Delete(serviceName, key); err != nil && !errors.Is(err, gokeyring.ErrNotFound) {
+		s.log.Warn().Msg("Failed to delete credential from OS keyring")
+	}
 }

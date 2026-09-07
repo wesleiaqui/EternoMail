@@ -89,7 +89,7 @@ func (e *Engine) recoverFailedHeaderBatch(ctx context.Context, client *imapclien
 				internalDate = data.Time
 			case imapclient.FetchItemDataBodySection:
 				if data.Literal != nil {
-					b, rerr := io.ReadAll(data.Literal)
+					b, rerr := io.ReadAll(io.LimitReader(data.Literal, maxMessageSize))
 					if rerr != nil {
 						e.log.Warn().Err(rerr).Uint32("uid", uint32(fetchedUID)).Msg("Failed to read header literal in recovery")
 						continue
@@ -158,6 +158,7 @@ func (e *Engine) recoverFailedHeaderBatch(ctx context.Context, client *imapclien
 // bytes, mirroring what applyEnvelopeToMessage does from an IMAP ENVELOPE. Used by the
 // recovery path when the server's ENVELOPE serialization is malformed.
 func parseHeadersIntoMessage(m *message.Message, headerBytes []byte) error {
+	defer sanitizeMessageHeaders(m)
 	if len(headerBytes) == 0 {
 		return nil
 	}
@@ -218,11 +219,11 @@ func mailAddressListToJSON(addrs []*mail.Address) string {
 	list := make([]addr, len(addrs))
 	for i, a := range addrs {
 		list[i] = addr{
-			Name:  decodeMIMEWord(a.Name),
-			Email: a.Address,
+			Name:  sanitizeHeader(decodeMIMEWord(a.Name)),
+			Email: sanitizeHeader(a.Address),
 		}
 	}
 
 	data, _ := json.Marshal(list)
-	return string(data)
+	return sanitizeAddressJSON(string(data))
 }

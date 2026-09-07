@@ -264,7 +264,12 @@ func (v *Verifier) verifyOpaqueSigned(raw []byte) (*SignatureResult, []byte) {
 // verifyPKCS7 verifies a parsed PKCS#7 object and caches the signer cert
 func (v *Verifier) verifyPKCS7(p7 *pkcs7.PKCS7) *SignatureResult {
 	// Try verification against system trust roots
-	err := p7.Verify()
+	roots, sysErr := x509.SystemCertPool()
+	if sysErr != nil {
+		v.log.Warn().Err(sysErr).Msg("Failed to load system cert pool; using empty pool")
+		roots = x509.NewCertPool()
+	}
+	err := p7.VerifyWithChain(roots)
 
 	// Extract signer information regardless of verification result
 	signerEmail, signerName := v.extractSignerInfo(p7)
@@ -277,6 +282,16 @@ func (v *Verifier) verifyPKCS7(p7 *pkcs7.PKCS7) *SignatureResult {
 		// Common certificate verification errors indicate untrusted/expired certs
 		if strings.Contains(errStr, "certificate signed by unknown authority") ||
 			strings.Contains(errStr, "x509: certificate") {
+			// Chain verification can fail before the cryptographic signature is
+			// checked. Validate it before classifying or caching an exception.
+			if signatureErr := p7.Verify(); signatureErr != nil {
+				return &SignatureResult{
+					Status:       StatusInvalid,
+					SignerEmail:  signerEmail,
+					SignerName:   signerName,
+					ErrorMessage: fmt.Sprintf("signature verification failed: %v", signatureErr),
+				}
+			}
 			// Try to determine if cert is expired
 			if v.isSignerCertExpired(p7) {
 				v.cacheSenderCert(p7, signerEmail)
@@ -288,8 +303,8 @@ func (v *Verifier) verifyPKCS7(p7 *pkcs7.PKCS7) *SignatureResult {
 				}
 			}
 			// Check if the leaf cert is self-signed (Issuer == Subject)
-			v.cacheSenderCert(p7, signerEmail)
 			if v.isSignerCertSelfSigned(p7) {
+				v.cacheSenderCert(p7, signerEmail)
 				return &SignatureResult{
 					Status:       StatusSelfSigned,
 					SignerEmail:  signerEmail,
@@ -314,9 +329,7 @@ func (v *Verifier) verifyPKCS7(p7 *pkcs7.PKCS7) *SignatureResult {
 		}
 	}
 
-	// Signature verified successfully — but pkcs7.Verify() trusts certs
-	// embedded in the PKCS7 structure, so a self-signed cert will pass.
-	// Check for self-signed before reporting as fully trusted.
+	// The signature and its chain to a system trust root verified successfully.
 	v.cacheSenderCert(p7, signerEmail)
 	if v.isSignerCertSelfSigned(p7) {
 		return &SignatureResult{

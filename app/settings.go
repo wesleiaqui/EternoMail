@@ -407,6 +407,9 @@ func (a *App) SendReadReceipt(accountID, messageID string) error {
 	if msg == nil {
 		return fmt.Errorf("message not found: %s", messageID)
 	}
+	if msg.AccountID != accountID {
+		return fmt.Errorf("message belongs to another account")
+	}
 
 	// Check if read receipt is requested
 	if msg.ReadReceiptTo == "" {
@@ -517,6 +520,14 @@ func (a *App) SendReadReceipt(accountID, messageID string) error {
 
 // IgnoreReadReceipt marks a message's read receipt request as ignored (handled without sending)
 func (a *App) IgnoreReadReceipt(accountID, messageID string) error {
+	msg, err := a.messageStore.Get(messageID)
+	if err != nil {
+		return err
+	}
+	if msg == nil || msg.AccountID != accountID {
+		return fmt.Errorf("message does not belong to account")
+	}
+
 	log := logging.WithComponent("app")
 
 	// Mark as handled without sending

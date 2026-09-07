@@ -295,8 +295,12 @@ func (e *Engine) SyncMessages(ctx context.Context, accountID, folderID string, s
 		if isGmail {
 			msg, msgErr := e.messageStore.GetByUID(folderID, uid)
 			if msgErr == nil && msg != nil && msg.MessageID != "" {
-				inTrash, _ := e.messageStore.ExistsInFolder(msg.MessageID, string(folder.TypeTrash), accountID)
-				inSpam, _ := e.messageStore.ExistsInFolder(msg.MessageID, string(folder.TypeSpam), accountID)
+				inTrash, trashErr := e.messageStore.ExistsInFolder(msg.MessageID, string(folder.TypeTrash), accountID)
+				inSpam, spamErr := e.messageStore.ExistsInFolder(msg.MessageID, string(folder.TypeSpam), accountID)
+				if trashErr != nil || spamErr != nil {
+					e.log.Warn().Err(trashErr).AnErr("spam_error", spamErr).Msg("Failed to check Gmail message location; preserving local message")
+					continue
+				}
 				if inTrash || inSpam {
 					e.log.Debug().Uint32("uid", uid).Str("message_ref", logging.ShortHash(msg.MessageID)).
 						Msg("Gmail: skipping local delete — message hidden by Trash/Spam label")
@@ -944,7 +948,7 @@ func (e *Engine) fetchMessageHeaders(ctx context.Context, client *imapclient.Cli
 				// Read header bytes from literal reader
 				if data.Literal != nil {
 					var err error
-					headerBytes, err = io.ReadAll(data.Literal)
+					headerBytes, err = io.ReadAll(io.LimitReader(data.Literal, maxMessageSize))
 					if err != nil {
 						e.log.Warn().Err(err).Uint32("uid", uint32(fetchedUID)).Msg("Failed to read header literal")
 					}

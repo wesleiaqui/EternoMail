@@ -88,6 +88,9 @@ func (e *Engine) IMAPSearch(ctx context.Context, accountID, folderID, query stri
 	if f == nil {
 		return nil, fmt.Errorf("folder not found: %s", folderID)
 	}
+	if f.AccountID != accountID {
+		return nil, fmt.Errorf("folder belongs to another account")
+	}
 
 	// Acquire connection
 	conn, err := e.pool.GetConnection(ctx, accountID)
@@ -311,6 +314,9 @@ func (e *Engine) FetchServerMessage(ctx context.Context, accountID, folderID str
 	}
 	if f == nil {
 		return nil, fmt.Errorf("folder not found: %s", folderID)
+	}
+	if f.AccountID != accountID {
+		return nil, fmt.Errorf("folder belongs to another account")
 	}
 
 	// Check if already exists locally

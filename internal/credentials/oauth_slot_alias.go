@@ -112,12 +112,12 @@ func (s *Store) GetOAuthSlotAlias(configID string) (string, bool, error) {
 // ClearOAuthSlotAlias removes any alias set for configID. Idempotent.
 func (s *Store) ClearOAuthSlotAlias(configID string) error {
 	if s.keyringEnabled {
-		_ = gokeyring.Delete(serviceName, oauthSlotAliasKeyringPrefix+configID)
+		s.deleteKeyringEntry(oauthSlotAliasKeyringPrefix + configID)
 	}
 	s.clearSlotAliasDB(configID)
 	return nil
 }
 
 func (s *Store) clearSlotAliasDB(configID string) {
-	_, _ = s.db.Exec(`DELETE FROM user_oauth_slot_aliases WHERE config_id = ?`, configID)
+	s.execCleanup(`DELETE FROM user_oauth_slot_aliases WHERE config_id = ?`, configID)
 }

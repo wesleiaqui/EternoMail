@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	goSync "sync"
+	"sync/atomic"
 	"time"
 
 	extcalendarbe "github.com/hkdb/aerion/extensions/calendar/backend"
@@ -172,6 +173,9 @@ func isValidEmail(email string) bool {
 
 // App struct holds the application state and dependencies
 type App struct {
+	shutdownOnce  goSync.Once
+	preflightOnce goSync.Once
+	preflightErr  error
 	// Embedded extension bridges. Each extension contributes its Wails-bound
 	// surface via a Bridge struct embedded here; Go's method promotion makes
 	// those bridge methods appear on App so Wails reflection picks them up.
@@ -435,6 +439,11 @@ func StartupDialogInfoFor(err error) StartupDialogInfo {
 // appears. Preflight runs in main.go before wails.Run so the user only
 // ever sees the error dialog.
 func (a *App) Preflight() error {
+	a.preflightOnce.Do(func() { a.preflightErr = a.preflight() })
+	return a.preflightErr
+}
+
+func (a *App) preflight() (startupErr error) {
 	logLevel := "fatal"
 	if a.debugMode != nil && a.debugMode() {
 		logLevel = "debug"
@@ -465,6 +474,14 @@ func (a *App) Preflight() error {
 		return fmt.Errorf("open database: %w", err)
 	}
 	a.db = db
+	defer func() {
+		if startupErr != nil {
+			if err := db.Close(); err != nil {
+				log.Warn().Err(err).Msg("Close database after failed startup")
+			}
+			a.db = nil
+		}
+	}()
 	log.Info().Str("path", paths.DatabasePath()).Msg("Opened database")
 
 	if err := db.Migrate(); err != nil {
@@ -520,7 +537,7 @@ func (a *App) Preflight() error {
 }
 
 // shuttingDown tracks if shutdown has been initiated to prevent multiple triggers
-var shuttingDown bool
+var shuttingDown atomic.Bool
 
 // Startup is called when the app starts
 func (a *App) Startup(ctx context.Context) {
@@ -865,7 +882,7 @@ func (a *App) IsReady() bool {
 
 // BeforeClose is called when the window is about to close (e.g., OS close signal)
 func (a *App) BeforeClose(ctx context.Context) bool {
-	if shuttingDown {
+	if shuttingDown.Load() {
 		return false
 	}
 	// Startup can fail before the settings store exists (for example while a
@@ -889,7 +906,7 @@ func (a *App) BeforeClose(ctx context.Context) bool {
 	log := logging.WithComponent("app")
 	log.Info().Msg("Window close requested, showing shutdown overlay")
 
-	shuttingDown = true
+	shuttingDown.Store(true)
 
 	// Emit event to show shutdown overlay
 	wailsRuntime.EventsEmit(a.ctx, "app:shutting-down")
@@ -943,10 +960,9 @@ func (a *App) CloseWindow() {
 	}
 
 	// Normal shutdown flow
-	if shuttingDown {
+	if !shuttingDown.CompareAndSwap(false, true) {
 		return
 	}
-	shuttingDown = true
 
 	log := logging.WithComponent("app")
 	log.Info().Msg("Window close requested, shutting down")
@@ -961,10 +977,9 @@ func (a *App) CloseWindow() {
 // QuitApp forces a real quit, bypassing background mode.
 // Used by frontend or future tray menu to actually exit.
 func (a *App) QuitApp() {
-	if shuttingDown {
+	if !shuttingDown.CompareAndSwap(false, true) {
 		return
 	}
-	shuttingDown = true
 
 	log := logging.WithComponent("app")
 	log.Info().Msg("Quit requested")
@@ -992,10 +1007,9 @@ func (a *App) GetStartHiddenActive() bool {
 
 // InitiateShutdown triggers the application quit (called from frontend)
 func (a *App) InitiateShutdown() {
-	if shuttingDown {
+	if !shuttingDown.CompareAndSwap(false, true) {
 		return
 	}
-	shuttingDown = true
 
 	log := logging.WithComponent("app")
 	log.Info().Msg("Initiating shutdown")
@@ -1004,6 +1018,10 @@ func (a *App) InitiateShutdown() {
 
 // Shutdown is called when the app is closing
 func (a *App) Shutdown(ctx context.Context) {
+	a.shutdownOnce.Do(func() { a.shutdown(ctx) })
+}
+
+func (a *App) shutdown(ctx context.Context) {
 	log := logging.WithComponent("app")
 
 	// Broadcast shutdown to all composer windows

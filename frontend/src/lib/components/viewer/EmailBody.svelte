@@ -2,7 +2,8 @@
   import Icon from '@iconify/svelte'
   import { BrowserOpenURL } from '../../../../wailsjs/runtime/runtime'
   import { GetInlineAttachments, AddImageAllowlist, OpenURL, SetAlwaysLoadImages } from '../../../../wailsjs/go/app/App'
-  import { getCached, setCache } from '../../stores/inlineAttachmentCache'
+  import { linkifyText, isAllowedEmailURL } from '../../utils/emailLinks'
+  import { getCached, setCache, getCacheGeneration } from '../../stores/inlineAttachmentCache'
   import { isImageAllowedSync, refreshImageAllowlist } from '$lib/stores/imageAllowlist.svelte'
   import { setFocusedPane, focusPreviousPane, focusNextPane } from '$lib/stores/keyboard.svelte'
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu'
@@ -87,6 +88,7 @@
 
   function processHtml(html: string, blockImages: boolean): string {
     if (!html) return ''
+    // Backend uses bluemonday in sync fetch and ParseDecryptedBody.
     let processed = processCidReferences(html)
     if (blockImages) {
       // Block <img> tags with remote sources
@@ -288,6 +290,7 @@
       setTimeout(sendHeight, 50);
       setTimeout(sendHeight, 200);
       
+      document.addEventListener('auxclick', function(e) { e.preventDefault(); });
       document.addEventListener('click', function(e) {
         var link = e.target.closest('a');
         if (link && link.href) {
@@ -436,7 +439,7 @@ ${processedHtml}
   // Helper function to safely open URLs
   // Uses our custom OpenURL backend function which properly handles shell escaping
   async function safeOpenURL(url: string) {
-    console.log('[EmailBody] Opening URL:', url)
+    if (!isAllowedEmailURL(url)) return
 
     // Validate URL format first
     try {
@@ -457,7 +460,7 @@ ${processedHtml}
         }
       }
     } catch (e) {
-      console.error('[EmailBody] Invalid URL:', url, e)
+      console.error('[EmailBody] Invalid URL')
     }
   }
 
@@ -662,8 +665,11 @@ ${processedHtml}
       return
     }
 
+    let active = true
+    const generation = getCacheGeneration()
     GetInlineAttachments(id)
       .then((result: Record<string, string>) => {
+        if (!active || generation !== getCacheGeneration()) return
         const data = result || {}
         inlineAttachments = data
         if (Object.keys(data).length > 0) {
@@ -673,6 +679,7 @@ ${processedHtml}
       .catch((err: Error) => {
         console.error('[EmailBody] Fetch error:', err)
       })
+    return () => { active = false }
   })
 
   // Build iframe content
@@ -733,19 +740,6 @@ ${processedHtml}
     window.addEventListener('open-always-load-dropdown', handleAlwaysLoadDropdownEvent)
     return () => window.removeEventListener('open-always-load-dropdown', handleAlwaysLoadDropdownEvent)
   })
-
-  function linkifyText(text: string): string {
-    if (!text) return ''
-    const urlPattern = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/g
-    const emailPattern = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g
-    let escaped = text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-    escaped = escaped.replace(urlPattern, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">$1</a>')
-    escaped = escaped.replace(emailPattern, '<a href="mailto:$1" class="text-primary hover:underline">$1</a>')
-    return escaped
-  }
 
   // Copy selected text to clipboard
   async function copyTextToClipboard() {
@@ -824,7 +818,7 @@ ${processedHtml}
     <iframe
       bind:this={iframeElement}
       title={$_('aria.emailContent')}
-      sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+      sandbox="allow-scripts"
       class="w-full border-0 rounded-md min-h-[100px]"
       style="height: 200px; background-color: {iframeOuterBg};"
     ></iframe>
@@ -832,6 +826,12 @@ ${processedHtml}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="whitespace-pre-wrap font-sans text-sm text-foreground bg-muted/30 rounded-md p-4"
       onkeydown={(e) => { if (e.key === 'Enter') { const link = (e.target as HTMLElement).closest('a'); if (link?.href) { e.preventDefault(); handleLinkClick(link.href) } } }}
+      onauxclick={(e) => {
+        const link = (e.target as HTMLElement).closest('a')
+        if (!link?.href) return
+        e.preventDefault()
+        if (e.button === 1) handleLinkClick(link.href)
+      }}
       onclick={(e) => {
         const link = (e.target as HTMLElement).closest('a')
         if (!link?.href) return

@@ -45,6 +45,9 @@ func (a *API) queryLocalFreeBusy(_ context.Context, selfEmails []string, fromUni
 	}
 	var calendarIDs []string
 	for _, src := range sources {
+		if !src.Enabled {
+			continue
+		}
 		cals, err := a.store.ListCalendars(src.ID)
 		if err != nil {
 			continue

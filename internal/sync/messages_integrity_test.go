@@ -49,6 +49,13 @@ func TestSyncMessagesRejectsFolderFromAnotherAccount(t *testing.T) {
 		t.Fatalf("SyncMessages() error = %q, want account-folder mismatch", err)
 	}
 
+	if _, err := engine.IMAPSearch(context.Background(), accountA, folderB, "query", 10); err == nil {
+		t.Fatal("cross-account IMAP search accepted")
+	}
+	if _, err := engine.FetchServerMessage(context.Background(), accountA, folderB, 1); err == nil {
+		t.Fatal("cross-account fetch accepted")
+	}
+
 	var messageCount int
 	if err := db.QueryRow("SELECT COUNT(*) FROM messages").Scan(&messageCount); err != nil {
 		t.Fatalf("count messages: %v", err)

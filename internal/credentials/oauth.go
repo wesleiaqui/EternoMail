@@ -19,7 +19,6 @@ type OAuthTokens struct {
 	Scopes       []string  `json:"scopes"`       // Stored in DB
 }
 
-
 // IsExpired returns true if the access token has expired
 func (t *OAuthTokens) IsExpired() bool {
 	return time.Now().After(t.ExpiresAt)
@@ -150,21 +149,46 @@ func (s *Store) GetOAuthTokens(accountID string) (*OAuthTokens, error) {
 
 // DeleteOAuthTokens removes all OAuth data for an account
 func (s *Store) DeleteOAuthTokens(accountID string) error {
+	// Enumerate before deleting metadata so extension keyring slots are removed too.
+	rows, err := s.db.Query("SELECT client_config_id FROM oauth_tokens WHERE account_id = ?", accountID)
+	if err != nil {
+		return fmt.Errorf("list OAuth credential slots: %w", err)
+	}
+	var slots []string
+	for rows.Next() {
+		var slot string
+		if err := rows.Scan(&slot); err != nil {
+			rows.Close()
+			return err
+		}
+		slots = append(slots, slot)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if s.keyringEnabled {
+		for _, slot := range slots {
+			s.deleteKeyringEntry(accountID + ":" + slot + ":access_token")
+			s.deleteKeyringEntry(accountID + ":" + slot + ":refresh_token")
+		}
+	}
+
 	// Delete from keyring
 	if s.keyringEnabled {
-		_ = gokeyring.Delete(serviceName, accountID+":access_token")
-		_ = gokeyring.Delete(serviceName, accountID+":refresh_token")
+		s.deleteKeyringEntry(accountID + ":access_token")
+		s.deleteKeyringEntry(accountID + ":refresh_token")
 	}
 
 	// Clear encrypted fallback storage
-	_, _ = s.db.Exec(`
+	s.execCleanup(`
 		UPDATE accounts
 		SET encrypted_access_token = NULL, encrypted_refresh_token = NULL
 		WHERE id = ?
 	`, accountID)
 
 	// Delete metadata
-	_, err := s.db.Exec("DELETE FROM oauth_tokens WHERE account_id = ?", accountID)
+	_, err = s.db.Exec("DELETE FROM oauth_tokens WHERE account_id = ?", accountID)
 	if err != nil {
 		return fmt.Errorf("failed to delete OAuth metadata: %w", err)
 	}
@@ -248,7 +272,7 @@ func (s *Store) setOAuthAccessToken(accountID, token string) error {
 		err := gokeyring.Set(serviceName, accountID+":access_token", token)
 		if err == nil {
 			// Clear fallback storage
-			_, _ = s.db.Exec("UPDATE accounts SET encrypted_access_token = NULL WHERE id = ?", accountID)
+			s.execCleanup("UPDATE accounts SET encrypted_access_token = NULL WHERE id = ?", accountID)
 			return nil
 		}
 		s.log.Warn().Err(err).Msg("Failed to store access token in keyring, using fallback")
@@ -308,7 +332,7 @@ func (s *Store) setOAuthRefreshToken(accountID, token string) error {
 		err := gokeyring.Set(serviceName, accountID+":refresh_token", token)
 		if err == nil {
 			// Clear fallback storage
-			_, _ = s.db.Exec("UPDATE accounts SET encrypted_refresh_token = NULL WHERE id = ?", accountID)
+			s.execCleanup("UPDATE accounts SET encrypted_refresh_token = NULL WHERE id = ?", accountID)
 			return nil
 		}
 		s.log.Warn().Err(err).Msg("Failed to store refresh token in keyring, using fallback")
@@ -474,12 +498,12 @@ func (s *Store) GetContactSourceOAuthTokens(sourceID string) (*OAuthTokens, erro
 func (s *Store) DeleteContactSourceOAuthTokens(sourceID string) error {
 	// Delete from keyring
 	if s.keyringEnabled {
-		_ = gokeyring.Delete(serviceName, "contact_source:"+sourceID+":access_token")
-		_ = gokeyring.Delete(serviceName, "contact_source:"+sourceID+":refresh_token")
+		s.deleteKeyringEntry("contact_source:" + sourceID + ":access_token")
+		s.deleteKeyringEntry("contact_source:" + sourceID + ":refresh_token")
 	}
 
 	// Clear encrypted fallback storage
-	_, _ = s.db.Exec(`
+	s.execCleanup(`
 		UPDATE contact_sources
 		SET encrypted_access_token = NULL, encrypted_refresh_token = NULL
 		WHERE id = ?
@@ -543,7 +567,7 @@ func (s *Store) setContactSourceAccessToken(sourceID, token string) error {
 		err := gokeyring.Set(serviceName, "contact_source:"+sourceID+":access_token", token)
 		if err == nil {
 			// Clear fallback storage
-			_, _ = s.db.Exec("UPDATE contact_sources SET encrypted_access_token = NULL WHERE id = ?", sourceID)
+			s.execCleanup("UPDATE contact_sources SET encrypted_access_token = NULL WHERE id = ?", sourceID)
 			return nil
 		}
 		s.log.Warn().Err(err).Msg("Failed to store contact source access token in keyring, using fallback")
@@ -603,7 +627,7 @@ func (s *Store) setContactSourceRefreshToken(sourceID, token string) error {
 		err := gokeyring.Set(serviceName, "contact_source:"+sourceID+":refresh_token", token)
 		if err == nil {
 			// Clear fallback storage
-			_, _ = s.db.Exec("UPDATE contact_sources SET encrypted_refresh_token = NULL WHERE id = ?", sourceID)
+			s.execCleanup("UPDATE contact_sources SET encrypted_refresh_token = NULL WHERE id = ?", sourceID)
 			return nil
 		}
 		s.log.Warn().Err(err).Msg("Failed to store contact source refresh token in keyring, using fallback")
@@ -650,4 +674,12 @@ func (s *Store) getContactSourceRefreshToken(sourceID string) (string, error) {
 	}
 
 	return s.encryptor.Decrypt(encrypted.String)
+}
+
+// Clear releases sensitive fields. Go strings may still have copies elsewhere;
+// this is reference cleanup, not a guarantee of physical memory erasure.
+func (t *OAuthTokens) Clear() {
+	if t != nil {
+		*t = OAuthTokens{}
+	}
 }

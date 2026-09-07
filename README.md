@@ -41,7 +41,7 @@ The following changes were made in this fork compared to the original [`hkdb/aer
 
 #### 🎨 UI & Visual Improvements
 
-The interface was significantly redesigned for a more modern and polished experience:
+The interface now offers clearer navigation, more consistent spacing and faster access to common actions:
 
 | Before (Aerion original) | After (Eterno Mail) |
 | :---: | :---: |
@@ -50,6 +50,9 @@ The interface was significantly redesigned for a more modern and polished experi
 Key visual changes:
 
 - **Sidebar redesign:** Replaced the text-based sidebar with a modern, collapsible navigation for Home, Inbox, Calendar, Archived, Blocked, Drafts, Sent and Trash, plus a collapsible folder panel — cleaner and more space-efficient. Choose Compact, Medium or Large under Settings → General; each preset changes its expanded width, text, icons, row heights and spacing together, and the selected size is preserved after collapsing. Home, Inbox, Calendar and folder icons share a consistent visual axis, while inbox disclosure controls remain in their own column. Compose is a clear primary action, with account sync and Settings grouped in a persistent footer for quick access.
+- **Stable scrolling on Linux:** Improved message-list scrolling and scrollbar behavior on WebKitGTK so navigating long lists feels more consistent.
+- **Keyboard and startup dialog fixes:** Enter and Space activate focused buttons correctly, and dismissing startup dialogs no longer leaves the interface blocked.
+- **Release notes in the app:** The What’s New dialog displays improvements and fixes for the installed version, using the same changelog as the project documentation.
 - **Focused folder expansion:** Expanding an account list under a folder closes the other folder groups, keeping the navigation readable.
 - **Inbox Zero approach:** The email experience was restructured around the Inbox Zero methodology, helping users keep their inbox organized by encouraging archiving, categorizing, and clearing messages efficiently.
 - **Inbox category cards:** Inbox messages can be grouped into People, Notifications, News, Commercial and Read cards. Each card offers a one-click completion action, expandable content and a refined “Show all” footer that highlights the full card footer on hover.
@@ -63,12 +66,15 @@ Key visual changes:
 
 #### 🐛 Bug Fixes
 
-- **SQLite Foreign Key 787:** Fixed foreign key violation error during message upsert. The logic now preserves the existing message primary key, preventing breakage of attachment references linked by FK.
-- **IMAP connection pool:** Implemented strict slot reservation in the connection pool during the handshake phase, preventing overflow when multiple connections are established in parallel (`MaxConnections=3` enforced).
-- **`\Noselect` mailboxes:** Added a check to skip the `STATUS` command on mailboxes flagged as `\Noselect` (e.g., the `[Gmail]` folder), preventing sync errors.
-- **Sync counters:** Fixed sync counters to report the actual number of stored headers (`failed=0` on success).
-- **Folder sync state preservation:** Folder discovery upserts now retain the stored IMAP flags sync mod-sequence; a regression test protects this incremental-sync state.
+- **Attachment references during sync:** Updating an existing message preserves its database ID and linked attachments, preventing SQLite foreign-key errors (787).
+- **IMAP connection limits:** Connection slots are reserved before the handshake, keeping concurrent connection attempts within the configured limit.
+- **Non-selectable mailboxes:** Sync skips status requests for folder containers such as `[Gmail]`, avoiding errors when these containers cannot hold messages.
+- **Accurate sync counts:** Sync reports the number of message headers actually stored and no longer counts successful operations as failures.
+- **Incremental folder sync:** Rediscovering folders preserves their last flag-sync checkpoint, allowing incremental updates to continue correctly.
 - **Archive viewer handoff:** Completing, archiving, deleting or marking spam no longer leaves the conversation viewer displaying an empty removed thread while the list reloads and selects the next valid message.
+- **Message moves and Undo:** Moves and Trash actions update the local view promptly, with safer IMAP reconciliation and more reliable Undo handling.
+- **Gmail Trash and Spam:** These actions use the account’s correct destination mailboxes.
+- **Attachment downloads:** Empty or short message IDs no longer cause a panic, and simultaneous downloads reserve distinct filenames without overwriting each other.
 
 #### 🚀 New Features
 
@@ -95,6 +101,12 @@ Key visual changes:
 - **Viewer action tooltips:** Conversation toolbar actions show immediate localized labels on hover or keyboard focus, making icon-only controls easier to understand.
 
 #### 🔒 Privacy & Security Improvements
+
+- **OAuth error-page protection:** Provider error codes and descriptions are escaped before display, preventing callback URLs from injecting HTML or JavaScript.
+- **Concurrent OAuth sessions:** Session state is synchronized during login, cancellation and callback handling. Completing an older login no longer clears a newer session.
+- **Required SMTP encryption:** Accounts configured for STARTTLS reject servers that do not advertise it, closing the connection before credentials or messages can be sent in plaintext.
+- **Safer attachment saving:** Attachment names are sanitized before joining paths, parent-directory traversal is rejected in custom destinations, and writes are confined to the target directory. Save All applies the same filename protection.
+- **S/MIME trust verification:** Signatures are checked against system trust roots. Certificates classified as unknown signers are no longer cached; the existing self-signed and expired-certificate exceptions require a valid cryptographic signature.
 
 - **PII redaction in logs:** Implemented `RedactEmail` and `ShortHash` functions in the `internal/logging` package that automatically mask:
   - IMAP/SMTP usernames

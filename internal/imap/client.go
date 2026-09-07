@@ -191,6 +191,10 @@ func (c *Client) Connect() error {
 		c.client = imapclient.New(wrappedConn, options)
 	}
 
+	if c.client == nil {
+		return fmt.Errorf("unsupported IMAP security type: %q", c.config.Security)
+	}
+
 	// Wait for server greeting
 	if err := c.client.WaitGreeting(); err != nil {
 		c.client.Close()

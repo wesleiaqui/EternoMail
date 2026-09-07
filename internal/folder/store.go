@@ -71,10 +71,11 @@ func (s *Store) List(accountID string) ([]*Folder, error) {
 		if uidNext.Valid {
 			f.UIDNext = uint32(uidNext.Int64)
 		}
-		if highestModSeq.Valid {
+		// Negative SQLite values must not wrap into a valid uint64 baseline.
+		if highestModSeq.Valid && highestModSeq.Int64 > 0 {
 			f.HighestModSeq = uint64(highestModSeq.Int64)
 		}
-		if flagsSyncModSeq.Valid {
+		if flagsSyncModSeq.Valid && flagsSyncModSeq.Int64 > 0 {
 			f.FlagsSyncModSeq = uint64(flagsSyncModSeq.Int64)
 		}
 
@@ -124,10 +125,11 @@ func (s *Store) Get(id string) (*Folder, error) {
 	if uidNext.Valid {
 		f.UIDNext = uint32(uidNext.Int64)
 	}
-	if highestModSeq.Valid {
+	// Negative SQLite values must not wrap into a valid uint64 baseline.
+	if highestModSeq.Valid && highestModSeq.Int64 > 0 {
 		f.HighestModSeq = uint64(highestModSeq.Int64)
 	}
-	if flagsSyncModSeq.Valid {
+	if flagsSyncModSeq.Valid && flagsSyncModSeq.Int64 > 0 {
 		f.FlagsSyncModSeq = uint64(flagsSyncModSeq.Int64)
 	}
 
@@ -174,10 +176,11 @@ func (s *Store) GetByPath(accountID, path string) (*Folder, error) {
 	if uidNext.Valid {
 		f.UIDNext = uint32(uidNext.Int64)
 	}
-	if highestModSeq.Valid {
+	// Negative SQLite values must not wrap into a valid uint64 baseline.
+	if highestModSeq.Valid && highestModSeq.Int64 > 0 {
 		f.HighestModSeq = uint64(highestModSeq.Int64)
 	}
-	if flagsSyncModSeq.Valid {
+	if flagsSyncModSeq.Valid && flagsSyncModSeq.Int64 > 0 {
 		f.FlagsSyncModSeq = uint64(flagsSyncModSeq.Int64)
 	}
 
@@ -376,10 +379,11 @@ func (s *Store) GetByType(accountID string, folderType Type) (*Folder, error) {
 	if uidNext.Valid {
 		f.UIDNext = uint32(uidNext.Int64)
 	}
-	if highestModSeq.Valid {
+	// Negative SQLite values must not wrap into a valid uint64 baseline.
+	if highestModSeq.Valid && highestModSeq.Int64 > 0 {
 		f.HighestModSeq = uint64(highestModSeq.Int64)
 	}
-	if flagsSyncModSeq.Valid {
+	if flagsSyncModSeq.Valid && flagsSyncModSeq.Int64 > 0 {
 		f.FlagsSyncModSeq = uint64(flagsSyncModSeq.Int64)
 	}
 
@@ -433,10 +437,11 @@ func (s *Store) ListSubscribed(accountID string) ([]*Folder, error) {
 		if uidNext.Valid {
 			f.UIDNext = uint32(uidNext.Int64)
 		}
-		if highestModSeq.Valid {
+		// Negative SQLite values must not wrap into a valid uint64 baseline.
+		if highestModSeq.Valid && highestModSeq.Int64 > 0 {
 			f.HighestModSeq = uint64(highestModSeq.Int64)
 		}
-		if flagsSyncModSeq.Valid {
+		if flagsSyncModSeq.Valid && flagsSyncModSeq.Int64 > 0 {
 			f.FlagsSyncModSeq = uint64(flagsSyncModSeq.Int64)
 		}
 

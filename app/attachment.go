@@ -376,8 +376,7 @@ func (a *App) SaveAllAttachments(messageID string) (string, error) {
 			continue
 		}
 
-		savePath := filepath.Join(saveDir, att.Filename)
-		_, err = downloader.SaveAttachment(att, content, savePath)
+		_, err = downloader.SaveAttachmentToDirectory(att, content, saveDir)
 		if err != nil {
 			log.Warn().Err(err).Str("filename", att.Filename).Msg("Failed to save attachment")
 			continue
@@ -616,8 +615,7 @@ func (a *App) SaveAllEncryptedAttachments(messageID string) (string, error) {
 			continue
 		}
 
-		savePath := filepath.Join(saveDir, att.Filename)
-		_, err = downloader.SaveAttachment(att, content, savePath)
+		_, err = downloader.SaveAttachmentToDirectory(att, content, saveDir)
 		if err != nil {
 			log.Warn().Err(err).Str("filename", att.Filename).Msg("Failed to save encrypted attachment")
 			continue

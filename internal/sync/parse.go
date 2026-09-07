@@ -2,11 +2,13 @@ package sync
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"mime"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	gomessage "github.com/emersion/go-message"
 	"github.com/hkdb/aerion/internal/email"
@@ -164,6 +166,14 @@ func (e *Engine) parseMessageBodyInternal(raw []byte, messageID string) *ParsedB
 
 // parseMultipartBody parses a multipart message body
 func (e *Engine) parseMultipartBody(mr gomessage.MultipartReader, result *ParsedBody, messageID string) {
+	e.parseMultipartBodyDepth(mr, result, messageID, 0)
+}
+
+func (e *Engine) parseMultipartBodyDepth(mr gomessage.MultipartReader, result *ParsedBody, messageID string, depth int) {
+	if depth >= 64 {
+		result.UnsafeContent = true
+		return
+	}
 	partIndex := 0
 	consecutiveErrors := 0
 	for {
@@ -214,7 +224,10 @@ func (e *Engine) parseMultipartBody(mr gomessage.MultipartReader, result *Parsed
 		// disposition). part.Body is already transfer-decoded by go-message.
 		if contentType == "application/ms-tnef" ||
 			(disposition == "attachment" && strings.EqualFold(dispParams["filename"], "winmail.dat")) {
-			raw, _ := io.ReadAll(io.LimitReader(part.Body, maxPartSize))
+			raw, readErr := io.ReadAll(io.LimitReader(part.Body, maxPartSize))
+			if readErr != nil {
+				e.log.Warn().Err(readErr).Msg("Failed to read TNEF part")
+			}
 			if inner := email.DecodeTNEFAttachments(raw); len(inner) > 0 {
 				for _, ta := range inner {
 					result.Attachments = append(result.Attachments, &message.Attachment{
@@ -273,7 +286,7 @@ func (e *Engine) parseMultipartBody(mr gomessage.MultipartReader, result *Parsed
 				e.log.Debug().Int("partIndex", partIndex).Str("contentType", contentType).Msg("Nested multipart has nil reader, subtree skipped")
 				continue
 			}
-			e.parseMultipartBody(nestedMr, result, messageID)
+			e.parseMultipartBodyDepth(nestedMr, result, messageID, depth+1)
 			continue
 		}
 
@@ -829,3 +842,56 @@ func (e *Engine) parseMessageBodyWithTimeout(raw []byte, timeout time.Duration) 
 	return result.BodyText, result.BodyHTML, result.HasAttachments
 }
 */
+
+// sanitizeHeader bounds persisted display fields without splitting UTF-8.
+func sanitizeHeader(value string) string {
+	value = strings.ReplaceAll(value, "\x00", "")
+	if len(value) > 8192 {
+		value = value[:8192]
+		for !utf8.ValidString(value) && len(value) > 0 {
+			value = value[:len(value)-1]
+		}
+	}
+	return value
+}
+
+func sanitizeMessageHeaders(m *message.Message) {
+	m.Subject = sanitizeHeader(m.Subject)
+	m.FromName = sanitizeHeader(m.FromName)
+	m.FromEmail = sanitizeHeader(m.FromEmail)
+	m.MessageID = sanitizeHeader(m.MessageID)
+	m.InReplyTo = sanitizeHeader(m.InReplyTo)
+	m.ReplyTo = sanitizeHeader(m.ReplyTo)
+}
+
+// Keep recipient lists valid JSON when bounding the persisted header.
+func sanitizeAddressJSON(value string) string {
+	var list []struct {
+		Name  string `json:"name"`
+		Email string `json:"email"`
+	}
+	if err := json.Unmarshal([]byte(value), &list); err != nil {
+		return "[]"
+	}
+	for i := range list {
+		list[i].Name = sanitizeHeader(list[i].Name)
+		list[i].Email = sanitizeHeader(list[i].Email)
+	}
+	for len(list) > 0 {
+		data, _ := json.Marshal(list)
+		if len(data) <= 8192 {
+			return string(data)
+		}
+		last := &list[len(list)-1]
+		if len(last.Name) > 0 {
+			keep := max(0, len(last.Name)-(len(data)-8192))
+			last.Name = last.Name[:keep]
+			for !utf8.ValidString(last.Name) && len(last.Name) > 0 {
+				last.Name = last.Name[:len(last.Name)-1]
+			}
+			continue
+		}
+		list = list[:len(list)-1]
+	}
+	return "[]"
+}

@@ -5,10 +5,10 @@ package ipc
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
-	"syscall"
 )
 
 // UnixServer implements the Server interface using Unix domain sockets.
@@ -39,14 +39,19 @@ func (s *UnixServer) Start(ctx context.Context) error {
 	s.socketPath = socketPath
 
 	// Remove existing socket if present
-	os.Remove(socketPath)
+	if err := os.Remove(socketPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove stale IPC socket: %w", err)
+	}
 
-	// Set umask before creating socket to avoid TOCTOU race with Chmod
-	oldMask := syscall.Umask(0077)
+	// The parent directory is owner-only; chmod the socket before accepting.
 	listener, err := net.Listen("unix", socketPath)
-	syscall.Umask(oldMask)
 	if err != nil {
 		return fmt.Errorf("failed to listen on socket: %w", err)
+	}
+	defer listener.Close()
+	defer removeSocket(socketPath)
+	if err := os.Chmod(socketPath, 0600); err != nil {
+		return fmt.Errorf("secure IPC socket: %w", err)
 	}
 
 	s.SetListener(listener, socketPath)
@@ -60,7 +65,7 @@ func (s *UnixServer) Stop() error {
 
 	// Clean up socket file
 	if s.socketPath != "" {
-		os.Remove(s.socketPath)
+		removeSocket(s.socketPath)
 	}
 
 	return err
@@ -96,4 +101,10 @@ func (s *UnixServer) createSocketPath() (string, error) {
 // On Unix systems (Linux/macOS), this returns a UnixServer.
 func NewServer(tokenMgr *TokenManager) Server {
 	return NewUnixServer(tokenMgr)
+}
+
+func removeSocket(path string) {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		slog.Warn("Failed to remove IPC socket", "error", err)
+	}
 }

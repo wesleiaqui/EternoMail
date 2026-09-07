@@ -9,6 +9,7 @@
   // @ts-ignore - wailsjs path
   import { OpenURL } from '../../../wailsjs/go/app/App.js'
   import { _ } from '$lib/i18n'
+  import changelog from '../../../../CHANGELOG.md?raw'
 
   interface Props {
     open: boolean
@@ -17,6 +18,13 @@
   }
 
   let { open = $bindable(false), version, onAcknowledge }: Props = $props()
+
+  // Share the documentation source while showing only the runtime version.
+  const releaseNotes = $derived.by(() => {
+    const heading = `Eterno Mail — v${version.replace(/^v/, '')}\n`
+    const section = changelog.split(/^## /m).find(entry => entry.startsWith(heading))
+    return section?.split('\n').filter(line => line.startsWith('- ')).map(line => line.slice(2)) ?? []
+  })
 
   const CHANGELOG_URL = 'https://github.com/wesleiaqui/eternomail/blob/main/CHANGELOG.md'
 
@@ -40,20 +48,24 @@
     >
       <div class="flex flex-col space-y-1.5 text-center sm:text-left">
         <h2 class="text-lg font-semibold leading-none tracking-tight">
-          What's new?
+          {$_('whatsNew.title')}
         </h2>
       </div>
 
       <div class="space-y-4 max-h-[60vh] overflow-y-auto text-sm">
-        <p>🚀 Welcome to Eterno Mail v{version}!</p>
+        <p>{$_('whatsNew.welcome', { values: { version } })}</p>
 
-        <p>
-          This version is installed and ready to use. Release-specific details
-          are kept in the project change log so this dialog cannot drift from
-          the actual runtime version.
-        </p>
+        {#if releaseNotes.length > 0}
+          <ul class="list-disc space-y-2 pl-5">
+            {#each releaseNotes as note (note)}
+              <li>{note}</li>
+            {/each}
+          </ul>
+        {:else}
+          <p>{$_('whatsNew.fallback')}</p>
+        {/if}
 
-        <p>🏷 See the full change log here:</p>
+        <p>{$_('whatsNew.fullChangelog')}</p>
 
         <p>
           <button

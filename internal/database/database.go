@@ -4,9 +4,12 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/hkdb/aerion/internal/logging"
@@ -46,6 +49,11 @@ type DB struct {
 
 // Open opens or creates a SQLite database at the given path
 func Open(path string) (*DB, error) {
+	if strings.ContainsAny(path, "?&#") {
+		return nil, fmt.Errorf("database path contains reserved URI characters")
+	}
+	path = filepath.Clean(path)
+
 	// Ensure directory exists with secure permissions (owner only)
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -57,7 +65,8 @@ func Open(path string) (*DB, error) {
 	// lazily in a pool. Using _pragma in the DSN ensures every new connection gets
 	// the same configuration (busy_timeout, WAL, etc.), preventing SQLITE_BUSY
 	// errors when a pooled connection lacks busy_timeout.
-	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(30000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)&_pragma=cache_size(-64000)", path)
+	uri := url.URL{Scheme: "file", Path: path}
+	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(30000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)&_pragma=cache_size(-64000)", uri.String())
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
@@ -218,7 +227,11 @@ func (db *DB) applyMigration(m Migration) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() {
+		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+			db.log.Warn().Err(err).Msg("Migration rollback failed")
+		}
+	}()
 
 	// Execute migration
 	if _, err := tx.Exec(m.SQL); err != nil {

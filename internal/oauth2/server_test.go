@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -150,5 +153,27 @@ func TestCallbackServerGoogleUsesIPv4Only(t *testing.T) {
 	defer server.Stop()
 	if sawIPv6 {
 		t.Fatal("Google IPv4 callback unexpectedly opened an IPv6 listener")
+	}
+}
+
+func TestCallbackEscapesOAuthErrors(t *testing.T) {
+	server := NewCallbackServer()
+	server.accepting.Store(true)
+	code := `<script>alert("error")</script>`
+	description := `<img src=x onerror="alert('description')"> & details`
+	query := url.Values{"error": {code}, "error_description": {description}}
+	response := httptest.NewRecorder()
+	server.handleCallback(response, httptest.NewRequest(http.MethodGet, "/callback?"+query.Encode(), nil))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d", response.Code)
+	}
+	for _, value := range []string{code, description} {
+		if strings.Contains(response.Body.String(), value) || !strings.Contains(response.Body.String(), html.EscapeString(value)) {
+			t.Errorf("error was not escaped: %s", response.Body.String())
+		}
+	}
+	result := <-server.resultCh
+	if result.Error != code || result.ErrorDescription != description {
+		t.Fatal("callback data changed")
 	}
 }

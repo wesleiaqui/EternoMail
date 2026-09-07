@@ -10,6 +10,9 @@
  */
 
 // Map of messageId -> Record<contentId, dataUrl>
+let generation = 0
+export function getCacheGeneration(): number { return generation }
+
 const cache = new Map<string, Record<string, string>>()
 
 /**
@@ -35,6 +38,7 @@ export function setCache(messageId: string, data: Record<string, string>): void 
  * Can be used for memory management if needed
  */
 export function clearCache(): void {
+  generation++
   cache.clear()
 }
 

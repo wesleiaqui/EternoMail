@@ -1,3 +1,5 @@
+import { clearCache } from './inlineAttachmentCache'
+import { contactPhotos } from './contactPhotos.svelte'
 import {
   GetAccounts,
   GetFolderTree,
@@ -461,12 +463,15 @@ class AccountStore {
    */
   async removeAccount(id: string): Promise<void> {
     await RemoveAccount(id)
+    clearCache()
 
     // Remove from local state
     const index = this.accounts.findIndex((a) => a.account.id === id)
     if (index !== -1) {
       this.accounts.splice(index, 1)
     }
+
+    contactPhotos.invalidate()
 
     // Clear selection if this account was selected
     if (this.selectedFolder?.accountId === id) {

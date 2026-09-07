@@ -27,6 +27,7 @@ type serverClient struct {
 	id            string
 	conn          net.Conn
 	authenticated bool
+	reader        *messageReader
 	encoder       *json.Encoder
 	mu            sync.Mutex // Protects encoder writes
 }
@@ -43,6 +44,7 @@ type BaseServer struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
+	stopping bool
 }
 
 // NewBaseServer creates a new BaseServer with the given token manager.
@@ -77,7 +79,10 @@ func (s *BaseServer) Send(clientID string, msg Message) error {
 		return fmt.Errorf("client %s not found", clientID)
 	}
 
-	if !client.authenticated {
+	s.mu.RLock()
+	authenticated := client.authenticated
+	s.mu.RUnlock()
+	if !authenticated {
 		return fmt.Errorf("client %s not authenticated", clientID)
 	}
 
@@ -124,26 +129,23 @@ func (s *BaseServer) Clients() []string {
 
 // Stop gracefully shuts down the server.
 func (s *BaseServer) Stop() error {
+	s.mu.Lock()
+	s.stopping = true
 	if s.cancel != nil {
 		s.cancel()
 	}
-
-	// Close the listener to stop accepting new connections
 	if s.listener != nil {
-		s.listener.Close()
+		if err := s.listener.Close(); err != nil && err != net.ErrClosed {
+			slog.Warn("Failed to close IPC listener", "error", err)
+		}
 	}
-
-	// Close all client connections
-	s.mu.Lock()
 	for _, client := range s.clients {
-		client.conn.Close()
+		if err := client.conn.Close(); err != nil {
+			slog.Warn("Failed to close IPC client", "error", err)
+		}
 	}
-	s.clients = make(map[string]*serverClient)
 	s.mu.Unlock()
-
-	// Wait for all goroutines to finish
 	s.wg.Wait()
-
 	return nil
 }
 
@@ -159,10 +161,27 @@ func (s *BaseServer) SetListener(listener net.Listener, address string) {
 // AcceptLoop accepts incoming connections until the context is cancelled.
 // This should be called by platform-specific implementations from Start().
 func (s *BaseServer) AcceptLoop(ctx context.Context) error {
+	s.mu.Lock()
+	if s.stopping {
+		s.mu.Unlock()
+		return nil
+	}
 	s.ctx, s.cancel = context.WithCancel(ctx)
+	runCtx := s.ctx
+	listener := s.listener
+	s.mu.Unlock()
+	stopWatcher := context.AfterFunc(runCtx, func() {
+		listener.Close()
+		s.mu.Lock()
+		for _, client := range s.clients {
+			client.conn.Close()
+		}
+		s.mu.Unlock()
+	})
+	defer stopWatcher()
 
 	for {
-		conn, err := s.listener.Accept()
+		conn, err := listener.Accept()
 		if err != nil {
 			select {
 			case <-s.ctx.Done():
@@ -173,7 +192,14 @@ func (s *BaseServer) AcceptLoop(ctx context.Context) error {
 			}
 		}
 
+		s.mu.Lock()
+		if s.stopping || runCtx.Err() != nil {
+			s.mu.Unlock()
+			conn.Close()
+			return nil
+		}
 		s.wg.Add(1)
+		s.mu.Unlock()
 		go func() {
 			defer s.wg.Done()
 			s.handleConnection(conn)
@@ -188,9 +214,15 @@ func (s *BaseServer) handleConnection(conn net.Conn) {
 		id:      clientID,
 		conn:    conn,
 		encoder: json.NewEncoder(conn),
+		reader:  &messageReader{reader: bufio.NewReaderSize(conn, ReadBufferSize)},
 	}
 
 	s.mu.Lock()
+	if s.stopping || s.ctx.Err() != nil {
+		s.mu.Unlock()
+		conn.Close()
+		return
+	}
 	s.clients[clientID] = client
 	s.mu.Unlock()
 
@@ -219,11 +251,17 @@ func (s *BaseServer) handleConnection(conn net.Conn) {
 // authenticateClient handles the authentication handshake.
 func (s *BaseServer) authenticateClient(client *serverClient) bool {
 	// Set read deadline for authentication
-	_ = client.conn.SetReadDeadline(time.Now().Add(AuthTimeout))
-	defer func() { _ = client.conn.SetReadDeadline(time.Time{}) }() // Clear deadline
+	if err := client.conn.SetReadDeadline(time.Now().Add(AuthTimeout)); err != nil {
+		slog.Warn("Failed to set IPC auth deadline", "error", err)
+		return false
+	}
+	defer func() {
+		if err := client.conn.SetReadDeadline(time.Time{}); err != nil {
+			slog.Warn("Failed to clear IPC auth deadline", "error", err)
+		}
+	}() // Clear deadline
 
-	reader := bufio.NewReaderSize(client.conn, ReadBufferSize)
-	decoder := json.NewDecoder(reader)
+	decoder := client.reader
 
 	var msg Message
 	if err := decoder.Decode(&msg); err != nil {
@@ -250,7 +288,9 @@ func (s *BaseServer) authenticateClient(client *serverClient) bool {
 		return false
 	}
 
+	s.mu.Lock()
 	client.authenticated = true
+	s.mu.Unlock()
 	s.sendAuthResponse(client, true, "")
 	return true
 }
@@ -268,8 +308,7 @@ func (s *BaseServer) sendAuthResponse(client *serverClient, success bool, errMsg
 
 // readLoop reads messages from a client until the connection is closed.
 func (s *BaseServer) readLoop(client *serverClient) {
-	reader := bufio.NewReaderSize(client.conn, ReadBufferSize)
-	decoder := json.NewDecoder(reader)
+	decoder := client.reader
 
 	for {
 		select {

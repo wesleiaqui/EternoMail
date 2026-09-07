@@ -22,6 +22,7 @@ import (
 
 // Client wraps the CardDAV client with discovery and convenience methods
 type Client struct {
+	ctx      context.Context
 	client   *carddav.Client
 	baseURL  string
 	username string
@@ -285,7 +286,7 @@ func resolveURL(baseURL, path string) string {
 // FetchContacts fetches all contacts from an addressbook. Returns one
 // ParsedRecord per vCard (no per-email fan-out).
 func (c *Client) FetchContacts(addressbookPath string) ([]*ParsedRecord, error) {
-	ctx := context.Background()
+	ctx := c.syncContext()
 	c.log.Debug().Str("path", addressbookPath).Msg("Fetching contacts")
 
 	// Resolve the addressbook path against the base URL
@@ -338,9 +339,9 @@ type ParsedRecord struct {
 	ETag     string
 	VCardRaw string
 
-	FN       string
-	NGiven   string
-	NFamily  string
+	FN      string
+	NGiven  string
+	NFamily string
 
 	Emails    []ParsedEmail
 	Phones    []ParsedPhone
@@ -602,7 +603,7 @@ func (c *Client) PutContact(addressbookPath, href, ifMatchETag string, ifNoneMat
 	fullURL := resolveURL(c.baseURL, href)
 	httpClient := c.addressbookHTTPClient(60 * time.Second)
 
-	req, err := http.NewRequest(http.MethodPut, fullURL, bytes.NewReader(card))
+	req, err := http.NewRequestWithContext(c.syncContext(), http.MethodPut, fullURL, bytes.NewReader(card))
 	if err != nil {
 		return "", fmt.Errorf("build PUT request: %w", err)
 	}
@@ -640,7 +641,7 @@ func (c *Client) DeleteContact(addressbookPath, href, ifMatchETag string) error 
 	fullURL := resolveURL(c.baseURL, href)
 	httpClient := c.addressbookHTTPClient(60 * time.Second)
 
-	req, err := http.NewRequest(http.MethodDelete, fullURL, nil)
+	req, err := http.NewRequestWithContext(c.syncContext(), http.MethodDelete, fullURL, nil)
 	if err != nil {
 		return fmt.Errorf("build DELETE request: %w", err)
 	}
@@ -709,7 +710,7 @@ type SyncResult struct {
 // If syncToken is empty, it performs a full sync
 // Returns the new sync token and the changes since the last sync
 func (c *Client) SyncAddressbook(addressbookPath, syncToken string) (*SyncResult, error) {
-	ctx := context.Background()
+	ctx := c.syncContext()
 	c.log.Debug().
 		Str("path", addressbookPath).
 		Str("syncToken", syncToken).
@@ -807,7 +808,7 @@ func (c *Client) SyncAddressbook(addressbookPath, syncToken string) (*SyncResult
 // hard-requires getcontentlength on file entries — exactly the kind of
 // property this server class omits.
 func (c *Client) FetchContactsEnumerate(addressbookPath string) ([]*ParsedRecord, error) {
-	ctx := context.Background()
+	ctx := c.syncContext()
 	fullPath := resolveURL(c.baseURL, addressbookPath)
 	httpClient := c.addressbookHTTPClient(60 * time.Second)
 
@@ -1078,7 +1079,7 @@ func (c *Client) fetchContactsByPath(client *carddav.Client, addressbookPath str
 		return nil, nil
 	}
 
-	ctx := context.Background()
+	ctx := c.syncContext()
 	c.log.Debug().
 		Int("count", len(paths)).
 		Msg("Fetching records by path using multiget")
@@ -1123,4 +1124,11 @@ func TestConnection(baseURL, username, password string) error {
 
 	log.Info().Int("addressbooks", len(addressbooks)).Msg("Connection test successful")
 	return nil
+}
+
+func (c *Client) syncContext() context.Context {
+	if c.ctx != nil {
+		return c.ctx
+	}
+	return context.Background()
 }

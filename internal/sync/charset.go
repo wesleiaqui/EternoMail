@@ -174,16 +174,6 @@ func extractCharsetFromHTML(html []byte) string {
 		searchBytes = html[:1024]
 	}
 
-	// Log the first 200 bytes for debugging (to see what meta tags are present)
-	preview := searchBytes
-	if len(preview) > 200 {
-		preview = preview[:200]
-	}
-	log.Debug().
-		Str("htmlPreview", string(preview)).
-		Int("searchLen", len(searchBytes)).
-		Msg("Searching for charset in HTML")
-
 	// Pattern 1: <meta charset="...">
 	re1 := regexp.MustCompile(`(?i)<meta[^>]+charset=["']?([^"'\s>]+)`)
 	if match := re1.FindSubmatch(searchBytes); len(match) > 1 {

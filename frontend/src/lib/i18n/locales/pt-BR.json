@@ -214,5 +214,11 @@
     "failedToUpdateStar": "Falha ao atualizar a estrela",
     "undone": "Desfeito: {description}",
     "undoFailed": "Falha ao desfazer"
+  },
+  "whatsNew": {
+    "title": "Novidades",
+    "welcome": "Bem-vindo ao Eterno Mail v{version}!",
+    "fallback": "Esta versão está pronta para uso. Consulte o histórico de alterações para ver os detalhes.",
+    "fullChangelog": "Veja o histórico completo de alterações:"
   }
 }

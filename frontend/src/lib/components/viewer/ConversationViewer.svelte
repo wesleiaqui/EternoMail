@@ -102,7 +102,7 @@
   // State
   let conversation = $state<messageModels.Conversation | null>(null)
   // Per-message EmailBody refs, used to pull each rendered body for printing.
-  let emailBodyRefs: Record<string, { getPrintableHtml(): Promise<string> }> = {}
+  let emailBodyRefs = $state<Record<string, { getPrintableHtml(): Promise<string> }>>({})
   let loading = $state(false)
   let error = $state<string | null>(null)
 
@@ -378,8 +378,19 @@
     cleanupFunctions.forEach(cleanup => cleanup())
   })
 
+  let viewGeneration = 0
+
   // Load conversation when threadId changes
   $effect(() => {
+    void accountId
+    viewGeneration++
+    conversation = null
+    smimeResults = {}
+    pgpResults = {}
+    smimeLoading = new Set()
+    pgpLoading = new Set()
+    emailBodyRefs = {}
+    pendingRefresh = null
     // Clear pending refresh timer on any threadId change (full load supersedes refresh)
     if (refreshTimer) {
       clearTimeout(refreshTimer)
@@ -426,11 +437,12 @@
   // if something actually changed (new messages, different count, etc.).
   // This avoids the visible flash/re-render when a sync completes with no changes.
   async function refreshConversation(tid: string, fid: string) {
+    const generation = viewGeneration
     try {
       const updated = await GetConversation(tid, fid)
 
       // Stale guard: user navigated away while we were fetching
-      if (threadId !== tid) return
+      if (threadId !== tid || folderId !== fid || generation !== viewGeneration) return
 
       if (!updated?.messages || updated.messages.length === 0) {
         dismissConversation(true)
@@ -473,6 +485,7 @@
   }
 
   async function loadConversation(tid: string, fid: string) {
+    const generation = viewGeneration
     // Clear any pending mark-as-read timer from previous conversation
     if (markAsReadTimer) {
       clearTimeout(markAsReadTimer)
@@ -486,7 +499,7 @@
       const result = await GetConversation(tid, fid)
 
       // Stale guard: user navigated away while we were fetching
-      if (threadId !== tid) return
+      if (threadId !== tid || folderId !== fid || generation !== viewGeneration) return
 
       conversation = result
 
@@ -515,8 +528,9 @@
       }
     } catch (err) {
       console.error('Failed to load conversation:', err)
-      error = $_('viewer.failedToLoad')
+      if (generation === viewGeneration) error = $_('viewer.failedToLoad')
     } finally {
+      if (generation !== viewGeneration) return
       loading = false
       // Scroll to bottom to show the latest message
       await tick()
@@ -568,6 +582,7 @@
   }
 
   function processSMIMEMessages(messages: messageModels.Message[]) {
+    const generation = viewGeneration
     // Clear previous results
     smimeResults = {}
     smimeLoading = new Set()
@@ -577,11 +592,13 @@
       smimeLoading = new Set([...smimeLoading, msg.id])
 
       ProcessSMIMEMessage(msg.id).then(result => {
+        if (generation !== viewGeneration) return
         smimeResults = { ...smimeResults, [msg.id]: result }
         const next = new Set(smimeLoading)
         next.delete(msg.id)
         smimeLoading = next
       }).catch(err => {
+        if (generation !== viewGeneration) return
         console.error('Failed to process S/MIME message:', msg.id, err)
         const next = new Set(smimeLoading)
         next.delete(msg.id)
@@ -592,6 +609,7 @@
 
   // Process PGP messages on-view (verify/decrypt fresh each time)
   function processPGPMessages(messages: messageModels.Message[]) {
+    const generation = viewGeneration
     pgpResults = {}
     pgpLoading = new Set()
 
@@ -600,11 +618,13 @@
       pgpLoading = new Set([...pgpLoading, msg.id])
 
       ProcessPGPMessage(msg.id).then(result => {
+        if (generation !== viewGeneration) return
         pgpResults = { ...pgpResults, [msg.id]: result }
         const next = new Set(pgpLoading)
         next.delete(msg.id)
         pgpLoading = next
       }).catch(err => {
+        if (generation !== viewGeneration) return
         console.error('Failed to process PGP message:', msg.id, err)
         const next = new Set(pgpLoading)
         next.delete(msg.id)

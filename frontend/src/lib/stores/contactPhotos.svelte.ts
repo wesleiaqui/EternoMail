@@ -33,6 +33,7 @@ const accountProfileChecked = new Set<string>()
 // The most recent batch the message list asked for — re-fetched on invalidate
 // so newly-synced photos appear without an app restart.
 let lastEmails: string[] = []
+let generation = 0
 
 // Subscribe to `contacts:changed` exactly once (lazily, on first use). The host
 // fires it after any contact source sync (CardDAV/Google/MS background, post-add,
@@ -52,6 +53,7 @@ function norm(email: string): string {
 // Clear the session cache and re-fetch the last-requested emails. Repopulating
 // `cache` reassigns it, so the reactive reads in message rows re-render.
 function invalidate(): void {
+  generation++
   cache = {}
   inflight.clear()
   accountProfileInflight.clear()
@@ -83,10 +85,12 @@ async function ensure(emails: string[]): Promise<void> {
   )
   if (missing.length === 0 && accountEmails.length === 0) return
 
+  const requestGeneration = generation
   for (const e of missing) inflight.add(e)
   for (const email of accountEmails) accountProfileInflight.add(email)
   try {
     const results = missing.length ? (await GetContactPhotos(missing)) || [] : []
+    if (requestGeneration !== generation) return
     // A mail account's own Google profile is not necessarily a contact, so
     // fetch its profile separately. A cached contact miss must not block this
     // one account-profile lookup, but it is still deduplicated per session.
@@ -96,11 +100,12 @@ async function ensure(emails: string[]): Promise<void> {
     } catch (err) {
       console.debug('Failed to fetch account profile photos:', err)
     } finally {
-      for (const email of accountEmails) {
+      for (const email of requestGeneration === generation ? accountEmails : []) {
         accountProfileInflight.delete(email)
         accountProfileChecked.add(email)
       }
     }
+    if (requestGeneration !== generation) return
     // Seed every requested email as a miss, then overwrite the ones that
     // returned a photo — so misses are cached and won't be re-queried.
     const updates: Record<string, Photo | null> = {}
@@ -115,8 +120,10 @@ async function ensure(emails: string[]): Promise<void> {
   } catch (err) {
     console.error('Failed to fetch contact photos:', err)
   } finally {
-    for (const e of missing) inflight.delete(e)
-    for (const email of accountEmails) accountProfileInflight.delete(email)
+    if (requestGeneration === generation) {
+      for (const e of missing) inflight.delete(e)
+      for (const email of accountEmails) accountProfileInflight.delete(email)
+    }
   }
 }
 

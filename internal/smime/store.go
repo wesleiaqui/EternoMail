@@ -112,6 +112,15 @@ func (s *Store) SetDefaultCertificate(accountID, certID string) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// Validate ownership inside the transaction before changing either default.
+	var owner string
+	if err := tx.QueryRow("SELECT account_id FROM smime_certificates WHERE id = ?", certID).Scan(&owner); err != nil {
+		return fmt.Errorf("find default credential: %w", err)
+	}
+	if owner != accountID {
+		return fmt.Errorf("default credential belongs to another account")
+	}
+
 	// Clear existing defaults for this account
 	if _, err := tx.Exec(
 		"UPDATE smime_certificates SET is_default = 0 WHERE account_id = ?", accountID,

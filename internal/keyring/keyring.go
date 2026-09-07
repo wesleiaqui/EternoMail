@@ -2,7 +2,9 @@
 package keyring
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 
 	gokeyring "github.com/zalando/go-keyring"
 )
@@ -21,7 +23,7 @@ func New() *Keyring {
 func (k *Keyring) SetPassword(accountID, password string) error {
 	err := gokeyring.Set(serviceName, accountID, password)
 	if err != nil {
-		return fmt.Errorf("failed to store password: %w", err)
+		return keyringFailure("failed to store password", err)
 	}
 	return nil
 }
@@ -33,7 +35,7 @@ func (k *Keyring) GetPassword(accountID string) (string, error) {
 		return "", ErrCredentialNotFound
 	}
 	if err != nil {
-		return "", fmt.Errorf("failed to retrieve password: %w", err)
+		return "", keyringFailure("failed to retrieve password", err)
 	}
 	return password, nil
 }
@@ -45,7 +47,7 @@ func (k *Keyring) DeletePassword(accountID string) error {
 		return nil // Already deleted, not an error
 	}
 	if err != nil {
-		return fmt.Errorf("failed to delete password: %w", err)
+		return keyringFailure("failed to delete password", err)
 	}
 	return nil
 }
@@ -54,11 +56,11 @@ func (k *Keyring) DeletePassword(accountID string) error {
 func (k *Keyring) SetOAuthTokens(accountID, accessToken, refreshToken string) error {
 	// Store access token
 	if err := gokeyring.Set(serviceName, accountID+":access_token", accessToken); err != nil {
-		return fmt.Errorf("failed to store access token: %w", err)
+		return keyringFailure("failed to store access token", err)
 	}
 	// Store refresh token
 	if err := gokeyring.Set(serviceName, accountID+":refresh_token", refreshToken); err != nil {
-		return fmt.Errorf("failed to store refresh token: %w", err)
+		return keyringFailure("failed to store refresh token", err)
 	}
 	return nil
 }
@@ -70,7 +72,7 @@ func (k *Keyring) GetOAuthTokens(accountID string) (accessToken, refreshToken st
 		return "", "", ErrCredentialNotFound
 	}
 	if err != nil {
-		return "", "", fmt.Errorf("failed to retrieve access token: %w", err)
+		return "", "", keyringFailure("failed to retrieve access token", err)
 	}
 
 	refreshToken, err = gokeyring.Get(serviceName, accountID+":refresh_token")
@@ -78,7 +80,7 @@ func (k *Keyring) GetOAuthTokens(accountID string) (accessToken, refreshToken st
 		return "", "", ErrCredentialNotFound
 	}
 	if err != nil {
-		return "", "", fmt.Errorf("failed to retrieve refresh token: %w", err)
+		return "", "", keyringFailure("failed to retrieve refresh token", err)
 	}
 
 	return accessToken, refreshToken, nil
@@ -86,14 +88,23 @@ func (k *Keyring) GetOAuthTokens(accountID string) (accessToken, refreshToken st
 
 // DeleteOAuthTokens removes OAuth2 tokens for an account
 func (k *Keyring) DeleteOAuthTokens(accountID string) error {
-	_ = gokeyring.Delete(serviceName, accountID+":access_token")
-	_ = gokeyring.Delete(serviceName, accountID+":refresh_token")
-	return nil
+	return errors.Join(deleteEntry(accountID+":access_token"), deleteEntry(accountID+":refresh_token"))
 }
 
 // DeleteAllCredentials removes all credentials for an account
 func (k *Keyring) DeleteAllCredentials(accountID string) error {
-	_ = k.DeletePassword(accountID)
-	_ = k.DeleteOAuthTokens(accountID)
-	return nil
+	return errors.Join(k.DeletePassword(accountID), k.DeleteOAuthTokens(accountID))
+}
+
+// Do not expose backend error strings: they can contain secret-service payloads.
+func keyringFailure(operation string, err error) error {
+	slog.Warn("OS keyring operation failed", "operation", operation)
+	return fmt.Errorf("%s: keyring unavailable — run in a desktop session with an unlocked keyring", operation)
+}
+func deleteEntry(key string) error {
+	err := gokeyring.Delete(serviceName, key)
+	if err == nil || errors.Is(err, gokeyring.ErrNotFound) {
+		return nil
+	}
+	return keyringFailure("failed to delete credential", err)
 }

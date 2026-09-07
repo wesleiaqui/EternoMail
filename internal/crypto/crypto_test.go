@@ -7,7 +7,7 @@ import (
 
 func TestNewEncryptor(t *testing.T) {
 	dir := t.TempDir()
-	enc, err := NewEncryptor(dir)
+	enc, _, _, err := NewEncryptor(dir)
 	if err != nil {
 		t.Fatalf("NewEncryptor failed: %v", err)
 	}
@@ -17,7 +17,7 @@ func TestNewEncryptor(t *testing.T) {
 }
 
 func TestEncryptDecryptRoundTrip(t *testing.T) {
-	enc, err := NewEncryptor(t.TempDir())
+	enc, _, _, err := NewEncryptor(t.TempDir())
 	if err != nil {
 		t.Fatalf("NewEncryptor failed: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 }
 
 func TestEncryptDecryptEmpty(t *testing.T) {
-	enc, err := NewEncryptor(t.TempDir())
+	enc, _, _, err := NewEncryptor(t.TempDir())
 	if err != nil {
 		t.Fatalf("NewEncryptor failed: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestEncryptDecryptEmpty(t *testing.T) {
 }
 
 func TestDecryptInvalidBase64(t *testing.T) {
-	enc, err := NewEncryptor(t.TempDir())
+	enc, _, _, err := NewEncryptor(t.TempDir())
 	if err != nil {
 		t.Fatalf("NewEncryptor failed: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestDecryptInvalidBase64(t *testing.T) {
 }
 
 func TestDecryptTamperedCiphertext(t *testing.T) {
-	enc, err := NewEncryptor(t.TempDir())
+	enc, _, _, err := NewEncryptor(t.TempDir())
 	if err != nil {
 		t.Fatalf("NewEncryptor failed: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestDecryptTamperedCiphertext(t *testing.T) {
 }
 
 func TestEncryptProducesDifferentCiphertexts(t *testing.T) {
-	enc, err := NewEncryptor(t.TempDir())
+	enc, _, _, err := NewEncryptor(t.TempDir())
 	if err != nil {
 		t.Fatalf("NewEncryptor failed: %v", err)
 	}

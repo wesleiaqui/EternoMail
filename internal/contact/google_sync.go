@@ -2,6 +2,7 @@
 package contact
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -35,6 +36,7 @@ type SyncResult struct {
 // GoogleContactsSyncer syncs contacts from Google People API.
 // Uses the people.connections endpoint to fetch all user's saved contacts.
 type GoogleContactsSyncer struct {
+	ctx        context.Context
 	httpClient *http.Client
 	log        zerolog.Logger
 }
@@ -77,7 +79,7 @@ func (s *GoogleContactsSyncer) SyncContactsDelta(accessToken, syncToken string) 
 			apiURL += "&requestSyncToken=true"
 		}
 
-		req, err := http.NewRequest("GET", apiURL, nil)
+		req, err := http.NewRequestWithContext(s.syncContext(), "GET", apiURL, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create request: %w", err)
 		}
@@ -256,7 +258,7 @@ func (s *GoogleContactsSyncer) enrichPhotos(records []SyncedRecord) {
 		if sr.Record == nil || sr.Record.PhotoURL == "" {
 			continue
 		}
-		req, err := http.NewRequest("GET", sr.Record.PhotoURL, nil)
+		req, err := http.NewRequestWithContext(s.syncContext(), "GET", sr.Record.PhotoURL, nil)
 		if err != nil {
 			continue
 		}
@@ -344,4 +346,18 @@ type googleErrorDetail struct {
 	Type   string `json:"@type"`
 	Reason string `json:"reason"` // e.g., "EXPIRED_SYNC_TOKEN"
 	Domain string `json:"domain"`
+}
+
+// SyncContactsDeltaContext preserves the caller's cancellation across pages,
+// expired-token fallback and photo downloads without mutating the shared syncer.
+func (s *GoogleContactsSyncer) SyncContactsDeltaContext(ctx context.Context, accessToken, cursor string) (*SyncResult, error) {
+	scoped := *s
+	scoped.ctx = ctx
+	return scoped.SyncContactsDelta(accessToken, cursor)
+}
+func (s *GoogleContactsSyncer) syncContext() context.Context {
+	if s.ctx != nil {
+		return s.ctx
+	}
+	return context.Background()
 }

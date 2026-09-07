@@ -24,6 +24,7 @@ type Scheduler struct {
 	wg            sync.WaitGroup
 	running       bool
 	runningMu     sync.Mutex
+	lifecycleMu   sync.Mutex
 	checkInterval time.Duration
 }
 
@@ -46,6 +47,8 @@ func (s *Scheduler) SetConnectivityCheck(check func() bool) {
 
 // Start starts the background sync scheduler
 func (s *Scheduler) Start(ctx context.Context) {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
 	s.runningMu.Lock()
 	defer s.runningMu.Unlock()
 
@@ -65,18 +68,30 @@ func (s *Scheduler) Start(ctx context.Context) {
 
 // Stop stops the background sync scheduler
 func (s *Scheduler) Stop() {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	s.runningMu.Lock()
+	if !s.running {
+		s.runningMu.Unlock()
+		return
+	}
+	s.running = false
+	s.cancel()
+	s.runningMu.Unlock()
+	s.wg.Wait()
+	s.log.Info().Msg("CardDAV sync scheduler stopped")
+}
+
+// launch tracks every scheduler-owned job so Stop cannot close the database
+// underneath a sync. Admission and WaitGroup.Add are serialized with Stop.
+func (s *Scheduler) launch(job func()) {
 	s.runningMu.Lock()
 	defer s.runningMu.Unlock()
-
 	if !s.running {
 		return
 	}
-
-	s.cancel()
-	s.wg.Wait()
-	s.running = false
-
-	s.log.Info().Msg("CardDAV sync scheduler stopped")
+	s.wg.Add(1)
+	go func() { defer s.wg.Done(); job() }()
 }
 
 // run is the main scheduler loop
@@ -137,11 +152,12 @@ func (s *Scheduler) syncDueSources() {
 		s.log.Debug().Str("source", source.Name).Msg("Source is due for sync")
 
 		// Sync in background (don't block the scheduler)
-		go func(sourceID string) {
-			if err := s.syncer.SyncSource(sourceID); err != nil {
+		sourceID := source.ID
+		s.launch(func() {
+			if err := s.syncer.SyncSourceContext(s.ctx, sourceID); err != nil {
 				s.log.Error().Err(err).Str("sourceID", sourceID).Msg("Background sync failed")
 			}
-		}(source.ID)
+		})
 	}
 }
 
@@ -161,18 +177,18 @@ func (s *Scheduler) isSyncDue(source *Source) bool {
 
 // TriggerSync manually triggers a sync for a specific source (non-blocking)
 func (s *Scheduler) TriggerSync(sourceID string) {
-	go func() {
-		if err := s.syncer.SyncSource(sourceID); err != nil {
+	s.launch(func() {
+		if err := s.syncer.SyncSourceContext(s.ctx, sourceID); err != nil {
 			s.log.Error().Err(err).Str("sourceID", sourceID).Msg("Manual sync failed")
 		}
-	}()
+	})
 }
 
 // TriggerSyncAll manually triggers a sync for all enabled sources (non-blocking)
 func (s *Scheduler) TriggerSyncAll() {
-	go func() {
-		if err := s.syncer.SyncAllSources(); err != nil {
+	s.launch(func() {
+		if err := s.syncer.SyncAllSourcesContext(s.ctx); err != nil {
 			s.log.Error().Err(err).Msg("Manual sync all failed")
 		}
-	}()
+	})
 }

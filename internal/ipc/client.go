@@ -25,6 +25,7 @@ const (
 type BaseClient struct {
 	conn          net.Conn
 	encoder       *json.Encoder
+	reader        *messageReader
 	handler       func(msg Message)
 	pendingReplys map[string]chan Message
 	mu            sync.RWMutex
@@ -124,6 +125,7 @@ func (c *BaseClient) Close() error {
 func (c *BaseClient) SetConnection(conn net.Conn) {
 	c.conn = conn
 	c.encoder = json.NewEncoder(conn)
+	c.reader = &messageReader{reader: bufio.NewReaderSize(conn, ReadBufferSize)}
 }
 
 // Authenticate sends the authentication message and waits for a response.
@@ -142,12 +144,17 @@ func (c *BaseClient) Authenticate(ctx context.Context, token string) error {
 	authCtx, cancel := context.WithTimeout(ctx, AuthTimeout)
 	defer cancel()
 
-	reader := bufio.NewReaderSize(c.conn, ReadBufferSize)
-	decoder := json.NewDecoder(reader)
+	decoder := c.reader
 
 	// Set read deadline
-	_ = c.conn.SetReadDeadline(time.Now().Add(AuthTimeout))
-	defer func() { _ = c.conn.SetReadDeadline(time.Time{}) }()
+	if err := c.conn.SetReadDeadline(time.Now().Add(AuthTimeout)); err != nil {
+		return fmt.Errorf("set IPC auth deadline: %w", err)
+	}
+	defer func() {
+		if err := c.conn.SetReadDeadline(time.Time{}); err != nil {
+			slog.Warn("Failed to clear IPC auth deadline", "error", err)
+		}
+	}()
 
 	responseChan := make(chan struct {
 		msg Message
@@ -165,6 +172,8 @@ func (c *BaseClient) Authenticate(ctx context.Context, token string) error {
 
 	select {
 	case <-authCtx.Done():
+		c.conn.Close()
+		<-responseChan
 		return fmt.Errorf("authentication timeout")
 	case result := <-responseChan:
 		if result.err != nil {
@@ -201,8 +210,7 @@ func (c *BaseClient) StartReadLoop(ctx context.Context) {
 
 // readLoop reads messages from the server until the connection is closed.
 func (c *BaseClient) readLoop() {
-	reader := bufio.NewReaderSize(c.conn, ReadBufferSize)
-	decoder := json.NewDecoder(reader)
+	decoder := c.reader
 
 	for {
 		select {

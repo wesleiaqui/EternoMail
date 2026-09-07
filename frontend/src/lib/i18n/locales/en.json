@@ -1059,5 +1059,11 @@
       "successToast": "Write access enabled for {name}",
       "failureToast": "Failed to enable write access: {message}"
     }
+  },
+  "whatsNew": {
+    "title": "What's new?",
+    "welcome": "Welcome to Eterno Mail v{version}!",
+    "fallback": "This version is ready to use. Open the full changelog for release details.",
+    "fullChangelog": "See the full changelog:"
   }
 }

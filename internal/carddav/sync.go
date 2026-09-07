@@ -1,6 +1,7 @@
 package carddav
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -43,6 +44,7 @@ func retryDBOperation(operation func() error, maxRetries int, baseDelay time.Dur
 
 // Syncer handles syncing contacts from CardDAV/Google/Microsoft sources
 type Syncer struct {
+	ctx             context.Context
 	store           *Store
 	credStore       *credentials.Store
 	getAccountToken AccessTokenGetter // Gets OAuth token from linked email account
@@ -80,6 +82,9 @@ func (s *Syncer) SetSyncCompleteHandler(fn func(sourceID string)) {
 
 // SyncSource syncs contacts for a source based on its type (CardDAV, Google, Microsoft)
 func (s *Syncer) SyncSource(sourceID string) error {
+	if err := s.syncContext().Err(); err != nil {
+		return err
+	}
 	s.log.Info().Str("sourceID", sourceID).Msg("Starting source sync")
 
 	// Get source
@@ -147,6 +152,8 @@ func (s *Syncer) syncCardDAV(source *Source) error {
 		return fmt.Errorf("failed to create client: %w", err)
 	}
 
+	client.ctx = s.syncContext()
+
 	// Get enabled addressbooks
 	addressbooks, err := s.store.ListEnabledAddressbooks(source.ID)
 	if err != nil {
@@ -201,7 +208,7 @@ func (s *Syncer) syncGoogle(source *Source) error {
 	}
 
 	// Sync contacts using Google syncer with delta sync
-	result, err := s.googleSyncer.SyncContactsDelta(accessToken, ab.SyncToken)
+	result, err := s.googleSyncer.SyncContactsDeltaContext(s.syncContext(), accessToken, ab.SyncToken)
 	if err != nil {
 		syncErr := fmt.Sprintf("failed to sync: %v", err)
 		s.store.UpdateSourceSyncStatus(source.ID, syncErr)
@@ -243,7 +250,7 @@ func (s *Syncer) syncMicrosoft(source *Source) error {
 	}
 
 	// Sync contacts using Microsoft syncer with delta sync
-	result, err := s.microsoftSyncer.SyncContactsDelta(accessToken, ab.SyncToken)
+	result, err := s.microsoftSyncer.SyncContactsDeltaContext(s.syncContext(), accessToken, ab.SyncToken)
 	if err != nil {
 		syncErr := fmt.Sprintf("failed to sync: %v", err)
 		s.store.UpdateSourceSyncStatus(source.ID, syncErr)
@@ -635,4 +642,22 @@ func (s *Syncer) GetSourcesDueForSync() ([]*Source, error) {
 	}
 
 	return dueForSync, nil
+}
+
+// SyncSourceContext gives a scheduled sync a per-call cancellation scope.
+func (s *Syncer) SyncSourceContext(ctx context.Context, sourceID string) error {
+	scoped := *s
+	scoped.ctx = ctx
+	return scoped.SyncSource(sourceID)
+}
+func (s *Syncer) SyncAllSourcesContext(ctx context.Context) error {
+	scoped := *s
+	scoped.ctx = ctx
+	return scoped.SyncAllSources()
+}
+func (s *Syncer) syncContext() context.Context {
+	if s.ctx != nil {
+		return s.ctx
+	}
+	return context.Background()
 }
