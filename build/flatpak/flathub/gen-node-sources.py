@@ -66,7 +66,6 @@ def make_cache_index_entry(url: str, integrity: str) -> dict:
     """Create an inline entry that writes an npm cache index record."""
     cache_key = f"make-fetch-happen:request-cache:{url}"
     key_hash = hashlib.sha256(cache_key.encode()).hexdigest()
-    content_hash = hashlib.sha1(cache_key.encode()).hexdigest()
 
     cache_meta = {
         "key": cache_key,
@@ -80,9 +79,12 @@ def make_cache_index_entry(url: str, integrity: str) -> dict:
         },
     }
 
+    # cacache hashes the serialized record, not the cache key.
+    record = json.dumps(cache_meta, separators=(',', ': '))
+    content_hash = hashlib.sha1(record.encode()).hexdigest()
     return {
         "type": "inline",
-        "contents": f"{content_hash}\t{json.dumps(cache_meta, separators=(',', ': '))}",
+        "contents": f"\n{content_hash}\t{record}\n",
         "dest-filename": key_hash[4:],
         "dest": f"flatpak-node/npm-cache/_cacache/index-v5/{key_hash[:2]}/{key_hash[2:4]}",
     }
@@ -139,8 +141,8 @@ def main():
         resolved = val.get('resolved', '')
         integrity = val.get('integrity', '')
 
-        if not resolved or not integrity:
-            continue
+        if not resolved.startswith("https://") or not integrity:
+            raise ValueError(f"Cannot vendor {key}: HTTPS resolved URL and integrity required")
 
         # Skip duplicate URLs (e.g. nested @esbuild packages)
         if resolved in seen_urls:

@@ -169,11 +169,20 @@ jobs:
           chmod +x calculate-hashes.sh
           ./calculate-hashes.sh ${{ github.ref_name }}
 
-      - name: Upload updated manifest
+      - name: Generate and check offline npm sources
+        run: |
+          python3 build/flatpak/flathub/gen-node-sources.py
+          python3 build/flatpak/flathub/validate-node-sources.py --check-only
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s build/flatpak/flathub -p 'test_*.py'
+
+      - name: Upload updated manifest and npm sources
         uses: actions/upload-artifact@v7
         with:
           name: flathub-manifest
-          path: build/flatpak/flathub/io.github.wesleiaqui.eternomail.yml
+          path: |
+            build/flatpak/flathub/io.github.wesleiaqui.eternomail.yml
+            build/flatpak/flathub/node-sources.json
+          if-no-files-found: error
           retention-days: 1
 
   build-flatpak:
@@ -194,10 +203,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      # Download to an empty staging directory. Missing artifact files must
+      # fail rather than silently using the stale copies from the tag checkout.
       - uses: actions/download-artifact@v7
         with:
           name: flathub-manifest
-          path: build/flatpak/flathub
+          path: ${{ runner.temp }}/flathub-manifest
+
+      - name: Apply prepared Flatpak sources
+        run: |
+          install -m 644 "${{ runner.temp }}/flathub-manifest/io.github.wesleiaqui.eternomail.yml" build/flatpak/flathub/
+          install -m 644 "${{ runner.temp }}/flathub-manifest/node-sources.json" build/flatpak/flathub/
+
+      - name: Set up Node.js for offline cache validation
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      # Runs natively on BOTH x86_64 and aarch64, with an empty temporary cache.
+      - name: Validate offline npm installation before Flatpak
+        run: python3 build/flatpak/flathub/validate-node-sources.py
 
       - name: Install dependencies
         run: |
@@ -241,21 +266,33 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout code
+      - name: Checkout main before applying release artifact
         uses: actions/checkout@v6
+        with:
+          ref: main
 
+      # Download to an empty staging directory. Missing artifact files must
+      # fail rather than silently using the stale copies from the tag checkout.
       - uses: actions/download-artifact@v7
         with:
           name: flathub-manifest
-          path: build/flatpak/flathub
+          path: ${{ runner.temp }}/flathub-manifest
+
+      - name: Apply prepared Flatpak sources
+        run: |
+          install -m 644 "${{ runner.temp }}/flathub-manifest/io.github.wesleiaqui.eternomail.yml" build/flatpak/flathub/
+          install -m 644 "${{ runner.temp }}/flathub-manifest/node-sources.json" build/flatpak/flathub/
 
       - name: Commit updated manifest
         if: success()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin main:main
-          git checkout main
-          git add build/flatpak/flathub/io.github.wesleiaqui.eternomail.yml
-          git commit -m "${{ github.ref_name }} - Flathub submission" || echo "No changes to commit"
+          python3 build/flatpak/flathub/validate-node-sources.py --check-only
+          git add build/flatpak/flathub/io.github.wesleiaqui.eternomail.yml build/flatpak/flathub/node-sources.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "${{ github.ref_name }} - Flathub submission"
           git push origin main
