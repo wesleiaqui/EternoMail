@@ -12,6 +12,7 @@ package davutil
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,6 +20,11 @@ import (
 	"strings"
 	"time"
 )
+
+// maxXMLResponseBytes matches CardDAV's largest accepted DAV multistatus body.
+const maxXMLResponseBytes = 32 << 20
+
+var errXMLResponseTooLarge = errors.New("DAV XML response exceeds 32 MiB limit")
 
 // defaultBase is the base RoundTripper every davutil client falls back to when
 // no explicit base is supplied. It starts as http.DefaultTransport; the HOST may
@@ -157,11 +163,21 @@ func (t *XMLFixTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if !strings.Contains(ct, "xml") && !strings.Contains(ct, "text/xml") {
 		return resp, nil
 	}
+	if resp.ContentLength > maxXMLResponseBytes {
+		resp.Body.Close()
+		return nil, fmt.Errorf("davutil.XMLFixTransport: %w", errXMLResponseTooLarge)
+	}
 
-	body, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxXMLResponseBytes+1))
+	closeErr := resp.Body.Close()
 	if err != nil {
 		return nil, fmt.Errorf("davutil.XMLFixTransport: read body: %w", err)
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("davutil.XMLFixTransport: close body: %w", closeErr)
+	}
+	if len(body) > maxXMLResponseBytes {
+		return nil, fmt.Errorf("davutil.XMLFixTransport: %w", errXMLResponseTooLarge)
 	}
 
 	// Fix 1: normalize getlastmodified date formats.
