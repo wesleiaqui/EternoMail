@@ -10,7 +10,8 @@ import (
 
 // Sanitizer provides HTML email sanitization
 type Sanitizer struct {
-	policy *bluemonday.Policy
+	policy      *bluemonday.Policy
+	eventPolicy *bluemonday.Policy
 }
 
 // NewSanitizer creates a new HTML sanitizer configured for email content
@@ -126,7 +127,16 @@ func NewSanitizer() *Sanitizer {
 	// ==========================================================================
 	p.AllowDataAttributes()
 
-	return &Sanitizer{policy: p}
+	// Event descriptions render directly in the application document, unlike
+	// email bodies which render in a sandboxed iframe. UGCPolicy keeps useful
+	// semantic markup while refusing style, class, and id attributes.
+	eventPolicy := bluemonday.UGCPolicy()
+	eventPolicy.AllowURLSchemes("http", "https", "mailto")
+	eventPolicy.RequireNoFollowOnLinks(true)
+	eventPolicy.RequireNoReferrerOnLinks(true)
+	eventPolicy.AddTargetBlankToFullyQualifiedLinks(true)
+
+	return &Sanitizer{policy: p, eventPolicy: eventPolicy}
 }
 
 // Sanitize cleans HTML content for safe display
@@ -147,6 +157,15 @@ func (s *Sanitizer) SanitizeWithRemoteImageBlocking(html string) string {
 
 	// Then replace remote images with placeholders
 	return BlockRemoteImages(sanitized)
+}
+
+// SanitizeForEvent cleans rich event descriptions for insertion into the
+// application document. It intentionally does not inherit email's CSS policy.
+func (s *Sanitizer) SanitizeForEvent(html string) string {
+	if s == nil || s.eventPolicy == nil {
+		return ""
+	}
+	return BlockRemoteImages(s.eventPolicy.Sanitize(removeScriptTags(html)))
 }
 
 // removeScriptTags removes all script tags and their content

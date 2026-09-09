@@ -518,15 +518,13 @@ func (k stubKV) Set(key, value string) error          { return coreapi.ErrUnimpl
 func (k stubKV) Delete(key string) error              { return coreapi.ErrUnimplemented }
 func (k stubKV) List(prefix string) ([]string, error) { return nil, coreapi.ErrUnimplemented }
 
-// sharedSanitizer is the single bluemonday-backed HTML sanitizer reused for
-// all extensions' HTML() surface. bluemonday policies are safe for concurrent
-// Sanitize calls, and the policy is the same one mail uses, so extensions
-// inherit identical script/handler stripping + remote-image blocking.
+// sharedSanitizer supplies the stricter application-document policy used by
+// extensions. Email keeps its broader policy because it renders in an iframe.
 var sharedSanitizer = email.NewSanitizer()
 
-// htmlCoreImpl is the host implementation of coreapi.HTML. It delegates to the
-// existing internal/email sanitizer (no copied policy), blocking remote images
-// for privacy parity with the mail viewer.
+// htmlCoreImpl is the host implementation of coreapi.HTML. Extension HTML is
+// inserted into the application document, so it uses the event policy rather
+// than email's iframe-only CSS policy.
 type htmlCoreImpl struct {
 	sanitizer *email.Sanitizer
 }
@@ -535,7 +533,7 @@ func (h htmlCoreImpl) Sanitize(html string) string {
 	if h.sanitizer == nil {
 		return ""
 	}
-	return h.sanitizer.SanitizeWithRemoteImageBlocking(html)
+	return h.sanitizer.SanitizeForEvent(html)
 }
 
 // loggerCoreImpl routes Logger calls through the host's zerolog with an
