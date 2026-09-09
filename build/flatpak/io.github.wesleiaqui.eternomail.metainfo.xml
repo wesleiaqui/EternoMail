@@ -309,7 +309,7 @@
   </provides>
 
   <releases>
-    <release version="0.3.6" date="2026-09-07">
+    <release version="0.3.7" date="2026-09-07">
       <description>
         <ul>
           <li>Refined expanded and compact sidebar navigation and Compose styling</li>
