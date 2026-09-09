@@ -27,8 +27,7 @@ func (a *App) AcceptCertificate(host string, info certificate.CertificateInfo, p
 		Str("host", host).
 		Str("fingerprint", info.Fingerprint).
 		Msg("Accepting certificate for session")
-	a.certStore.AcceptSession(info.Fingerprint)
-	return nil
+	return a.certStore.AcceptSession(host, info.Fingerprint)
 }
 
 // GetTrustedCertificates returns permanently trusted certificates for the given hosts

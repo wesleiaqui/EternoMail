@@ -2,6 +2,9 @@ package certificate
 
 import (
 	"database/sql"
+	"fmt"
+	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,7 +15,7 @@ import (
 type Store struct {
 	db      *sql.DB
 	mu      sync.RWMutex
-	session map[string]bool // fingerprint -> trusted (session only)
+	session map[string]bool // normalized host + fingerprint -> trusted
 }
 
 // NewStore creates a new certificate trust store
@@ -23,11 +26,16 @@ func NewStore(db *sql.DB) *Store {
 	}
 }
 
-// IsTrusted checks if a certificate fingerprint is trusted (DB or session)
-func (s *Store) IsTrusted(fingerprint string) bool {
+// IsTrusted checks whether a certificate fingerprint is trusted for host.
+func (s *Store) IsTrusted(host, fingerprint string) bool {
+	host, err := normalizeHost(host)
+	if err != nil || fingerprint == "" {
+		return false
+	}
+	key := trustKey(host, fingerprint)
 	// Check session memory first (fast path)
 	s.mu.RLock()
-	if s.session[fingerprint] {
+	if s.session[key] {
 		s.mu.RUnlock()
 		return true
 	}
@@ -35,9 +43,9 @@ func (s *Store) IsTrusted(fingerprint string) bool {
 
 	// Check database
 	var count int
-	err := s.db.QueryRow(
-		"SELECT COUNT(*) FROM trusted_certificates WHERE fingerprint = ?",
-		fingerprint,
+	err = s.db.QueryRow(
+		"SELECT COUNT(*) FROM trusted_certificates WHERE host = ? AND fingerprint = ?",
+		host, fingerprint,
 	).Scan(&count)
 	if err != nil {
 		return false
@@ -47,20 +55,39 @@ func (s *Store) IsTrusted(fingerprint string) bool {
 
 // AcceptPermanently stores a certificate in the database
 func (s *Store) AcceptPermanently(host string, info *CertificateInfo) error {
+	if info == nil || info.Fingerprint == "" {
+		return fmt.Errorf("certificate fingerprint is required")
+	}
+	host, err := normalizeHost(host)
+	if err != nil {
+		return err
+	}
 	id := uuid.New().String()
-	_, err := s.db.Exec(
-		`INSERT OR REPLACE INTO trusted_certificates (id, fingerprint, host, subject, issuer, not_before, not_after, accepted_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err = s.db.Exec(
+		`INSERT INTO trusted_certificates (id, fingerprint, host, subject, issuer, not_before, not_after, accepted_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(host, fingerprint) DO UPDATE SET
+			 subject = excluded.subject, issuer = excluded.issuer,
+			 not_before = excluded.not_before, not_after = excluded.not_after,
+			 accepted_at = excluded.accepted_at`,
 		id, info.Fingerprint, host, info.Subject, info.Issuer, info.NotBefore, info.NotAfter, time.Now(),
 	)
 	return err
 }
 
-// AcceptSession stores a certificate fingerprint in session memory only
-func (s *Store) AcceptSession(fingerprint string) {
+// AcceptSession stores a certificate fingerprint for host in session memory only.
+func (s *Store) AcceptSession(host, fingerprint string) error {
+	host, err := normalizeHost(host)
+	if err != nil {
+		return err
+	}
+	if fingerprint == "" {
+		return fmt.Errorf("certificate fingerprint is required")
+	}
 	s.mu.Lock()
-	s.session[fingerprint] = true
+	s.session[trustKey(host, fingerprint)] = true
 	s.mu.Unlock()
+	return nil
 }
 
 // GetByHosts returns permanently trusted certificates for the given hosts
@@ -69,17 +96,19 @@ func (s *Store) GetByHosts(hosts []string) ([]*CertificateInfo, error) {
 		return nil, nil
 	}
 
-	// Build query with placeholders
-	query := "SELECT fingerprint, host, subject, issuer, not_before, not_after FROM trusted_certificates WHERE host IN ("
-	args := make([]interface{}, len(hosts))
-	for i, h := range hosts {
-		if i > 0 {
-			query += ","
+	args := make([]interface{}, 0, len(hosts))
+	for _, h := range hosts {
+		normalized, err := normalizeHost(h)
+		if err != nil {
+			continue
 		}
-		query += "?"
-		args[i] = h
+		args = append(args, normalized)
 	}
-	query += ") ORDER BY accepted_at DESC"
+	if len(args) == 0 {
+		return nil, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")
+	query := "SELECT fingerprint, host, subject, issuer, not_before, not_after FROM trusted_certificates WHERE host IN (" + placeholders + ") ORDER BY accepted_at DESC"
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -108,8 +137,39 @@ func (s *Store) Remove(fingerprint string) error {
 
 	// Also remove from session
 	s.mu.Lock()
-	delete(s.session, fingerprint)
+	for key := range s.session {
+		if strings.HasSuffix(key, "\x00"+fingerprint) {
+			delete(s.session, key)
+		}
+	}
 	s.mu.Unlock()
 
 	return nil
+}
+
+func trustKey(host, fingerprint string) string {
+	return host + "\x00" + fingerprint
+}
+
+// normalizeHost produces the host identity used by TLS verification. Ports
+// are excluded because TLS ServerName identifies the endpoint name, not its
+// service port. DNS names are case-insensitive; IP addresses use net.IP's
+// canonical form so equivalent IPv4 and IPv6 spellings share one identity.
+func normalizeHost(host string) (string, error) {
+	host = strings.TrimSpace(host)
+	if splitHost, _, err := net.SplitHostPort(host); err == nil {
+		host = splitHost
+	}
+	host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+	host = strings.TrimSuffix(host, ".")
+	if host == "" || strings.ContainsAny(host, "\t\n\r /\\") {
+		return "", fmt.Errorf("invalid certificate host %q", host)
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.String(), nil
+	}
+	if strings.Contains(host, ":") {
+		return "", fmt.Errorf("invalid certificate host %q", host)
+	}
+	return strings.ToLower(host), nil
 }

@@ -1394,4 +1394,33 @@ var migrations = []Migration{
 			ALTER TABLE folders ADD COLUMN flags_sync_modseq INTEGER NOT NULL DEFAULT 0;
 		`,
 	},
+	{
+		Version: 48,
+		SQL: `
+			-- Certificate exceptions are bound to the TLS server name. The old
+			-- fingerprint-only uniqueness made a trust grant apply to every host.
+			CREATE TABLE trusted_certificates_new (
+				id TEXT PRIMARY KEY,
+				fingerprint TEXT NOT NULL,
+				host TEXT NOT NULL,
+				subject TEXT NOT NULL,
+				issuer TEXT NOT NULL,
+				not_before DATETIME,
+				not_after DATETIME,
+				accepted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				UNIQUE(host, fingerprint)
+			);
+			-- Empty legacy hosts have no server identity and must not become a
+			-- fingerprint-only exception. Existing host names are lower-cased;
+			-- Store normalizes all future host queries and writes.
+			INSERT INTO trusted_certificates_new
+				(id, fingerprint, host, subject, issuer, not_before, not_after, accepted_at)
+			SELECT id, fingerprint, lower(trim(host)), subject, issuer,
+				not_before, not_after, accepted_at
+			FROM trusted_certificates
+			WHERE trim(host) != '';
+			DROP TABLE trusted_certificates;
+			ALTER TABLE trusted_certificates_new RENAME TO trusted_certificates;
+		`,
+	},
 }
