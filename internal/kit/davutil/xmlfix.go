@@ -106,14 +106,18 @@ func NewWebDAVClient(base http.RoundTripper, timeout time.Duration) *http.Client
 // each request, leaving an existing Authorization header untouched. Generic
 // HTTP bearer auth — no extension- or provider-specific knowledge.
 type bearerTransport struct {
-	token string
-	base  http.RoundTripper
+	token  string
+	base   http.RoundTripper
+	origin originGuard
 }
 
 func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	base := t.base
 	if base == nil {
 		base = defaultBaseTransport()
+	}
+	if err := t.origin.allow(req.URL); err != nil {
+		return nil, err
 	}
 	if existing := req.Header.Get("Authorization"); strings.TrimSpace(existing) != "" {
 		return base.RoundTrip(req)

@@ -266,3 +266,94 @@ func TestBasicDigestTransport_BodyReplay(t *testing.T) {
 		t.Fatalf("digest retry body = %q, want %q", h.lastBody, propfind)
 	}
 }
+
+func TestAuthenticatedDAVRedirectsStayWithinOrigin(t *testing.T) {
+	var leaked string
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	defer other.Close()
+
+	var paths []string
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		switch r.URL.Path {
+		case "/start":
+			http.Redirect(w, r, "/inside", http.StatusFound)
+		case "/inside":
+			if user, pass, ok := r.BasicAuth(); !ok || user != "alice" || pass != "secret" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		case "/outside":
+			http.Redirect(w, r, other.URL, http.StatusFound)
+		}
+	}))
+	defer origin.Close()
+
+	client := NewBasicDigestHTTPClient("alice", "secret", 5*time.Second)
+	resp, err := client.Get(origin.URL + "/start")
+	if err != nil {
+		t.Fatalf("same-origin redirect: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || strings.Join(paths, ",") != "/start,/inside" {
+		t.Fatalf("same-origin redirect failed: status=%d paths=%v", resp.StatusCode, paths)
+	}
+
+	_, err = client.Get(origin.URL + "/outside")
+	if err == nil {
+		t.Fatal("cross-origin redirect succeeded")
+	}
+	if leaked != "" {
+		t.Fatalf("Basic authorization leaked to another origin: %q", leaked)
+	}
+}
+
+func TestAuthenticatedDAVRejectsHTTPSDowngrade(t *testing.T) {
+	var leaked string
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer plain.Close()
+
+	tlsServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, plain.URL, http.StatusFound)
+	}))
+	defer tlsServer.Close()
+
+	base := &basicDigestTransport{username: "alice", password: "secret", base: tlsServer.Client().Transport}
+	client := NewWebDAVClient(base, 5*time.Second)
+	_, err := client.Get(tlsServer.URL)
+	if err == nil {
+		t.Fatal("HTTPS to HTTP redirect succeeded")
+	}
+	if leaked != "" {
+		t.Fatalf("Basic authorization leaked on HTTPS downgrade: %q", leaked)
+	}
+}
+
+func TestStaticBearerRedirectDoesNotLeak(t *testing.T) {
+	var leaked string
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer other.Close()
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL, http.StatusFound)
+	}))
+	defer origin.Close()
+
+	client := NewBearerHTTPClient("token", 5*time.Second)
+	_, err := client.Get(origin.URL)
+	if err == nil {
+		t.Fatal("cross-origin bearer redirect succeeded")
+	}
+	if leaked != "" {
+		t.Fatalf("Bearer authorization leaked to another origin: %q", leaked)
+	}
+}
