@@ -30,6 +30,18 @@ type Store struct {
 	log            zerolog.Logger
 }
 
+// CredentialSnapshot is an opaque account-password state captured before a
+// multi-store operation. It retains the selected source and any legacy state
+// so callers can restore it without knowing storage details.
+type CredentialSnapshot struct {
+	storage        string
+	encrypted      sql.NullString
+	keyringKnown   bool
+	keyringPresent bool
+	keyringValue   string
+	smtp           bool
+}
+
 // NewStore creates a new credential store
 // It tries to use the OS keyring, falling back to encrypted database storage
 func NewStore(db *sql.DB, dataDir string) (*Store, error) {
@@ -160,6 +172,9 @@ func (s *Store) GetPassword(accountID string) (string, error) {
 	if s.keyringEnabled {
 		password, err := gokeyring.Get(serviceName, accountID)
 		if err == nil {
+			if password == "" {
+				return "", ErrCredentialNotFound
+			}
 			return password, nil
 		}
 		if err != gokeyring.ErrNotFound {
@@ -269,6 +284,9 @@ func (s *Store) GetSMTPPassword(accountID string) (string, error) {
 	if s.keyringEnabled {
 		password, err := gokeyring.Get(serviceName, smtpPasswordKeyringKey(accountID))
 		if err == nil {
+			if password == "" {
+				return "", ErrCredentialNotFound
+			}
 			return password, nil
 		}
 		if err != gokeyring.ErrNotFound {
@@ -277,6 +295,125 @@ func (s *Store) GetSMTPPassword(accountID string) (string, error) {
 	}
 
 	return "", ErrCredentialNotFound
+}
+
+// CapturePassword captures the complete IMAP password representation.
+func (s *Store) CapturePassword(accountID string) (CredentialSnapshot, error) {
+	return s.captureAccountCredential(accountID, false)
+}
+
+// CaptureSMTPPassword captures the complete SMTP password representation.
+func (s *Store) CaptureSMTPPassword(accountID string) (CredentialSnapshot, error) {
+	return s.captureAccountCredential(accountID, true)
+}
+
+func (s *Store) captureAccountCredential(accountID string, smtp bool) (CredentialSnapshot, error) {
+	var snapshot CredentialSnapshot
+	snapshot.smtp = smtp
+	query := "SELECT password_storage, encrypted_password FROM accounts WHERE id = ?"
+	key := accountID
+	if smtp {
+		query = "SELECT smtp_password_storage, encrypted_smtp_password FROM accounts WHERE id = ?"
+		key = smtpPasswordKeyringKey(accountID)
+	}
+	if err := s.db.QueryRow(query, accountID).Scan(&snapshot.storage, &snapshot.encrypted); err != nil {
+		return CredentialSnapshot{}, fmt.Errorf("capture credential: %w", err)
+	}
+	if !s.keyringEnabled {
+		return snapshot, nil
+	}
+	snapshot.keyringKnown = true
+	value, err := gokeyring.Get(serviceName, key)
+	if err == nil {
+		snapshot.keyringPresent = true
+		snapshot.keyringValue = value
+		return snapshot, nil
+	}
+	if errors.Is(err, gokeyring.ErrNotFound) {
+		return snapshot, nil
+	}
+	return CredentialSnapshot{}, fmt.Errorf("capture keyring credential: %w", err)
+}
+
+// RestorePassword restores an IMAP password snapshot exactly, including its
+// source marker and legacy representation.
+func (s *Store) RestorePassword(accountID string, snapshot CredentialSnapshot) error {
+	if snapshot.smtp {
+		return fmt.Errorf("restore password: SMTP snapshot")
+	}
+	return s.restoreAccountCredential(accountID, snapshot)
+}
+
+// RestoreSMTPPassword restores an SMTP password snapshot exactly.
+func (s *Store) RestoreSMTPPassword(accountID string, snapshot CredentialSnapshot) error {
+	if !snapshot.smtp {
+		return fmt.Errorf("restore SMTP password: IMAP snapshot")
+	}
+	return s.restoreAccountCredential(accountID, snapshot)
+}
+
+func (s *Store) restoreAccountCredential(accountID string, snapshot CredentialSnapshot) error {
+	key := accountID
+	if snapshot.smtp {
+		key = smtpPasswordKeyringKey(accountID)
+	}
+	legacyWithoutCredential := snapshot.storage == "" && (!snapshot.encrypted.Valid || snapshot.encrypted.String == "") && snapshot.keyringKnown && !snapshot.keyringPresent
+	if legacyWithoutCredential {
+		// Suppress a potentially new keyring value before removing it. If removal
+		// fails, keeping deleted is safer than allowing that value to resurface.
+		if err := s.restoreAccountCredentialDB(accountID, snapshot.smtp, credentialStorageDeleted, sql.NullString{}); err != nil {
+			return err
+		}
+		if err := s.restoreSnapshotKeyring(key, snapshot); err != nil {
+			return err
+		}
+		return s.restoreAccountCredentialDB(accountID, snapshot.smtp, snapshot.storage, snapshot.encrypted)
+	}
+
+	keyringFirst := snapshot.storage == credentialStorageKeyring || (snapshot.storage == "" && (!snapshot.encrypted.Valid || snapshot.encrypted.String == "") && snapshot.keyringPresent)
+	if keyringFirst {
+		if err := s.restoreSnapshotKeyring(key, snapshot); err != nil {
+			return err
+		}
+		return s.restoreAccountCredentialDB(accountID, snapshot.smtp, snapshot.storage, snapshot.encrypted)
+	}
+	// fallback and deleted must become authoritative before touching a possibly
+	// stale keyring entry.
+	if err := s.restoreAccountCredentialDB(accountID, snapshot.smtp, snapshot.storage, snapshot.encrypted); err != nil {
+		return err
+	}
+	return s.restoreSnapshotKeyring(key, snapshot)
+}
+
+func (s *Store) restoreAccountCredentialDB(accountID string, smtp bool, storage string, encrypted sql.NullString) error {
+	var value any
+	if encrypted.Valid {
+		value = encrypted.String
+	}
+	query := "UPDATE accounts SET encrypted_password = ?, password_storage = ? WHERE id = ?"
+	if smtp {
+		query = "UPDATE accounts SET encrypted_smtp_password = ?, smtp_password_storage = ? WHERE id = ?"
+	}
+	if _, err := s.db.Exec(query, value, storage, accountID); err != nil {
+		return fmt.Errorf("restore credential storage: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) restoreSnapshotKeyring(key string, snapshot CredentialSnapshot) error {
+	if !snapshot.keyringKnown {
+		return nil
+	}
+	if snapshot.keyringPresent {
+		if err := gokeyring.Set(serviceName, key, snapshot.keyringValue); err != nil {
+			return fmt.Errorf("restore keyring credential: %w", err)
+		}
+		return nil
+	}
+	if err := gokeyring.Delete(serviceName, key); err != nil && !errors.Is(err, gokeyring.ErrNotFound) {
+		return fmt.Errorf("remove keyring credential: %w", err)
+	}
+	return nil
 }
 
 // DeleteSMTPPassword removes the SMTP-specific password for an account.

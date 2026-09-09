@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hkdb/aerion/internal/database"
 	gokeyring "github.com/zalando/go-keyring"
 )
 
@@ -138,5 +139,114 @@ func TestPasswordStorageReturnsErrorWhenFallbackFails(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "secret-password") {
 		t.Fatalf("password leaked through error: %v", err)
+	}
+}
+
+func TestCredentialSnapshotRestoresExactSource(t *testing.T) {
+	gokeyring.MockInit()
+	s, db := newTestStore(t)
+	insertTestAccount(t, db, "account")
+	s.keyringEnabled = true
+
+	// A fallback snapshot remains fallback even when the keyring is available.
+	s.keyringEnabled = false
+	if err := s.SetPassword("account", "fallback-password"); err != nil {
+		t.Fatal(err)
+	}
+	s.keyringEnabled = true
+	fallback, err := s.CapturePassword("account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPassword("account", "new-password"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RestorePassword("account", fallback); err != nil {
+		t.Fatal(err)
+	}
+	assertPasswordStorage(t, db, "password_storage", credentialStorageFallback)
+	if got, err := s.GetPassword("account"); err != nil || got != "fallback-password" {
+		t.Fatalf("fallback restore = %q, %v", got, err)
+	}
+
+	// A keyring snapshot remains keyring.
+	// Capture the actual keyring representation after making it current.
+	if err := s.SetPassword("account", "keyring-password"); err != nil {
+		t.Fatal(err)
+	}
+	keyring, err := s.CapturePassword("account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPassword("account", "another-password"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RestorePassword("account", keyring); err != nil {
+		t.Fatal(err)
+	}
+	assertPasswordStorage(t, db, "password_storage", credentialStorageKeyring)
+	if got, err := s.GetPassword("account"); err != nil || got != "keyring-password" {
+		t.Fatalf("keyring restore = %q, %v", got, err)
+	}
+
+	// Deleted must suppress any residual keyring value after restoration.
+	s.keyringEnabled = false
+	if err := s.DeletePassword("account"); err != nil {
+		t.Fatal(err)
+	}
+	s.keyringEnabled = true
+	deleted, err := s.CapturePassword("account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPassword("account", "residual-password"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RestorePassword("account", deleted); err != nil {
+		t.Fatal(err)
+	}
+	assertPasswordStorage(t, db, "password_storage", credentialStorageDeleted)
+	if _, err := s.GetPassword("account"); !errors.Is(err, ErrCredentialNotFound) {
+		t.Fatalf("deleted restore returned %v", err)
+	}
+}
+
+func TestCredentialSnapshotRestoresLegacyAbsenceAndRejectsEmptyKeyringValue(t *testing.T) {
+	gokeyring.MockInit()
+	s, db := newTestStore(t)
+	insertTestAccount(t, db, "account")
+	s.keyringEnabled = true
+
+	legacy, err := s.CapturePassword("account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPassword("account", "new-password"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RestorePassword("account", legacy); err != nil {
+		t.Fatal(err)
+	}
+	assertPasswordStorage(t, db, "password_storage", "")
+	if _, err := s.GetPassword("account"); !errors.Is(err, ErrCredentialNotFound) {
+		t.Fatalf("legacy absence returned %v", err)
+	}
+
+	if err := gokeyring.Set(serviceName, "account", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("UPDATE accounts SET password_storage = ? WHERE id = ?", credentialStorageKeyring, "account"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetPassword("account"); !errors.Is(err, ErrCredentialNotFound) {
+		t.Fatalf("empty keyring value returned %v", err)
+	}
+}
+
+func assertPasswordStorage(t *testing.T, db *database.DB, column, want string) {
+	t.Helper()
+	var got string
+	if err := db.QueryRow("SELECT " + column + " FROM accounts WHERE id = 'account'").Scan(&got); err != nil || got != want {
+		t.Fatalf("%s = %q, %v; want %q", column, got, err, want)
 	}
 }

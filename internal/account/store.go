@@ -354,8 +354,16 @@ func (s *Store) Update(id string, config *AccountConfig) (*Account, error) {
 		return nil, err
 	}
 
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin account update: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
 	now := time.Now()
-	_, err = s.db.Exec(`
+	_, err = tx.Exec(`
 		UPDATE accounts SET
 			name = ?, email = ?,
 			imap_host = ?, imap_port = ?, imap_security = ?, imap_auth_mechanism = ?,
@@ -387,11 +395,14 @@ func (s *Store) Update(id string, config *AccountConfig) (*Account, error) {
 	}
 
 	// Update the default identity's name (display name for sending)
-	_, err = s.db.Exec(`
+	_, err = tx.Exec(`
 		UPDATE identities SET name = ? WHERE account_id = ? AND is_default = 1
 	`, config.DisplayName, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update default identity: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit account update: %w", err)
 	}
 
 	existing.Name = config.Name
