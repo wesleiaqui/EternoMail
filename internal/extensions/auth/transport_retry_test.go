@@ -5,6 +5,7 @@ import (
 	gokeyring "github.com/zalando/go-keyring"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -51,4 +52,54 @@ func TestRefreshRetryReplaysBodyAndUsesAlreadyRotatedToken(t *testing.T) {
 		t.Fatal("retry failed", err, calls)
 	}
 	resp.Body.Close()
+}
+
+func TestBearerRefreshTransportRedirectDoesNotLeak(t *testing.T) {
+	gokeyring.MockInit()
+	_, store, db := newTestBroker(t)
+	insertTestAccount(t, db, "redirect")
+	if err := store.SetOAuthTokensForClientConfig("redirect", "google-calendar", &credentials.OAuthTokens{
+		Provider: "google", AccessToken: "secret-token", RefreshToken: "refresh", ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var leaked string
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer other.Close()
+	var insideAuth string
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/start":
+			http.Redirect(w, r, "/inside", http.StatusFound)
+		case "/inside":
+			insideAuth = r.Header.Get("Authorization")
+			w.WriteHeader(http.StatusOK)
+		case "/outside":
+			http.Redirect(w, r, other.URL, http.StatusFound)
+		}
+	}))
+	defer origin.Close()
+
+	client := &http.Client{Transport: &bearerRefreshTransport{
+		credStore: store, accountID: "redirect", clientConfigID: "google-calendar",
+	}}
+	resp, err := client.Get(origin.URL + "/start")
+	if err != nil {
+		t.Fatalf("same-origin redirect: %v", err)
+	}
+	resp.Body.Close()
+	if insideAuth != "Bearer secret-token" {
+		t.Fatalf("same-origin redirect authorization = %q", insideAuth)
+	}
+	_, err = client.Get(origin.URL + "/outside")
+	if err == nil {
+		t.Fatal("cross-origin redirect succeeded")
+	}
+	if leaked != "" {
+		t.Fatalf("Bearer authorization leaked to another origin: %q", leaked)
+	}
 }

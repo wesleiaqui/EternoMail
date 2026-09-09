@@ -81,6 +81,37 @@ func TestSanitizeWithRemoteImageBlocking_AllowsData(t *testing.T) {
 	}
 }
 
+func TestSanitizeForEvent_RemovesCSSAndPreservesFormatting(t *testing.T) {
+	s := NewSanitizer()
+	input := `<style>body { visibility: hidden }</style><p style="position:fixed;inset:0;z-index:9999;opacity:0;pointer-events:auto;transform:scale(2);width:100vw;height:100vh"><strong>bold</strong><em>italic</em></p><ul><li>item</li></ul>`
+	result := s.SanitizeForEvent(input)
+
+	for _, forbidden := range []string{"<style", "style=", "position:", "z-index", "100vw", "100vh", "pointer-events", "transform:"} {
+		if strings.Contains(result, forbidden) {
+			t.Fatalf("event sanitizer retained %q: %s", forbidden, result)
+		}
+	}
+	for _, required := range []string{"<p>", "<strong>bold</strong>", "<em>italic</em>", "<ul>", "<li>item</li>"} {
+		if !strings.Contains(result, required) {
+			t.Fatalf("event sanitizer removed %q: %s", required, result)
+		}
+	}
+}
+
+func TestSanitizeForEvent_PreservesSafeLinksAndRemovesActiveContent(t *testing.T) {
+	s := NewSanitizer()
+	result := s.SanitizeForEvent(`<a href="https://example.com" onclick="evil()">link</a><script>alert(1)</script>`)
+
+	if !strings.Contains(result, `href="https://example.com"`) || !strings.Contains(result, "nofollow") || !strings.Contains(result, "noreferrer") {
+		t.Fatalf("event sanitizer did not preserve protected link: %s", result)
+	}
+	for _, forbidden := range []string{"<script", "alert", "onclick"} {
+		if strings.Contains(result, forbidden) {
+			t.Fatalf("event sanitizer retained %q: %s", forbidden, result)
+		}
+	}
+}
+
 func TestExtractPlainTextFromHTML(t *testing.T) {
 	input := `<p>Hello</p><p>World</p>`
 	result := ExtractPlainTextFromHTML(input)

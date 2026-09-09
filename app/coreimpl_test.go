@@ -18,6 +18,9 @@ func TestHTMLCoreImpl_Sanitize(t *testing.T) {
 	if !contains(out, "hi") {
 		t.Errorf("expected text content to survive: %q", out)
 	}
+	if styled := h.Sanitize(`<p style="position: fixed; z-index: 9999; width: 100vw">hi</p>`); contains(styled, "style=") || contains(styled, "position:") || contains(styled, "z-index") {
+		t.Errorf("application HTML sanitizer retained event CSS: %q", styled)
+	}
 
 	// Remote images are blocked: the live <img src> is swapped for a
 	// placeholder (the original URL is parked in data-original-src for later

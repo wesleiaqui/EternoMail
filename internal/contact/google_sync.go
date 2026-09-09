@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
@@ -103,8 +102,11 @@ func (s *GoogleContactsSyncer) SyncContactsDelta(accessToken, syncToken string) 
 
 		if resp.StatusCode != http.StatusOK {
 			// Read the error response body for error handling
-			bodyBytes, _ := io.ReadAll(resp.Body)
+			bodyBytes, readErr := readContactResponseBody(resp.Body, maxContactErrorResponseBytes)
 			resp.Body.Close()
+			if readErr != nil {
+				return nil, fmt.Errorf("failed to read Google API error response: %w", readErr)
+			}
 
 			// Check for expired sync token in 400 Bad Request
 			if resp.StatusCode == http.StatusBadRequest {
@@ -140,12 +142,16 @@ func (s *GoogleContactsSyncer) SyncContactsDelta(accessToken, syncToken string) 
 		}
 
 		// Parse response
+		bodyBytes, readErr := readContactResponseBody(resp.Body, maxContactPageResponseBytes)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read Google API response: %w", readErr)
+		}
+
 		var result googleConnectionsResponse
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			resp.Body.Close()
+		if err := json.Unmarshal(bodyBytes, &result); err != nil {
 			return nil, fmt.Errorf("failed to parse Google API response: %w", err)
 		}
-		resp.Body.Close()
 
 		// Convert to full records (email optional — a phone-only contact is
 		// still a valid record).

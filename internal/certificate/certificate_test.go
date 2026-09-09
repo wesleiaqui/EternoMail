@@ -8,8 +8,12 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"database/sql"
+	"encoding/pem"
 	"errors"
 	"math/big"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,6 +40,44 @@ func generateTestCert(t *testing.T) []byte {
 	return derBytes
 }
 
+func generateSystemTrustedTestChain(t *testing.T, host string) ([]byte, []byte, []byte) {
+	t.Helper()
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(10),
+		Subject:               pkix.Name{CommonName: "Test Root"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(11),
+		Subject:      pkix.Name{CommonName: host},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		DNSNames:     []string{host},
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+	}
+	leafDER, err := x509.CreateCertificate(rand.Reader, leafTemplate, caTemplate, &leafKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return caDER, leafDER, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
+}
+
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
 	db, err := sql.Open("sqlite", ":memory:")
@@ -44,13 +86,14 @@ func openTestStore(t *testing.T) *Store {
 	}
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS trusted_certificates (
 		id TEXT PRIMARY KEY,
-		fingerprint TEXT NOT NULL UNIQUE,
+		fingerprint TEXT NOT NULL,
 		host TEXT NOT NULL,
 		subject TEXT,
 		issuer TEXT,
 		not_before TEXT,
 		not_after TEXT,
-		accepted_at DATETIME
+		accepted_at DATETIME,
+		UNIQUE(host, fingerprint)
 	)`)
 	if err != nil {
 		t.Fatalf("failed to create table: %v", err)
@@ -175,10 +218,15 @@ func TestAcceptSession(t *testing.T) {
 	store := openTestStore(t)
 
 	fp := "aabbccdd11223344aabbccdd11223344aabbccdd11223344aabbccdd11223344"
-	store.AcceptSession(fp)
+	if err := store.AcceptSession("Mail.Example.COM:993", fp); err != nil {
+		t.Fatal(err)
+	}
 
-	if !store.IsTrusted(fp) {
+	if !store.IsTrusted("mail.example.com", fp) {
 		t.Fatal("IsTrusted = false after AcceptSession, want true")
+	}
+	if store.IsTrusted("other.example.com", fp) {
+		t.Fatal("session trust leaked to another host")
 	}
 }
 
@@ -186,8 +234,23 @@ func TestIsTrustedDefault(t *testing.T) {
 	store := openTestStore(t)
 
 	fp := "0000000000000000000000000000000000000000000000000000000000000000"
-	if store.IsTrusted(fp) {
+	if store.IsTrusted("test.example.com", fp) {
 		t.Fatal("IsTrusted = true for unknown fingerprint, want false")
+	}
+}
+
+func TestBuildTLSConfigAcceptsNormallyTrustedCertificate(t *testing.T) {
+	const host = "valid.example.test"
+	caDER, leafDER, caPEM := generateSystemTrustedTestChain(t, host)
+	path := filepath.Join(t.TempDir(), "test-ca.pem")
+	if err := os.WriteFile(path, caPEM, 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SSL_CERT_FILE", path)
+
+	cfg := BuildTLSConfig(host, openTestStore(t))
+	if err := cfg.VerifyPeerCertificate([][]byte{leafDER, caDER}, nil); err != nil {
+		t.Fatalf("normally trusted certificate was rejected: %v", err)
 	}
 }
 
@@ -227,15 +290,97 @@ func TestBuildTLSConfigDynamic(t *testing.T) {
 	}
 
 	// Trust the fingerprint → now accepted.
-	store.AcceptSession(Fingerprint(der))
+	if err := store.AcceptSession("test.example.com", Fingerprint(der)); err != nil {
+		t.Fatal(err)
+	}
 	if err := cfg.VerifyConnection(cs); err != nil {
 		t.Fatalf("expected store-trusted cert to pass, got %v", err)
+	}
+	if err := cfg.VerifyConnection(tls.ConnectionState{ServerName: "other.example.com", PeerCertificates: []*x509.Certificate{cert}}); err == nil {
+		t.Fatal("session trust for test.example.com accepted the same certificate for another host")
+	}
+	differentDER := generateTestCert(t)
+	differentCert, err := x509.ParseCertificate(differentDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.VerifyConnection(tls.ConnectionState{ServerName: "test.example.com", PeerCertificates: []*x509.Certificate{differentCert}}); err == nil {
+		t.Fatal("a different fingerprint was accepted for the trusted host")
 	}
 
 	// Empty chain → error.
 	if err := cfg.VerifyConnection(tls.ConnectionState{ServerName: "test.example.com"}); err == nil {
 		t.Fatal("expected error for empty PeerCertificates")
 	}
+}
+
+func TestPermanentTrustIsHostBoundAndRevocable(t *testing.T) {
+	store := openTestStore(t)
+	info := &CertificateInfo{Fingerprint: "aabbccdd", Subject: "subject", Issuer: "issuer"}
+	if err := store.AcceptPermanently("MAIL.EXAMPLE.COM:993", info); err != nil {
+		t.Fatal(err)
+	}
+	if !store.IsTrusted("mail.example.com", info.Fingerprint) {
+		t.Fatal("permanent trust was not found for its host")
+	}
+	if store.IsTrusted("other.example.com", info.Fingerprint) {
+		t.Fatal("permanent trust leaked to another host")
+	}
+	if err := store.AcceptPermanently("other.example.com", info); err != nil {
+		t.Fatal(err)
+	}
+	if !store.IsTrusted("other.example.com", info.Fingerprint) {
+		t.Fatal("same certificate could not be trusted independently for another host")
+	}
+	if err := store.AcceptSession("third.example.com", info.Fingerprint); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Remove(info.Fingerprint); err != nil {
+		t.Fatal(err)
+	}
+	if store.IsTrusted("mail.example.com", info.Fingerprint) || store.IsTrusted("other.example.com", info.Fingerprint) || store.IsTrusted("third.example.com", info.Fingerprint) {
+		t.Fatal("removal did not revoke every host-bound grant")
+	}
+}
+
+func TestHostNormalization(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"MAIL.Example.COM.:993", "mail.example.com"},
+		{"127.0.0.1:993", "127.0.0.1"},
+		{"[2001:0db8:0:0:0:0:0:1]:993", "2001:db8::1"},
+		{"[2001:db8::1]", "2001:db8::1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := normalizeHost(tt.input)
+			if err != nil || got != tt.want {
+				t.Fatalf("normalizeHost(%q) = %q, %v; want %q", tt.input, got, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestSessionTrustConcurrent(t *testing.T) {
+	store := openTestStore(t)
+	const host = "mail.example.com"
+	const fingerprint = "concurrent-fingerprint"
+	var wg sync.WaitGroup
+	for range 32 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := store.AcceptSession(host, fingerprint); err != nil {
+				t.Error(err)
+			}
+			if !store.IsTrusted(host, fingerprint) {
+				t.Error("concurrent session trust was not visible")
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestErrorInterface(t *testing.T) {

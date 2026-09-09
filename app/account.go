@@ -6,6 +6,7 @@ import (
 
 	"github.com/hkdb/aerion/internal/account"
 	"github.com/hkdb/aerion/internal/certificate"
+	"github.com/hkdb/aerion/internal/credentials"
 	"github.com/hkdb/aerion/internal/imap"
 	"github.com/hkdb/aerion/internal/logging"
 )
@@ -192,6 +193,12 @@ func (a *App) UpdateAccount(id string, config account.AccountConfig) (*account.A
 	if existingAcc == nil {
 		return nil, fmt.Errorf("account not found: %s", id)
 	}
+	// Validate before touching credentials. account.Store.Update validates too,
+	// but credentials are external to its SQL transaction and must not change
+	// for an invalid configuration.
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
 
 	// Validate folder mappings if any are set
 	folderPaths := map[string]string{
@@ -219,33 +226,53 @@ func (a *App) UpdateAccount(id string, config account.AccountConfig) (*account.A
 	// Check if sync period changed
 	syncPeriodChanged := existingAcc.SyncPeriodDays != config.SyncPeriodDays
 
+	updatePassword := config.Password != ""
+	updateSMTPPassword := config.SMTPUsername != "" && config.SMTPPassword != ""
+	deleteSMTPPassword := existingAcc.SMTPUsername != "" && config.SMTPUsername == ""
+
+	var previousPassword, previousSMTPPassword credentials.CredentialSnapshot
+	if updatePassword {
+		previousPassword, err = a.credStore.CapturePassword(id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read existing password: %w", err)
+		}
+	}
+	if updateSMTPPassword || deleteSMTPPassword {
+		previousSMTPPassword, err = a.credStore.CaptureSMTPPassword(id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read existing SMTP password: %w", err)
+		}
+	}
+
+	// Write credentials before committing configuration. A credential setter can
+	// touch both the OS keyring and SQLite, so every attempted change has a
+	// compensating restore path, including the case where the setter itself
+	// returns an error after writing to the keyring.
+	passwordAttempted := false
+	smtpPasswordAttempted := false
+	if updatePassword {
+		passwordAttempted = true
+		if err := a.credStore.SetPassword(id, config.Password); err != nil {
+			return nil, a.accountCredentialUpdateError(id, "password", err, previousPassword, passwordAttempted, previousSMTPPassword, smtpPasswordAttempted)
+		}
+	}
+	if deleteSMTPPassword {
+		smtpPasswordAttempted = true
+		if err := a.credStore.DeleteSMTPPassword(id); err != nil {
+			return nil, a.accountCredentialUpdateError(id, "SMTP password", err, previousPassword, passwordAttempted, previousSMTPPassword, smtpPasswordAttempted)
+		}
+	}
+	if updateSMTPPassword {
+		smtpPasswordAttempted = true
+		if err := a.credStore.SetSMTPPassword(id, config.SMTPPassword); err != nil {
+			return nil, a.accountCredentialUpdateError(id, "SMTP password", err, previousPassword, passwordAttempted, previousSMTPPassword, smtpPasswordAttempted)
+		}
+	}
+
 	acc, err := a.accountStore.Update(id, &config)
 	if err != nil {
 		log.Error().Err(err).Str("account_id", id).Msg("Failed to update account")
-		return nil, err
-	}
-
-	// Update password in credential store if provided
-	if config.Password != "" {
-		if err := a.credStore.SetPassword(id, config.Password); err != nil {
-			log.Error().Err(err).Str("account_id", id).Msg("Failed to update password")
-			return nil, fmt.Errorf("failed to update password: %w", err)
-		}
-	}
-
-	// Update SMTP-specific password. SMTPUsername=="" means "Same as
-	// incoming server" — drop any previously stored SMTP password so the
-	// send path falls through to the IMAP credential. SMTPUsername!=""
-	// with a non-empty SMTPPassword writes the new value; blank password
-	// on edit means "keep the existing one."
-	if config.SMTPUsername == "" {
-		_ = a.credStore.DeleteSMTPPassword(id)
-	}
-	if config.SMTPUsername != "" && config.SMTPPassword != "" {
-		if err := a.credStore.SetSMTPPassword(id, config.SMTPPassword); err != nil {
-			log.Error().Err(err).Str("account_id", id).Msg("Failed to update SMTP password")
-			return nil, fmt.Errorf("failed to update SMTP password: %w", err)
-		}
+		return nil, a.accountCredentialUpdateError(id, "account configuration", err, previousPassword, passwordAttempted, previousSMTPPassword, smtpPasswordAttempted)
 	}
 
 	// If sync period changed, cancel any running sync and trigger a new one
@@ -267,6 +294,31 @@ func (a *App) UpdateAccount(id string, config account.AccountConfig) (*account.A
 
 	log.Info().Str("account_id", id).Msg("Account updated")
 	return acc, nil
+}
+
+func (a *App) restoreAccountCredentials(accountID string, previousPassword credentials.CredentialSnapshot, restorePassword bool, previousSMTPPassword credentials.CredentialSnapshot, restoreSMTPPassword bool) error {
+	var errs []error
+	if restoreSMTPPassword {
+		if err := a.credStore.RestoreSMTPPassword(accountID, previousSMTPPassword); err != nil {
+			errs = append(errs, fmt.Errorf("restore SMTP password: %w", err))
+		}
+	}
+	if restorePassword {
+		if err := a.credStore.RestorePassword(accountID, previousPassword); err != nil {
+			errs = append(errs, fmt.Errorf("restore password: %w", err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (a *App) accountCredentialUpdateError(accountID, operation string, updateErr error, previousPassword credentials.CredentialSnapshot, restorePassword bool, previousSMTPPassword credentials.CredentialSnapshot, restoreSMTPPassword bool) error {
+	rollbackErr := a.restoreAccountCredentials(accountID, previousPassword, restorePassword, previousSMTPPassword, restoreSMTPPassword)
+	if rollbackErr == nil {
+		return fmt.Errorf("failed to update %s: %w", operation, updateErr)
+	}
+	log := logging.WithComponent("app")
+	log.Error().Err(rollbackErr).Str("account_id", accountID).Msg("Failed to restore credentials after account update failure")
+	return fmt.Errorf("failed to update %s; failed to restore previous credentials: %w", operation, errors.Join(updateErr, rollbackErr))
 }
 
 // RemoveAccount deletes an account and all its data

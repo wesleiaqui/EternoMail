@@ -44,7 +44,7 @@
   function setFromValue(v: string) {
     if (!editor || toText() === v) return
     applying = true
-    editor.commands.setContent(valueToDoc(v), false)
+    editor.commands.setContent(valueToDoc(v), { emitUpdate: false })
     applying = false
   }
 

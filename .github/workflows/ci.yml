@@ -53,6 +53,7 @@ jobs:
         uses: golangci/golangci-lint-action@v8
         with:
           version: v2.12.2
+          args: --build-tags=webkit2_41
 
       - name: Run frontend linter
         run: cd frontend && npm run lint

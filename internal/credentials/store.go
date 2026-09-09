@@ -16,12 +16,30 @@ import (
 
 const serviceName = "aerion"
 
+const (
+	credentialStorageKeyring  = "keyring"
+	credentialStorageFallback = "fallback"
+	credentialStorageDeleted  = "deleted"
+)
+
 // Store provides credential storage with OS keyring and encrypted DB fallback
 type Store struct {
 	db             *sql.DB
 	encryptor      *crypto.Encryptor
 	keyringEnabled bool
 	log            zerolog.Logger
+}
+
+// CredentialSnapshot is an opaque account-password state captured before a
+// multi-store operation. It retains the selected source and any legacy state
+// so callers can restore it without knowing storage details.
+type CredentialSnapshot struct {
+	storage        string
+	encrypted      sql.NullString
+	keyringKnown   bool
+	keyringPresent bool
+	keyringValue   string
+	smtp           bool
 }
 
 // NewStore creates a new credential store
@@ -107,8 +125,9 @@ func (s *Store) SetPassword(accountID, password string) error {
 		err := gokeyring.Set(serviceName, accountID, password)
 		if err == nil {
 			s.log.Debug().Str("account_id", accountID).Msg("Password stored in OS keyring")
-			// Clear any fallback storage
-			s.clearDBPassword(accountID)
+			if _, err := s.db.Exec("UPDATE accounts SET encrypted_password = NULL, password_storage = ? WHERE id = ?", credentialStorageKeyring, accountID); err != nil {
+				return fmt.Errorf("failed to mark password stored in keyring: %w", err)
+			}
 			return nil
 		}
 		s.log.Warn().Err(err).Msg("Failed to store in OS keyring, using fallback")
@@ -121,8 +140,8 @@ func (s *Store) SetPassword(accountID, password string) error {
 	}
 
 	_, err = s.db.Exec(
-		"UPDATE accounts SET encrypted_password = ? WHERE id = ?",
-		encrypted, accountID,
+		"UPDATE accounts SET encrypted_password = ?, password_storage = ? WHERE id = ?",
+		encrypted, credentialStorageFallback, accountID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to store encrypted password: %w", err)
@@ -134,10 +153,28 @@ func (s *Store) SetPassword(accountID, password string) error {
 
 // GetPassword retrieves a password for an account
 func (s *Store) GetPassword(accountID string) (string, error) {
-	// Try OS keyring first if available
+	var storage string
+	var encrypted sql.NullString
+	err := s.db.QueryRow("SELECT password_storage, encrypted_password FROM accounts WHERE id = ?", accountID).Scan(&storage, &encrypted)
+	if err == sql.ErrNoRows {
+		return "", ErrCredentialNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to query password: %w", err)
+	}
+	if storage == credentialStorageDeleted {
+		return "", ErrCredentialNotFound
+	}
+	if storage == credentialStorageFallback || (storage == "" && encrypted.Valid && encrypted.String != "") {
+		return s.decryptPassword(encrypted, "password")
+	}
+
 	if s.keyringEnabled {
 		password, err := gokeyring.Get(serviceName, accountID)
 		if err == nil {
+			if password == "" {
+				return "", ErrCredentialNotFound
+			}
 			return password, nil
 		}
 		if err != gokeyring.ErrNotFound {
@@ -145,44 +182,29 @@ func (s *Store) GetPassword(accountID string) (string, error) {
 		}
 	}
 
-	// Try fallback encrypted database storage
-	var encrypted sql.NullString
-	err := s.db.QueryRow(
-		"SELECT encrypted_password FROM accounts WHERE id = ?",
-		accountID,
-	).Scan(&encrypted)
-
-	if err == sql.ErrNoRows {
-		return "", ErrCredentialNotFound
-	}
-	if err != nil {
-		return "", fmt.Errorf("failed to query password: %w", err)
-	}
-
-	if !encrypted.Valid || encrypted.String == "" {
-		return "", ErrCredentialNotFound
-	}
-
-	// Decrypt
-	password, err := s.encryptor.Decrypt(encrypted.String)
-	if err != nil {
-		return "", fmt.Errorf("failed to decrypt password: %w", err)
-	}
-
-	return password, nil
+	return "", ErrCredentialNotFound
 }
 
 // DeletePassword removes a password for an account
 func (s *Store) DeletePassword(accountID string) error {
-	// Delete from OS keyring
+	if _, err := s.db.Exec("UPDATE accounts SET encrypted_password = NULL, password_storage = ? WHERE id = ?", credentialStorageDeleted, accountID); err != nil {
+		return fmt.Errorf("failed to clear password: %w", err)
+	}
 	if s.keyringEnabled {
 		s.deleteKeyringEntry(accountID)
 	}
-
-	// Delete from database
-	s.clearDBPassword(accountID)
-
 	return nil
+}
+
+func (s *Store) decryptPassword(encrypted sql.NullString, label string) (string, error) {
+	if !encrypted.Valid || encrypted.String == "" {
+		return "", ErrCredentialNotFound
+	}
+	password, err := s.encryptor.Decrypt(encrypted.String)
+	if err != nil {
+		return "", fmt.Errorf("failed to decrypt %s: %w", label, err)
+	}
+	return password, nil
 }
 
 // clearDBPassword clears the encrypted password from the database
@@ -216,7 +238,9 @@ func (s *Store) SetSMTPPassword(accountID, password string) error {
 		err := gokeyring.Set(serviceName, smtpPasswordKeyringKey(accountID), password)
 		if err == nil {
 			s.log.Debug().Str("account_id", accountID).Msg("SMTP password stored in OS keyring")
-			s.clearDBSMTPPassword(accountID)
+			if _, err := s.db.Exec("UPDATE accounts SET encrypted_smtp_password = NULL, smtp_password_storage = ? WHERE id = ?", credentialStorageKeyring, accountID); err != nil {
+				return fmt.Errorf("failed to mark SMTP password stored in keyring: %w", err)
+			}
 			return nil
 		}
 		s.log.Warn().Err(err).Msg("Failed to store SMTP password in OS keyring, using fallback")
@@ -227,8 +251,8 @@ func (s *Store) SetSMTPPassword(accountID, password string) error {
 		return fmt.Errorf("failed to encrypt SMTP password: %w", err)
 	}
 	if _, err := s.db.Exec(
-		"UPDATE accounts SET encrypted_smtp_password = ? WHERE id = ?",
-		encrypted, accountID,
+		"UPDATE accounts SET encrypted_smtp_password = ?, smtp_password_storage = ? WHERE id = ?",
+		encrypted, credentialStorageFallback, accountID,
 	); err != nil {
 		return fmt.Errorf("failed to store encrypted SMTP password: %w", err)
 	}
@@ -241,9 +265,28 @@ func (s *Store) SetSMTPPassword(accountID, password string) error {
 // separate "<accountID>:smtp" keyring slot and the
 // encrypted_smtp_password column.
 func (s *Store) GetSMTPPassword(accountID string) (string, error) {
+	var storage string
+	var encrypted sql.NullString
+	err := s.db.QueryRow("SELECT smtp_password_storage, encrypted_smtp_password FROM accounts WHERE id = ?", accountID).Scan(&storage, &encrypted)
+	if err == sql.ErrNoRows {
+		return "", ErrCredentialNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to query SMTP password: %w", err)
+	}
+	if storage == credentialStorageDeleted {
+		return "", ErrCredentialNotFound
+	}
+	if storage == credentialStorageFallback || (storage == "" && encrypted.Valid && encrypted.String != "") {
+		return s.decryptPassword(encrypted, "SMTP password")
+	}
+
 	if s.keyringEnabled {
 		password, err := gokeyring.Get(serviceName, smtpPasswordKeyringKey(accountID))
 		if err == nil {
+			if password == "" {
+				return "", ErrCredentialNotFound
+			}
 			return password, nil
 		}
 		if err != gokeyring.ErrNotFound {
@@ -251,34 +294,137 @@ func (s *Store) GetSMTPPassword(accountID string) (string, error) {
 		}
 	}
 
-	var encrypted sql.NullString
-	err := s.db.QueryRow(
-		"SELECT encrypted_smtp_password FROM accounts WHERE id = ?",
-		accountID,
-	).Scan(&encrypted)
-	if err == sql.ErrNoRows {
-		return "", ErrCredentialNotFound
+	return "", ErrCredentialNotFound
+}
+
+// CapturePassword captures the complete IMAP password representation.
+func (s *Store) CapturePassword(accountID string) (CredentialSnapshot, error) {
+	return s.captureAccountCredential(accountID, false)
+}
+
+// CaptureSMTPPassword captures the complete SMTP password representation.
+func (s *Store) CaptureSMTPPassword(accountID string) (CredentialSnapshot, error) {
+	return s.captureAccountCredential(accountID, true)
+}
+
+func (s *Store) captureAccountCredential(accountID string, smtp bool) (CredentialSnapshot, error) {
+	var snapshot CredentialSnapshot
+	snapshot.smtp = smtp
+	query := "SELECT password_storage, encrypted_password FROM accounts WHERE id = ?"
+	key := accountID
+	if smtp {
+		query = "SELECT smtp_password_storage, encrypted_smtp_password FROM accounts WHERE id = ?"
+		key = smtpPasswordKeyringKey(accountID)
 	}
-	if err != nil {
-		return "", fmt.Errorf("failed to query SMTP password: %w", err)
+	if err := s.db.QueryRow(query, accountID).Scan(&snapshot.storage, &snapshot.encrypted); err != nil {
+		return CredentialSnapshot{}, fmt.Errorf("capture credential: %w", err)
 	}
-	if !encrypted.Valid || encrypted.String == "" {
-		return "", ErrCredentialNotFound
+	if !s.keyringEnabled {
+		return snapshot, nil
 	}
-	password, err := s.encryptor.Decrypt(encrypted.String)
-	if err != nil {
-		return "", fmt.Errorf("failed to decrypt SMTP password: %w", err)
+	snapshot.keyringKnown = true
+	value, err := gokeyring.Get(serviceName, key)
+	if err == nil {
+		snapshot.keyringPresent = true
+		snapshot.keyringValue = value
+		return snapshot, nil
 	}
-	return password, nil
+	if errors.Is(err, gokeyring.ErrNotFound) {
+		return snapshot, nil
+	}
+	return CredentialSnapshot{}, fmt.Errorf("capture keyring credential: %w", err)
+}
+
+// RestorePassword restores an IMAP password snapshot exactly, including its
+// source marker and legacy representation.
+func (s *Store) RestorePassword(accountID string, snapshot CredentialSnapshot) error {
+	if snapshot.smtp {
+		return fmt.Errorf("restore password: SMTP snapshot")
+	}
+	return s.restoreAccountCredential(accountID, snapshot)
+}
+
+// RestoreSMTPPassword restores an SMTP password snapshot exactly.
+func (s *Store) RestoreSMTPPassword(accountID string, snapshot CredentialSnapshot) error {
+	if !snapshot.smtp {
+		return fmt.Errorf("restore SMTP password: IMAP snapshot")
+	}
+	return s.restoreAccountCredential(accountID, snapshot)
+}
+
+func (s *Store) restoreAccountCredential(accountID string, snapshot CredentialSnapshot) error {
+	key := accountID
+	if snapshot.smtp {
+		key = smtpPasswordKeyringKey(accountID)
+	}
+	legacyWithoutCredential := snapshot.storage == "" && (!snapshot.encrypted.Valid || snapshot.encrypted.String == "") && snapshot.keyringKnown && !snapshot.keyringPresent
+	if legacyWithoutCredential {
+		// Suppress a potentially new keyring value before removing it. If removal
+		// fails, keeping deleted is safer than allowing that value to resurface.
+		if err := s.restoreAccountCredentialDB(accountID, snapshot.smtp, credentialStorageDeleted, sql.NullString{}); err != nil {
+			return err
+		}
+		if err := s.restoreSnapshotKeyring(key, snapshot); err != nil {
+			return err
+		}
+		return s.restoreAccountCredentialDB(accountID, snapshot.smtp, snapshot.storage, snapshot.encrypted)
+	}
+
+	keyringFirst := snapshot.storage == credentialStorageKeyring || (snapshot.storage == "" && (!snapshot.encrypted.Valid || snapshot.encrypted.String == "") && snapshot.keyringPresent)
+	if keyringFirst {
+		if err := s.restoreSnapshotKeyring(key, snapshot); err != nil {
+			return err
+		}
+		return s.restoreAccountCredentialDB(accountID, snapshot.smtp, snapshot.storage, snapshot.encrypted)
+	}
+	// fallback and deleted must become authoritative before touching a possibly
+	// stale keyring entry.
+	if err := s.restoreAccountCredentialDB(accountID, snapshot.smtp, snapshot.storage, snapshot.encrypted); err != nil {
+		return err
+	}
+	return s.restoreSnapshotKeyring(key, snapshot)
+}
+
+func (s *Store) restoreAccountCredentialDB(accountID string, smtp bool, storage string, encrypted sql.NullString) error {
+	var value any
+	if encrypted.Valid {
+		value = encrypted.String
+	}
+	query := "UPDATE accounts SET encrypted_password = ?, password_storage = ? WHERE id = ?"
+	if smtp {
+		query = "UPDATE accounts SET encrypted_smtp_password = ?, smtp_password_storage = ? WHERE id = ?"
+	}
+	if _, err := s.db.Exec(query, value, storage, accountID); err != nil {
+		return fmt.Errorf("restore credential storage: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) restoreSnapshotKeyring(key string, snapshot CredentialSnapshot) error {
+	if !snapshot.keyringKnown {
+		return nil
+	}
+	if snapshot.keyringPresent {
+		if err := gokeyring.Set(serviceName, key, snapshot.keyringValue); err != nil {
+			return fmt.Errorf("restore keyring credential: %w", err)
+		}
+		return nil
+	}
+	if err := gokeyring.Delete(serviceName, key); err != nil && !errors.Is(err, gokeyring.ErrNotFound) {
+		return fmt.Errorf("remove keyring credential: %w", err)
+	}
+	return nil
 }
 
 // DeleteSMTPPassword removes the SMTP-specific password for an account.
 // Idempotent.
 func (s *Store) DeleteSMTPPassword(accountID string) error {
+	if _, err := s.db.Exec("UPDATE accounts SET encrypted_smtp_password = NULL, smtp_password_storage = ? WHERE id = ?", credentialStorageDeleted, accountID); err != nil {
+		return fmt.Errorf("failed to clear SMTP password: %w", err)
+	}
 	if s.keyringEnabled {
 		s.deleteKeyringEntry(smtpPasswordKeyringKey(accountID))
 	}
-	s.clearDBSMTPPassword(accountID)
 	return nil
 }
 
@@ -684,7 +830,9 @@ func (s *Store) SetCardDAVPassword(sourceID, password string) error {
 		if err == nil {
 			s.log.Debug().Str("source_id", sourceID).Msg("CardDAV password stored in OS keyring")
 			// Clear any fallback storage
-			s.clearCardDAVDBPassword(sourceID)
+			if _, err := s.db.Exec("UPDATE contact_sources SET encrypted_password = NULL, password_storage = ? WHERE id = ?", credentialStorageKeyring, sourceID); err != nil {
+				return fmt.Errorf("failed to mark CardDAV password stored in keyring: %w", err)
+			}
 			return nil
 		}
 		s.log.Warn().Err(err).Msg("Failed to store CardDAV password in OS keyring, using fallback")
@@ -697,8 +845,8 @@ func (s *Store) SetCardDAVPassword(sourceID, password string) error {
 	}
 
 	_, err = s.db.Exec(
-		"UPDATE contact_sources SET encrypted_password = ? WHERE id = ?",
-		encrypted, sourceID,
+		"UPDATE contact_sources SET encrypted_password = ?, password_storage = ? WHERE id = ?",
+		encrypted, credentialStorageFallback, sourceID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to store encrypted password: %w", err)
@@ -710,7 +858,22 @@ func (s *Store) SetCardDAVPassword(sourceID, password string) error {
 
 // GetCardDAVPassword retrieves a password for a CardDAV contact source
 func (s *Store) GetCardDAVPassword(sourceID string) (string, error) {
-	// Try OS keyring first if available
+	var storage string
+	var encrypted sql.NullString
+	err := s.db.QueryRow("SELECT password_storage, encrypted_password FROM contact_sources WHERE id = ?", sourceID).Scan(&storage, &encrypted)
+	if err == sql.ErrNoRows {
+		return "", ErrCredentialNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to query CardDAV password: %w", err)
+	}
+	if storage == credentialStorageDeleted {
+		return "", ErrCredentialNotFound
+	}
+	if storage == credentialStorageFallback || (storage == "" && encrypted.Valid && encrypted.String != "") {
+		return s.decryptPassword(encrypted, "CardDAV password")
+	}
+
 	if s.keyringEnabled {
 		password, err := gokeyring.Get(serviceName, "carddav:"+sourceID)
 		if err == nil {
@@ -721,43 +884,17 @@ func (s *Store) GetCardDAVPassword(sourceID string) (string, error) {
 		}
 	}
 
-	// Try fallback encrypted database storage
-	var encrypted sql.NullString
-	err := s.db.QueryRow(
-		"SELECT encrypted_password FROM contact_sources WHERE id = ?",
-		sourceID,
-	).Scan(&encrypted)
-
-	if err == sql.ErrNoRows {
-		return "", ErrCredentialNotFound
-	}
-	if err != nil {
-		return "", fmt.Errorf("failed to query password: %w", err)
-	}
-
-	if !encrypted.Valid || encrypted.String == "" {
-		return "", ErrCredentialNotFound
-	}
-
-	// Decrypt
-	password, err := s.encryptor.Decrypt(encrypted.String)
-	if err != nil {
-		return "", fmt.Errorf("failed to decrypt password: %w", err)
-	}
-
-	return password, nil
+	return "", ErrCredentialNotFound
 }
 
 // DeleteCardDAVPassword removes a password for a CardDAV contact source
 func (s *Store) DeleteCardDAVPassword(sourceID string) error {
-	// Delete from OS keyring
+	if _, err := s.db.Exec("UPDATE contact_sources SET encrypted_password = NULL, password_storage = ? WHERE id = ?", credentialStorageDeleted, sourceID); err != nil {
+		return fmt.Errorf("failed to clear CardDAV password: %w", err)
+	}
 	if s.keyringEnabled {
 		s.deleteKeyringEntry("carddav:" + sourceID)
 	}
-
-	// Delete from database
-	s.clearCardDAVDBPassword(sourceID)
-
 	return nil
 }
 

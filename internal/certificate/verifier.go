@@ -14,6 +14,7 @@ import (
 // the system CA pool first, then the trusted certificate store, and returns
 // a CertificateError if the certificate is still untrusted.
 func BuildTLSConfig(host string, store *Store) *tls.Config {
+	trustedHost, hostErr := normalizeHost(host)
 	return &tls.Config{
 		ServerName:         host,
 		InsecureSkipVerify: true,
@@ -28,15 +29,15 @@ func BuildTLSConfig(host string, store *Store) *tls.Config {
 				return fmt.Errorf("failed to parse certificate: %w", err)
 			}
 
-			// Try system CA verification first
+			// Try system CA verification first.
 			systemErr := verifyWithSystemCAs(cert, host, rawCerts)
 			if systemErr == nil {
 				return nil // System CAs trust this cert
 			}
 
-			// Check our trust store
+			// Only after normal validation fails may a host-bound exception apply.
 			fingerprint := Fingerprint(rawCerts[0])
-			if store != nil && store.IsTrusted(fingerprint) {
+			if hostErr == nil && store != nil && store.IsTrusted(trustedHost, fingerprint) {
 				return nil // We trust this cert
 			}
 
@@ -72,8 +73,9 @@ func BuildTLSConfigDynamic(store *Store) *tls.Config {
 				return nil
 			}
 
+			host, hostErr := normalizeHost(cs.ServerName)
 			fingerprint := Fingerprint(leaf.Raw)
-			if store != nil && store.IsTrusted(fingerprint) {
+			if hostErr == nil && store != nil && store.IsTrusted(host, fingerprint) {
 				return nil
 			}
 

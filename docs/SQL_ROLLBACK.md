@@ -4,6 +4,32 @@ This guide walks you through rolling back Eterno Mail's database schema after an
 
 Each section below covers a single released-to-released schema transition with a documented rollback path. Intermediate development schemas (e.g., the v31 that existed mid-cycle but never shipped) don't get their own section — there's no real-world DB at that state to roll back from. Find the section that matches your release-to-release transition.
 
+## Rollback: v49 → v48 (credential storage source markers)
+
+Migration 49 adds `accounts.password_storage`,
+`accounts.smtp_password_storage`, and `contact_sources.password_storage`.
+They record whether each password currently comes from the OS keyring, the
+encrypted database fallback, or an explicit deletion. To return to v48, run
+`tools/db/rollback-v49-to-v48.sql`.
+
+The rollback removes only these three marker columns. It preserves all account
+and contact-source rows, including encrypted fallback ciphertexts and every
+other v48 field. Marker values (`keyring`, `fallback`, and `deleted`) are
+necessarily discarded because v48 has no equivalent representation. In
+particular, a stale OS-keyring entry suppressed by a v49 `deleted` or
+`fallback` marker can be read again by v48. Delete such entries from the OS
+keyring before downgrading if that would be unsafe. If the database is later
+upgraded again, v49 recreates `fallback` markers only for non-empty ciphertext;
+it cannot recover the prior `keyring` or `deleted` marker values.
+
+## Rollback: v48 → v47 (host-scoped certificate trust)
+
+Migration 48 binds trusted TLS certificate fingerprints to their server host.
+To return to v47, run `tools/db/rollback-v48-to-v47.sql`. The older schema
+permits only one row per fingerprint; if the same certificate was trusted for
+more than one host, the rollback retains the most recently accepted row and
+discards the other host-specific grants.
+
 ## When you might need this
 
 - You upgraded to a newer Eterno Mail (e.g., 0.3.0) and want to go back to 0.2.5 for any reason.

@@ -212,6 +212,14 @@ func TestMigrationV32_LocalRecordIDsRewrittenToUUIDs(t *testing.T) {
 	if _, err := db.Exec(`ALTER TABLE folders DROP COLUMN flags_sync_modseq`); err != nil {
 		t.Fatalf("drop folders.flags_sync_modseq for re-migrate: %v", err)
 	}
+	for _, col := range []string{"password_storage", "smtp_password_storage"} {
+		if _, err := db.Exec(`ALTER TABLE accounts DROP COLUMN ` + col); err != nil {
+			t.Fatalf("drop accounts.%s for re-migrate: %v", col, err)
+		}
+	}
+	if _, err := db.Exec(`ALTER TABLE contact_sources DROP COLUMN password_storage`); err != nil {
+		t.Fatalf("drop contact_sources.password_storage for re-migrate: %v", err)
+	}
 
 	// Re-run migrations — migration 32 should rewrite the seeded local- id.
 	if err := db.Migrate(); err != nil {
@@ -379,6 +387,14 @@ func TestMigrationV33_CleansExistingOrphans(t *testing.T) {
 	// Same for v47's folder flags sync modseq.
 	if _, err := db.Exec(`ALTER TABLE folders DROP COLUMN flags_sync_modseq`); err != nil {
 		t.Fatalf("drop folders.flags_sync_modseq for re-migrate: %v", err)
+	}
+	for _, col := range []string{"password_storage", "smtp_password_storage"} {
+		if _, err := db.Exec(`ALTER TABLE accounts DROP COLUMN ` + col); err != nil {
+			t.Fatalf("drop accounts.%s for re-migrate: %v", col, err)
+		}
+	}
+	if _, err := db.Exec(`ALTER TABLE contact_sources DROP COLUMN password_storage`); err != nil {
+		t.Fatalf("drop contact_sources.password_storage for re-migrate: %v", err)
 	}
 
 	// Seed: orphan state row whose addressbook doesn't exist. Pre-migration,

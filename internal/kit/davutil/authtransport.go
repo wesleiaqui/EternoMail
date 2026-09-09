@@ -22,6 +22,7 @@ type basicDigestTransport struct {
 	username string
 	password string
 	base     http.RoundTripper
+	origin   originGuard
 }
 
 // challengeState is a cached digest challenge plus the nonce-count of the
@@ -79,8 +80,12 @@ func (t *basicDigestTransport) RoundTrip(req *http.Request) (*http.Response, err
 	if base == nil {
 		base = defaultBaseTransport()
 	}
+	if err := t.origin.allow(req.URL); err != nil {
+		return nil, err
+	}
 	// Respect an Authorization header the caller set themselves (mirrors
-	// bearerTransport).
+	// bearerTransport). The origin guard above applies to it too, so a
+	// redirect cannot carry it to another destination.
 	if req.Header.Get("Authorization") != "" {
 		return base.RoundTrip(req)
 	}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -23,7 +24,9 @@ type bearerRefreshTransport struct {
 	accountID      string
 	clientConfigID string
 
-	mu sync.Mutex // guards token retrieval/refresh
+	mu       sync.Mutex // guards token retrieval/refresh
+	originMu sync.Mutex
+	origin   string
 }
 
 // RoundTrip implements http.RoundTripper.
@@ -112,6 +115,9 @@ func (t *bearerRefreshTransport) resolveProvider() (oauth2.ProviderConfig, error
 // transport. Cloning is necessary because RoundTrip implementations must not
 // mutate the input request.
 func (t *bearerRefreshTransport) do(req *http.Request, accessToken string) (*http.Response, error) {
+	if err := t.allowOrigin(req.URL); err != nil {
+		return nil, err
+	}
 	cloned := req.Clone(req.Context())
 	if cloned.Header == nil {
 		cloned.Header = make(http.Header)
@@ -125,6 +131,46 @@ func (t *bearerRefreshTransport) do(req *http.Request, accessToken string) (*htt
 		base = http.DefaultTransport
 	}
 	return base.RoundTrip(cloned)
+}
+
+func (t *bearerRefreshTransport) allowOrigin(u *url.URL) error {
+	origin, err := bearerRequestOrigin(u)
+	if err != nil {
+		return err
+	}
+	t.originMu.Lock()
+	defer t.originMu.Unlock()
+	if t.origin == "" {
+		t.origin = origin
+		return nil
+	}
+	if t.origin != origin {
+		return fmt.Errorf("auth broker: authenticated request redirected outside its authorized origin")
+	}
+	return nil
+}
+
+func bearerRequestOrigin(u *url.URL) (string, error) {
+	if u == nil {
+		return "", fmt.Errorf("auth broker: authenticated request has no URL")
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return "", fmt.Errorf("auth broker: authenticated request has unsupported scheme %q", u.Scheme)
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "" {
+		return "", fmt.Errorf("auth broker: authenticated request has no host")
+	}
+	port := u.Port()
+	if port == "" {
+		if scheme == "http" {
+			port = "80"
+		} else {
+			port = "443"
+		}
+	}
+	return scheme + "://" + host + ":" + port, nil
 }
 
 func (t *bearerRefreshTransport) retry(req *http.Request, token string) (*http.Response, error) {

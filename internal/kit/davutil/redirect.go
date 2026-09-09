@@ -1,8 +1,12 @@
 package davutil
 
 import (
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
+	"sync"
 )
 
 // redirectTransport preserves the request method across same-host redirects
@@ -20,6 +24,60 @@ type redirectTransport struct {
 }
 
 const redirectMaxHops = 5
+
+// originGuard binds an authenticated client to the origin of its first direct
+// request. Redirects can then never cause its credentials to be used for a
+// different host, port, or scheme.
+type originGuard struct {
+	mu     sync.Mutex
+	origin string
+}
+
+func (g *originGuard) allow(u *url.URL) error {
+	origin, err := requestOrigin(u)
+	if err != nil {
+		return err
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.origin == "" {
+		g.origin = origin
+		return nil
+	}
+	if g.origin != origin {
+		return fmt.Errorf("authenticated request redirected outside its authorized origin")
+	}
+	return nil
+}
+
+func sameOrigin(a, b *url.URL) bool {
+	aOrigin, aErr := requestOrigin(a)
+	bOrigin, bErr := requestOrigin(b)
+	return aErr == nil && bErr == nil && aOrigin == bOrigin
+}
+
+func requestOrigin(u *url.URL) (string, error) {
+	if u == nil {
+		return "", fmt.Errorf("authenticated request has no URL")
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return "", fmt.Errorf("authenticated request has unsupported scheme %q", u.Scheme)
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "" {
+		return "", fmt.Errorf("authenticated request has no host")
+	}
+	port := u.Port()
+	if port == "" {
+		if scheme == "http" {
+			port = "80"
+		} else {
+			port = "443"
+		}
+	}
+	return scheme + "://" + host + ":" + port, nil
+}
 
 func methodPreservesRedirect(method string) bool {
 	switch method {
@@ -61,7 +119,7 @@ func (t *redirectTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		if err != nil {
 			return resp, nil
 		}
-		if location.Scheme != current.URL.Scheme || location.Host != current.URL.Host {
+		if !sameOrigin(location, current.URL) {
 			// Cross-host (or scheme-changing) redirect — hand it back so the
 			// stdlib client applies its usual semantics.
 			return resp, nil
