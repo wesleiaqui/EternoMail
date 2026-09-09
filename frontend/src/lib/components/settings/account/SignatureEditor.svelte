@@ -7,14 +7,13 @@
   import Underline from '@tiptap/extension-underline'
   import Placeholder from '@tiptap/extension-placeholder'
   import Image from '@tiptap/extension-image'
-  import TextStyle from '@tiptap/extension-text-style'
+  import { FontSize, TextStyle } from '@tiptap/extension-text-style'
   import Color from '@tiptap/extension-color'
   import TextAlign from '@tiptap/extension-text-align'
-  import Table from '@tiptap/extension-table'
+  import { Table } from '@tiptap/extension-table'
   import TableRow from '@tiptap/extension-table-row'
   import TableCell from '@tiptap/extension-table-cell'
   import TableHeader from '@tiptap/extension-table-header'
-  import FontSize from 'tiptap-extension-font-size'
   import { _ } from '$lib/i18n'
 
   // Extended TextStyle to also handle legacy <font> tags
