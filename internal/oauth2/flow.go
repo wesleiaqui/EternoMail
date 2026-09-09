@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,6 +52,26 @@ type Manager struct {
 	activeSession  *AuthSession
 	callbackServer *CallbackServer
 	httpClient     *http.Client
+}
+
+const (
+	// OAuth token and userinfo documents are small JSON payloads. One MiB leaves
+	// room for provider-specific fields without allowing an endpoint to consume
+	// unbounded memory.
+	maxOAuthResponseBytes int64 = 1 << 20
+)
+
+var errOAuthResponseTooLarge = errors.New("OAuth response exceeds size limit")
+
+func readOAuthResponseBody(r io.Reader) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r, maxOAuthResponseBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > maxOAuthResponseBytes {
+		return nil, errOAuthResponseTooLarge
+	}
+	return body, nil
 }
 
 // NewManager creates a new OAuth2 manager
@@ -266,9 +287,9 @@ func (m *Manager) RefreshTokenWithProvider(provider ProviderConfig, refreshToken
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readOAuthResponseBody(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to read OAuth response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -332,9 +353,9 @@ func (m *Manager) exchangeCode(provider ProviderConfig, code, codeVerifier, redi
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readOAuthResponseBody(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to read OAuth response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -394,13 +415,18 @@ func (m *Manager) getUserEmail(provider ProviderConfig, tokens *TokenResponse) (
 		return "", fmt.Errorf("userinfo request failed: %d", resp.StatusCode)
 	}
 
+	body, err := readOAuthResponseBody(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read userinfo response: %w", err)
+	}
+
 	var userInfo struct {
 		Email             string `json:"email"`
 		Mail              string `json:"mail"`              // Microsoft uses "mail"
 		UserPrincipalName string `json:"userPrincipalName"` // Microsoft fallback
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
+	if err := json.Unmarshal(body, &userInfo); err != nil {
 		return "", err
 	}
 

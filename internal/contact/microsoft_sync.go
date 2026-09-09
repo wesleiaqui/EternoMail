@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -75,8 +74,11 @@ func (s *MicrosoftContactsSyncer) SyncContactsDelta(accessToken, deltaLink strin
 
 		if resp.StatusCode != http.StatusOK {
 			// Read the error response body for error handling
-			bodyBytes, _ := io.ReadAll(resp.Body)
+			bodyBytes, readErr := readContactResponseBody(resp.Body, maxContactErrorResponseBytes)
 			resp.Body.Close()
+			if readErr != nil {
+				return nil, fmt.Errorf("failed to read Microsoft API error response: %w", readErr)
+			}
 			s.log.Error().
 				Int("status", resp.StatusCode).
 				Msg("Microsoft Graph API error response")
@@ -94,12 +96,16 @@ func (s *MicrosoftContactsSyncer) SyncContactsDelta(accessToken, deltaLink strin
 		}
 
 		// Parse response
+		bodyBytes, readErr := readContactResponseBody(resp.Body, maxContactPageResponseBytes)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read Microsoft API response: %w", readErr)
+		}
+
 		var result msGraphDeltaResponse
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			resp.Body.Close()
+		if err := json.Unmarshal(bodyBytes, &result); err != nil {
 			return nil, fmt.Errorf("failed to parse Microsoft API response: %w", err)
 		}
-		resp.Body.Close()
 
 		// Convert to full records (email optional — a phone-only contact is
 		// still a valid record).
