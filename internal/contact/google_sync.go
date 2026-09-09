@@ -361,3 +361,14 @@ func (s *GoogleContactsSyncer) syncContext() context.Context {
 	}
 	return context.Background()
 }
+
+// Shared People API fields used by saved-contact synchronization.
+type googleName struct {
+	DisplayName string `json:"displayName"`
+	GivenName   string `json:"givenName"`
+	FamilyName  string `json:"familyName"`
+}
+type googleEmail struct {
+	Value string `json:"value"`
+	Type  string `json:"type"`
+}

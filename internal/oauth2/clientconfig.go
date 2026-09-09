@@ -78,9 +78,9 @@ func RegisterCredentialsProvider(p CredentialsProvider) {
 //
 //  1. ActiveChoiceLookup — the user's explicit picker selection. When
 //     present, routes:
-//       - "custom"          → UserOverrideLookup only
-//       - "aerion-mail"     → SlotAliasLookup only (recursive)
-//       - "aerion-shipped"  → straight to provider chain
+//     - "custom"          → UserOverrideLookup only
+//     - "aerion-mail"     → SlotAliasLookup only (recursive)
+//     - "aerion-shipped"  → straight to provider chain
 //     If the routed source returns nothing (e.g., choice="custom" but no
 //     creds saved yet), falls through to the provider chain so OAuth
 //     doesn't error out — the UI still shows "Custom" so the user knows
@@ -88,7 +88,7 @@ func RegisterCredentialsProvider(p CredentialsProvider) {
 //
 //  2. (No active choice recorded) → backward-compat inference using row
 //     presence, preserving pre-marker behavior for upgraded installs:
-//       UserOverrideLookup → SlotAliasLookup → providers.
+//     UserOverrideLookup → SlotAliasLookup → providers.
 //     First time the user touches the picker post-upgrade, an explicit
 //     choice is recorded and the resolver stops using this branch for
 //     that slot.
@@ -242,11 +242,21 @@ func GetProviderForClientConfig(clientConfigID string) (ProviderConfig, error) {
 	switch {
 	case strings.HasPrefix(clientConfigID, "google-"):
 		cfg := GoogleProvider()
+		if clientConfigID == "google-contacts" {
+			cfg = GoogleContactsOnlyProvider()
+		} else if clientConfigID == "google-calendar" {
+			cfg = GoogleCalendarProvider()
+		}
 		cfg.ClientID = creds.ClientID
 		cfg.ClientSecret = creds.ClientSecret
 		return cfg, nil
 	case strings.HasPrefix(clientConfigID, "microsoft-"):
 		cfg := MicrosoftProvider()
+		if clientConfigID == "microsoft-contacts" {
+			cfg = MicrosoftContactsOnlyProvider()
+		} else if clientConfigID == "microsoft-calendar" {
+			cfg = MicrosoftCalendarProvider()
+		}
 		cfg.ClientID = creds.ClientID
 		cfg.ClientSecret = creds.ClientSecret
 		return cfg, nil

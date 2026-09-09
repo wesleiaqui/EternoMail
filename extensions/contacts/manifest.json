@@ -14,7 +14,6 @@
   ],
   "oauth": {
     "first_party_uses_core_for_scopes": [
-      "https://www.googleapis.com/auth/contacts.readonly",
       "Contacts.Read",
       "Contacts.ReadBasic"
     ]

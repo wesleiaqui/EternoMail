@@ -17,31 +17,16 @@ var cardDAVWriteScope = coreapi.AuthScope{
 	Reason:   "Write contacts to your CardDAV server",
 }
 
-// httpClientForSource returns an authenticated *http.Client for a Google /
-// Microsoft contact source, dispatching on whether the source is linked to
-// an email account or is a standalone contacts-only OAuth source.
-//
-// Mirrors `internal/carddav/sync.go::Syncer.getOAuthToken` — the sync side
-// already handles both modes; the write side was account-linked-only before
-// this, which produced "<provider> source has no linked account" for users
-// who set up the source via the contacts-only OAuth flow rather than via
-// link-to-existing-account.
-//
-// Account-linked path: delegates to the Auth Broker (core.Auth().HTTPClient),
-// which captures per-(account, client_config) refresh state and routes scopes
-// per the manifest's first_party_uses_core_for_scopes declaration.
-//
-// Standalone path: fetches a token via the host's getValidContactSourceOAuth
-// token (proactively refreshed on expiry by the host), then wraps it in a
-// minimal bearer transport. No 401-driven refresh here; if the token gets
-// revoked mid-request the call surfaces the 401 to the caller — same
-// behaviour as the sync layer.
+// httpClientForSource uses source-owned credentials for all Google sources,
+// including those logically associated with Mail. Microsoft legacy account
+// routing and custom CardDAV behavior are preserved. The host refreshes
+// source tokens proactively; an in-flight revocation surfaces to the UI.
 func (a *API) httpClientForSource(source *carddav.Source, scope coreapi.AuthScope) (*http.Client, error) {
 	if source == nil {
 		return nil, fmt.Errorf("contacts: httpClientForSource: nil source")
 	}
 
-	if source.AccountID != nil && *source.AccountID != "" {
+	if source.Type != carddav.SourceTypeGoogle && source.AccountID != nil && *source.AccountID != "" {
 		if a.core == nil {
 			return nil, fmt.Errorf("contacts: httpClientForSource: core not wired")
 		}

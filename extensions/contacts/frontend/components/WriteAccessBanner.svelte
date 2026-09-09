@@ -1,11 +1,11 @@
 <script lang="ts">
   // WriteAccessBanner — visible at the top of the ContactList whenever the
-  // user has a non-writable external contact source (CardDAV, Google,
-  // Microsoft). One row per such source, with an Enable button.
+  // user has a non-writable external contact source that supports writes
+  // (CardDAV or Microsoft). One row per such source, with an Enable button.
   //
   // For CardDAV: the button directly flips the writable flag (basic-auth
   // already grants access; this is a pure preference toggle).
-  // For Google / Microsoft: the button opens the WriteAccessAccountPicker
+  // For Microsoft: the button opens the WriteAccessAccountPicker
   // dialog, which lists existing matching-provider auth contexts and lets
   // the user pick one to attach the new write grant to.
   //
@@ -27,14 +27,14 @@
 
   // Picker state — only one picker can be open at a time.
   let pickerOpen = $state(false)
-  let pickerProvider = $state<'google' | 'microsoft'>('google')
+  let pickerProvider = $state<'microsoft'>('microsoft')
   let pickerSourceID = $state('')
   let pickerSourceName = $state('')
 
   const rows = $derived.by(() => {
     const all = contactSourcesStore.sources.filter(
       (s) =>
-        (s.type === 'google' || s.type === 'microsoft' || s.type === 'carddav') &&
+        (s.type === 'microsoft' || s.type === 'carddav') &&
         !s.writable,
     )
     const sel = contactsView.selectedSourceId
@@ -62,7 +62,7 @@
     }
 
     // OAuth path — open the account picker dialog.
-    if (source.type !== 'google' && source.type !== 'microsoft') return
+    if (source.type !== 'microsoft') return
     pickerProvider = source.type
     pickerSourceID = source.id
     pickerSourceName = source.name
@@ -75,8 +75,6 @@
 
   function providerIcon(type: string): string {
     switch (type) {
-      case 'google':
-        return 'mdi:google'
       case 'microsoft':
         return 'mdi:microsoft'
       case 'carddav':
@@ -87,8 +85,6 @@
 
   function providerLabel(type: string): string {
     switch (type) {
-      case 'google':
-        return $_('contacts.writeAccessBanner.providerGoogle')
       case 'microsoft':
         return $_('contacts.writeAccessBanner.providerMicrosoft')
       case 'carddav':

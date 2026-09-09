@@ -275,8 +275,9 @@ func (s *Syncer) syncMicrosoft(source *Source) error {
 
 // getOAuthToken retrieves the OAuth access token for a source
 func (s *Syncer) getOAuthToken(source *Source) (string, error) {
-	// If source is linked to an email account, use the account's token
-	if source.AccountID != nil && *source.AccountID != "" {
+	// Google always uses source credentials. Preserve legacy account auth
+	// for Microsoft and custom CardDAV.
+	if source.Type != SourceTypeGoogle && source.AccountID != nil && *source.AccountID != "" {
 		if s.getAccountToken == nil {
 			return "", fmt.Errorf("account token getter not configured")
 		}

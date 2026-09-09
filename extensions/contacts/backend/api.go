@@ -286,14 +286,13 @@ func (a *API) CreateContact(input coreapi.ContactCreateInput) (string, error) {
 	case carddav.SourceTypeCardDAV:
 		return a.createCardDAVContact(input, email)
 	case carddav.SourceTypeGoogle:
-		return a.createGoogleContact(input, email, source)
+		return "", fmt.Errorf("contacts.CreateContact: Google Contacts is read-only")
 	case carddav.SourceTypeMicrosoft:
 		return a.createMicrosoftContact(input, email, source)
 	}
 	return "", fmt.Errorf("contacts.CreateContact: unknown source type %q for source %s", source.Type, input.SourceID)
 }
 
-// createGoogleContact lives in google_api.go (Phase 2b.3 Track B).
 // createMicrosoftContact lives in microsoft_api.go (Phase 2b.3 Track C).
 
 // createCardDAVContact resolves the target addressbook + client and PUTs a new
@@ -432,7 +431,7 @@ func (a *API) UpdateContact(id string, patch coreapi.ContactPatch) error {
 		case carddav.SourceTypeCardDAV:
 			return a.writeCardDAVRecord(rec)
 		case carddav.SourceTypeGoogle:
-			return a.updateGoogleContact(rec)
+			return fmt.Errorf("contacts.UpdateContact: Google Contacts is read-only")
 		case carddav.SourceTypeMicrosoft:
 			return a.updateMicrosoftContact(rec)
 		}
@@ -440,8 +439,7 @@ func (a *API) UpdateContact(id string, patch coreapi.ContactPatch) error {
 	return coreapi.ErrUnimplemented
 }
 
-// updateGoogleContact lives in google_api.go. updateMicrosoftContact lives
-// in microsoft_api.go (Phase 2b.3 Track C).
+// updateMicrosoftContact lives in microsoft_api.go (Phase 2b.3 Track C).
 
 // applyContactPatchToRecord copies every non-nil patch field onto the record.
 // Returns true if any field was applied; false if the patch was entirely nil
@@ -702,7 +700,7 @@ func (a *API) DeleteContact(id string) error {
 		case carddav.SourceTypeCardDAV:
 			return a.deleteCardDAVRecord(rec)
 		case carddav.SourceTypeGoogle:
-			return a.deleteGoogleContact(rec)
+			return fmt.Errorf("contacts.DeleteContact: Google Contacts is read-only")
 		case carddav.SourceTypeMicrosoft:
 			return a.deleteMicrosoftContact(rec)
 		}
@@ -710,8 +708,7 @@ func (a *API) DeleteContact(id string) error {
 	return coreapi.ErrUnimplemented
 }
 
-// deleteGoogleContact lives in google_api.go. deleteMicrosoftContact lives
-// in microsoft_api.go (Phase 2b.3 Track C).
+// deleteMicrosoftContact lives in microsoft_api.go (Phase 2b.3 Track C).
 
 // sourceTypeForRecord looks up the carddav.SourceType for a record by walking
 // rec.SourceRef (its addressbook id) → carddav_source_addressbooks → source.
@@ -860,8 +857,7 @@ func (a *API) cardDAVClientForAddressbook(addressbookID string) (*carddav.Client
 // Source-type dispatch (Phase 2b.3):
 //   - CardDAV: lists the source's enabled addressbooks straight from the local
 //     carddav_source_addressbooks table.
-//   - Google: surfaces contactGroups as pseudo-addressbooks + a synthetic
-//     "My Contacts" entry. Track B fills the live HTTP call.
+//   - Google: read-only sources cannot be selected as a write destination.
 //   - Microsoft: surfaces contactFolders as addressbooks. Track C fills in.
 func (a *API) ListAddressbooks(sourceID string) ([]coreapi.Addressbook, error) {
 	if a.carddavStore == nil {
@@ -881,7 +877,7 @@ func (a *API) ListAddressbooks(sourceID string) ([]coreapi.Addressbook, error) {
 	case carddav.SourceTypeCardDAV:
 		return a.listCardDAVAddressbooks(sourceID)
 	case carddav.SourceTypeGoogle:
-		return a.listGoogleAddressbooks(source)
+		return nil, nil
 	case carddav.SourceTypeMicrosoft:
 		return a.listMicrosoftAddressbooks(source)
 	}
@@ -910,8 +906,7 @@ func (a *API) listCardDAVAddressbooks(sourceID string) ([]coreapi.Addressbook, e
 	return out, nil
 }
 
-// listGoogleAddressbooks lives in google_api.go. listMicrosoftAddressbooks
-// lives in microsoft_api.go (Phase 2b.3 Track C).
+// listMicrosoftAddressbooks lives in microsoft_api.go (Phase 2b.3 Track C).
 
 // SubscribeToContactEvents is scaffolded; Phase 3+ wires through a core
 // event bus once one exists.

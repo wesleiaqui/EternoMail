@@ -1,6 +1,6 @@
 <script lang="ts">
   // WriteAccessAccountPicker — shown when the user clicks "Enable write
-  // access" on a Google or Microsoft contacts source. Lists existing
+  // access" on a Microsoft contacts source. Lists existing
   // authenticated identities (mail accounts + standalone contact sources)
   // matching the source's provider; the user picks one and the contacts
   // source's write grant attaches to that identity.
@@ -23,7 +23,7 @@
 
   interface Props {
     open: boolean
-    provider: 'google' | 'microsoft'
+    provider: 'microsoft'
     sourceID: string
     sourceName: string
     onCompleted?: () => void
@@ -70,8 +70,6 @@
 
   const providerLabel = $derived.by(() => {
     switch (provider) {
-      case 'google':
-        return $_('oauth.writeAccessPicker.providerGoogle')
       case 'microsoft':
         return $_('oauth.writeAccessPicker.providerMicrosoft')
     }

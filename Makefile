@@ -28,12 +28,9 @@ MODULE := github.com/hkdb/aerion
 # -ldflags: Wails displays that field in its build options.
 #
 #   GOOGLE_CLIENT_ID          — optional development override for the public
-#                               Google Desktop client. Also backs
-#                               first-party extensions for any scopes their
-#                               manifest declares in
-#                               first_party_uses_core_for_scopes (today:
-#                               contacts.readonly). Surfaced as
-#                               "Aerion - Google" in the picker.
+#                               Google Desktop client. Optional services use
+#                               separate consent and token storage even when
+#                               sharing this client registration.
 #   MICROSOFT_CLIENT_ID       — mail's Azure AD app registration. Also
 #                               backs microsoft-contacts and
 #                               microsoft-calendar (Microsoft Graph

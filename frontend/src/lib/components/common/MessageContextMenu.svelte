@@ -12,6 +12,7 @@
     MarkAsUnread,
     Star,
     Unstar,
+    MoveToInbox,
     Archive,
     Trash,
     MarkAsSpam,
@@ -140,6 +141,17 @@
   async function handleForward() {
     if (isSingleMessage && onReply) {
       onReply('forward', messageIds[0])
+    }
+  }
+
+  async function handleMoveToInbox() {
+    try {
+      await MoveToInbox(messageIds)
+      toasts.success($_('toast.movedTo', { values: { folder: $_('sidebar.inbox') } }), [{ label: $_('common.undo'), onClick: handleUndo }])
+      onActionComplete?.(true)
+    } catch (err) {
+      console.error('Move to inbox failed:', err)
+      toasts.error($_('toast.failedToMove'))
     }
   }
 
@@ -329,6 +341,12 @@
     {/if}
 
     <!-- Move/Delete actions -->
+    {#if isTrashFolder}
+      <ContextMenuItem onSelect={handleMoveToInbox}>
+        <Icon icon="mdi:inbox-arrow-down-outline" class="mr-2 h-4 w-4" />
+        {$_('viewer.moveToInbox')}
+      </ContextMenuItem>
+    {/if}
     <ContextMenuItem onSelect={handleArchive}>
       <Icon icon="mdi:archive-outline" class="mr-2 h-4 w-4" />
       {$_('contextMenu.archive')}

@@ -68,11 +68,11 @@
 
   function openEdit(contact: v1.Contact | null) {
     if (!contact) return
-    // Open for any writable source — local (always writable) or a CardDAV
-    // source that has its writable flag enabled. Google/Microsoft sources
-    // are gated to read-only until 2b.3 ships their write paths.
-    const writable =
-      contact.sourceId === 'aerion' || contactSourcesStore.isSourceWritable(contact.sourceId)
+    // Google Contacts stays read-only even for legacy sources whose writable
+    // flag was set before this restriction.
+    const source = contactSourcesStore.sources.find(s => s.id === contact.sourceId)
+	const writable =
+      contact.sourceId === 'aerion' || (!!source && source.type !== 'google' && source.writable)
     if (!writable) return
     editTarget = contact
     showEdit = true

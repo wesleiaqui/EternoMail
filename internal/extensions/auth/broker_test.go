@@ -1,6 +1,7 @@
 package auth
 
 import (
+	contactsmanifest "github.com/hkdb/aerion/extensions/contacts"
 	"path/filepath"
 	"testing"
 
@@ -132,7 +133,7 @@ func TestHTTPClientForExtension_RoutesToCoreForListedScopes(t *testing.T) {
 	insertTestAccount(t, db, "acct-route-core")
 
 	// Account has mail tokens that include the contacts.readonly scope (which
-	// is what mail OAuth includes for autocomplete).
+	// was issued by the legacy combined grant; this is a synthetic routing fixture).
 	if err := credStore.SetOAuthTokens("acct-route-core", &credentials.OAuthTokens{
 		Provider:     "google",
 		AccessToken:  "mail-access",
@@ -180,8 +181,8 @@ func TestHTTPClientForExtension_RoutesToExtensionForUnlistedScopes(t *testing.T)
 		t.Fatalf("set mail tokens: %v", err)
 	}
 
-	// Contacts manifest lists only the READ scope as core-routed. The write
-	// scope below is NOT listed, so the broker should route to google-contacts.
+	// Contacts manifest lists only the read scope as core-routed. An unrelated
+	// scope is not listed, so the broker routes it to google-contacts.
 	manifest := coreapi.Manifest{
 		ID: "contacts",
 		OAuth: &coreapi.ManifestOAuth{
@@ -192,7 +193,7 @@ func TestHTTPClientForExtension_RoutesToExtensionForUnlistedScopes(t *testing.T)
 	}
 
 	_, err := broker.HTTPClientForExtension("contacts", manifest, "acct-route-ext", []coreapi.AuthScope{
-		{Resource: "https://www.googleapis.com/auth/contacts"},
+		{Resource: "https://example.invalid/contacts-write"},
 	})
 	if err == nil {
 		t.Fatal("expected ErrAdditionalConsentRequired (no tokens under google-contacts), got nil")
@@ -231,7 +232,7 @@ func TestHTTPClientForExtension_RejectsMixedScopes(t *testing.T) {
 	// Mix of a core-routed scope and an ext-routed scope in one call.
 	_, err := broker.HTTPClientForExtension("contacts", manifest, "acct-mixed", []coreapi.AuthScope{
 		{Resource: "https://www.googleapis.com/auth/contacts.readonly"},
-		{Resource: "https://www.googleapis.com/auth/contacts"},
+		{Resource: "https://example.invalid/contacts-write"},
 	})
 	if err == nil {
 		t.Fatal("expected error for mixed-scope call, got nil")
@@ -282,5 +283,19 @@ func TestBrokerSMTPClient_Unimplemented(t *testing.T) {
 	_, err := broker.SMTPClient("any")
 	if err != coreapi.ErrUnimplemented {
 		t.Fatalf("expected ErrUnimplemented, got %v", err)
+	}
+}
+
+func TestShippedContactsManifestNeverReusesLegacyGoogleMailGrant(t *testing.T) {
+	broker, store, db := newTestBroker(t)
+	insertTestAccount(t, db, "legacy")
+	scope := "https://www.googleapis.com/auth/contacts.readonly"
+	if err := store.SetOAuthTokens("legacy", &credentials.OAuthTokens{Provider: "google", AccessToken: "legacy", RefreshToken: "legacy-refresh", Scopes: []string{"https://mail.google.com/", scope}}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := broker.HTTPClientForExtension("contacts", contactsmanifest.Manifest(), "legacy", []coreapi.AuthScope{{Resource: scope}})
+	consent, ok := err.(*coreapi.ErrAdditionalConsentRequired)
+	if !ok || consent.ClientConfigID != "google-contacts" {
+		t.Fatalf("shipped Contacts manifest reused Mail: %v", err)
 	}
 }

@@ -76,8 +76,8 @@
   let addressbooks = $state<v1.Addressbook[]>([])
   let loadingAddressbooks = $state<boolean>(false)
 
-  // Picker options. Any writable external source qualifies — CardDAV,
-  // Google, or Microsoft. The backend's CreateContact dispatches by
+  // Picker options. Any writable external source qualifies — CardDAV or
+  // Microsoft. Google Contacts is read-only. The backend dispatches by
   // source.Type to the matching provider create handler.
   type PickerOption = { value: string; label: string }
   const sourceOptions: PickerOption[] = $derived.by(() => {
@@ -86,7 +86,7 @@
     ]
     for (const s of contactSourcesStore.sources) {
       if (!s.writable) continue
-      if (s.type === 'carddav' || s.type === 'google' || s.type === 'microsoft') {
+      if (s.type === 'carddav' || s.type === 'microsoft') {
         opts.push({ value: s.id, label: s.name })
       }
     }
@@ -106,7 +106,7 @@
     }
     const s = contactSourcesStore.sources.find(s => s.id === sourceValue)
     if (!s) return ''
-    if (s.type === 'carddav' || s.type === 'google' || s.type === 'microsoft') {
+    if (s.type === 'carddav' || s.type === 'microsoft') {
       return s.type
     }
     return ''

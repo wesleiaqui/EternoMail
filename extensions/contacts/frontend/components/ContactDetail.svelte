@@ -24,17 +24,19 @@
 
   // Local records are always writable. CardDAV records are writable when the
   // source's `writable` flag is enabled (Settings → source → "Enable write
-  // access"). Google / Microsoft sources gain write capability in 2b.3
+  // access"). Google Contacts remains read-only; Microsoft may be writable.
   // alongside the provider-specific write paths.
   let isWritable = $derived(
-    contact?.sourceId === 'aerion' || contactSourcesStore.isSourceWritable(contact?.sourceId),
+    contact?.sourceId === 'aerion' || (() => {
+      const source = contactSourcesStore.sources.find(s => s.id === contact?.sourceId)
+      return !!source && source.type !== 'google' && source.writable
+    })(),
   )
 
   // Read-only hint discriminator. We want to surface WHY a contact has no
   // Edit/Delete buttons:
   //   - CardDAV non-writable → "Read-only — enable write access in Settings"
-  //   - OAuth (Google/Microsoft) → "Read-only — write capability coming in a
-  //     future release"
+  //   - OAuth (Google/Microsoft) → "Read-only"
   //   - Local → never read-only.
   let readonlyKind = $derived.by<'none' | 'carddav' | 'oauth'>(() => {
     if (!contact || isWritable) return 'none'

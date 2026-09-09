@@ -25,8 +25,8 @@ type Manifest struct {
 //   - If the scope is listed in FirstPartyUsesCoreForScopes, the broker routes
 //     through Aerion core's mail OAuth (<provider>-mail client config). This
 //     reuses the user's existing mail consent — no new OAuth prompt — but it's
-//     only viable when the mail OAuth grant already covers that scope (e.g.,
-//     contacts.readonly is on the mail grant for Google).
+//     only viable when the mail OAuth grant already covers that scope.
+//     Google Contacts always uses a separate source grant.
 //
 //   - Otherwise the broker routes through the extension's own client config
 //     (<provider>-<extensionID>). If the account lacks the scope under that

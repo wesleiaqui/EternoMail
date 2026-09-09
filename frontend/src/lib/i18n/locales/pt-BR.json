@@ -1,4 +1,9 @@
 {
+  "contactSource": {
+    "separateConsent": "Contatos precisa de uma autorização separada. Ao salvar, você autoriza o Google Contacts para a conta selecionada.",
+    "authorizeContacts": "Autorizar contatos",
+    "authorized": "Contatos autorizados."
+  },
   "spellcheck": {
     "title": "Verificacao ortografica",
     "enable": "Verificar ortografia",
@@ -160,6 +165,7 @@
     "neverChecked": "Ainda não verificado"
   },
   "viewer": {
+    "moveToInbox": "Mover para caixa de entrada",
     "selectConversation": "Selecione uma conversa para ler",
     "failedToLoad": "Nao foi possivel carregar a conversa",
     "tryAgain": "Tentar novamente",

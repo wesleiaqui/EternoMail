@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -141,7 +142,7 @@ func (c contactsCoreImpl) ListSources() ([]coreapi.ContactSource, error) {
 // its incremental-consent flow (Phase 2b.3) to flip Writable after the user
 // grants write scopes.
 func (c contactsCoreImpl) SetSourceWritable(sourceID string, writable bool) error {
-	return c.app.carddavStore.SetSourceWritable(sourceID, writable)
+	return c.app.SetContactSourceWritable(sourceID, writable)
 }
 
 // LinkAccountSource delegates to the host's existing LinkAccountContactSource
@@ -254,6 +255,12 @@ func (a *extensionAuth) StartIncrementalConsent(req coreapi.StartIncrementalCons
 		return fmt.Errorf("incremental consent: exactly one of accountID / sourceID must be set")
 	}
 
+	// Google Contacts credentials always belong to the target source, even
+	// when its identity is logically associated with a Gmail account.
+	if req.ClientConfigID == "google-contacts" {
+		return fmt.Errorf("Google Contacts is read-only; use the Contacts authorization flow")
+	}
+
 	// Validate the EXTENSION's own slot has creds via the proper resolver
 	// (user override → registered providers, NOT inherited from mail-side
 	// ldflags via the legacy GetProvider fallback).
@@ -317,6 +324,15 @@ func (a *extensionAuth) StartIncrementalConsent(req coreapi.StartIncrementalCons
 	if tokens == nil {
 		return fmt.Errorf("incremental consent: no tokens returned")
 	}
+	defer tokens.Clear()
+	if req.ClientConfigID == "google-contacts" && tokens.Scope != "" {
+		granted := strings.Fields(tokens.Scope)
+		for _, requested := range req.Scopes {
+			if !slices.Contains(granted, requested.Resource) {
+				return fmt.Errorf("incremental consent: requested Contacts permission was not granted")
+			}
+		}
+	}
 
 	// Validate the grant came from the same account. Prefer the stable oid+tid
 	// identity — Microsoft's email/UPN/primary-SMTP are mutable and can differ
@@ -331,7 +347,7 @@ func (a *extensionAuth) StartIncrementalConsent(req coreapi.StartIncrementalCons
 	if haveStablePair && expectedStableID != grantedStableID {
 		return fmt.Errorf("incremental consent: granted account does not match the expected account")
 	}
-	if !haveStablePair && req.ExpectedEmail != "" && email != "" && !strings.EqualFold(email, req.ExpectedEmail) {
+	if !haveStablePair && req.ExpectedEmail != "" && !strings.EqualFold(email, req.ExpectedEmail) {
 		return fmt.Errorf("incremental consent: granted account %q does not match expected account %q", email, req.ExpectedEmail)
 	}
 
@@ -349,6 +365,29 @@ func (a *extensionAuth) StartIncrementalConsent(req coreapi.StartIncrementalCons
 		}
 	}
 	if req.SourceID != "" {
+		a.app.contactTokenMu.Lock()
+		defer a.app.contactTokenMu.Unlock()
+		source, err := a.app.carddavStore.GetSource(req.SourceID)
+		if err != nil {
+			return err
+		}
+		if source == nil {
+			return fmt.Errorf("contact source no longer exists")
+		}
+		if storeTokens.RefreshToken == "" {
+			if req.ClientConfigID == "google-contacts" {
+				return fmt.Errorf("Contacts authorization returned no refresh token; sign in again")
+			}
+			previous, err := a.app.credStore.GetContactSourceOAuthTokens(req.SourceID)
+			if err != nil {
+				return fmt.Errorf("incremental consent: no refresh token")
+			}
+			// Reuse only this source's same-provider token, never a Mail token.
+			if previous.Provider != storeTokens.Provider {
+				return fmt.Errorf("incremental consent: sign in again to obtain a refresh token")
+			}
+			storeTokens.RefreshToken = previous.RefreshToken
+		}
 		if err := a.app.credStore.SetContactSourceOAuthTokens(req.SourceID, storeTokens); err != nil {
 			return fmt.Errorf("incremental consent: persist source tokens: %w", err)
 		}

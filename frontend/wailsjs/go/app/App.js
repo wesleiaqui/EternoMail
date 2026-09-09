@@ -230,6 +230,10 @@ export function CompleteOAuthAccountSetup(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['app']['App']['CompleteOAuthAccountSetup'](arg1, arg2, arg3, arg4, arg5);
 }
 
+export function Contacts_CancelSourceAuthorization() {
+  return window['go']['app']['App']['Contacts_CancelSourceAuthorization']();
+}
+
 export function Contacts_CreateContact(arg1) {
   return window['go']['app']['App']['Contacts_CreateContact'](arg1);
 }
@@ -260,6 +264,10 @@ export function Contacts_ListContactsForBrowse(arg1, arg2, arg3, arg4) {
 
 export function Contacts_ListSources() {
   return window['go']['app']['App']['Contacts_ListSources']();
+}
+
+export function Contacts_ReauthorizeSource(arg1) {
+  return window['go']['app']['App']['Contacts_ReauthorizeSource'](arg1);
 }
 
 export function Contacts_ResizeContactPhoto(arg1) {
@@ -946,6 +954,10 @@ export function MoveToFolder(arg1, arg2) {
   return window['go']['app']['App']['MoveToFolder'](arg1, arg2);
 }
 
+export function MoveToInbox(arg1) {
+  return window['go']['app']['App']['MoveToInbox'](arg1);
+}
+
 export function NotifyStartupComplete() {
   return window['go']['app']['App']['NotifyStartupComplete']();
 }
@@ -1020,6 +1032,10 @@ export function ReadFileAsAttachment(arg1) {
 
 export function ReauthorizeAccount(arg1) {
   return window['go']['app']['App']['ReauthorizeAccount'](arg1);
+}
+
+export function ReauthorizeContactSource(arg1) {
+  return window['go']['app']['App']['ReauthorizeContactSource'](arg1);
 }
 
 export function RebuildFTSIndex(arg1) {

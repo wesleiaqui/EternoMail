@@ -448,6 +448,8 @@ func buildAuthURL(provider ProviderConfig, state, codeChallenge, redirectURI str
 	switch {
 	case strings.HasPrefix(provider.Name, "google"):
 		params.Set("access_type", "offline")
+		// Keep Mail and optional services as separate grants.
+		params.Set("include_granted_scopes", "false")
 		params.Set("prompt", "consent")
 	case strings.HasPrefix(provider.Name, "microsoft"):
 		params.Set("prompt", "select_account")

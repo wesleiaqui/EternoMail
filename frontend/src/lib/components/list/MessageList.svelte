@@ -18,7 +18,7 @@
   import { cn } from '$lib/utils'
   import { Button } from '$lib/components/ui/button'
   // @ts-ignore - wailsjs bindings
-  import { GetConversations, GetConversationCount, SyncFolder, ForceSyncFolder, CancelFolderSync, SetMessageListSortOrder, GetUnifiedFolderConversations, GetUnifiedFolderCount, SearchConversations, SearchUnifiedFolder, GetSearchCount, GetSearchCountUnifiedFolder, SyncUnifiedFolder, EmptyUnifiedTrash, GetFTSIndexStatus, IsFTSIndexing, Trash, DeletePermanently, EmptyTrash, Undo, IMAPSearchFolder, IMAPSearchUnifiedInbox, FetchServerMessage } from '../../../../wailsjs/go/app/App'
+  import { MoveToInbox, GetConversations, GetConversationCount, SyncFolder, ForceSyncFolder, CancelFolderSync, SetMessageListSortOrder, GetUnifiedFolderConversations, GetUnifiedFolderCount, SearchConversations, SearchUnifiedFolder, GetSearchCount, GetSearchCountUnifiedFolder, SyncUnifiedFolder, EmptyUnifiedTrash, GetFTSIndexStatus, IsFTSIndexing, Trash, DeletePermanently, EmptyTrash, Undo, IMAPSearchFolder, IMAPSearchUnifiedInbox, FetchServerMessage } from '../../../../wailsjs/go/app/App'
   import { toasts } from '$lib/stores/toast'
   import { _ } from '$lib/i18n'
   import { ConfirmDialog } from '$lib/components/ui/confirm-dialog'
@@ -1680,6 +1680,17 @@
   // Empty trash confirmation state
   let showEmptyTrashConfirm = $state(false)
 
+  async function handleMoveToInbox() {
+    try {
+      await MoveToInbox(selectedMessageIds)
+      toasts.success($_('toast.movedTo', { values: { folder: $_('sidebar.inbox') } }), [{ label: $_('common.undo'), onClick: handleUndo }])
+      handleActionComplete(true)
+    } catch (err) {
+      console.error('Move to inbox failed:', err)
+      toasts.error($_('toast.failedToMove'))
+    }
+  }
+
   async function handleUndo() {
     try {
       const description = await Undo()
@@ -2047,6 +2058,11 @@
       <button class="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" onclick={() => onBulkMarkRead?.(selectedMessageIds)}>
         <Icon icon="mdi:check-circle-outline" class="h-4 w-4" /> {$_('common.done')}
       </button>
+      {#if folderType === 'trash'}
+        <button class="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm hover:bg-muted" onclick={handleMoveToInbox}>
+          <Icon icon="mdi:inbox-arrow-down-outline" class="h-4 w-4" /> {$_('viewer.moveToInbox')}
+        </button>
+      {/if}
       <button class="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" onclick={() => onBulkArchive?.(selectedMessageIds)}>
         <Icon icon="mdi:archive-outline" class="h-4 w-4" /> {$_('viewer.archive')}
       </button>

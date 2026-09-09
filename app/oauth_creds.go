@@ -129,9 +129,8 @@ type OAuthCredsChoices struct {
 //
 //   - Whether the slot's own shipped creds resolve to non-empty (always
 //     adds an "aerion-shipped" option labeled per provider).
-//   - Whether the extension's manifest declares the OAuth provider of this
-//     slot in first_party_uses_core_for_scopes AND the mail slot has
-//     shipped creds (adds "aerion-mail" — reuse mail's verified client).
+//   - Whether a first-party Google extension can use the shipped Mail client
+//     registration (adds "aerion-mail"). Grants and tokens remain separate.
 //
 // extensionID is the manifest id ("contacts", "calendar"); pass "" when
 // the caller is mail's own settings UI (no manifest, no aerion-mail option).
@@ -200,16 +199,16 @@ func (a *App) GetOAuthCredsChoices(configID, extensionID string) (OAuthCredsChoi
 // options is non-destructive.
 //
 //   - "custom"          → record marker. Caller invokes SetOAuthCreds
-//                          separately (via the editor's Save button) to
-//                          write or replace the actual credentials.
+//     separately (via the editor's Save button) to
+//     write or replace the actual credentials.
 //   - "aerion-shipped"  → record marker. The resolver skips override +
-//                          alias and routes to the slot's own shipped
-//                          creds. Any user_oauth_clients / alias rows
-//                          remain in storage so switching back to Custom
-//                          restores the user's saved values.
+//     alias and routes to the slot's own shipped
+//     creds. Any user_oauth_clients / alias rows
+//     remain in storage so switching back to Custom
+//     restores the user's saved values.
 //   - "aerion-mail"     → record marker AND ensure the alias row exists.
-//                          The user_oauth_clients row is preserved for
-//                          the same round-trip restore reason.
+//     The user_oauth_clients row is preserved for
+//     the same round-trip restore reason.
 //
 // The only path that actually DELETES the user's stored credentials is
 // the explicit ClearOAuthCreds Wails method ("Clear saved Custom
@@ -271,9 +270,10 @@ func (a *App) resolveCurrentChoice(configID string) string {
 }
 
 // providerFromConfigID strips the well-known prefix from a slot id.
-//   "google-contacts"     → "google"
-//   "microsoft-calendar"  → "microsoft"
-//   anything else         → ""
+//
+//	"google-contacts"     → "google"
+//	"microsoft-calendar"  → "microsoft"
+//	anything else         → ""
 func providerFromConfigID(configID string) string {
 	switch {
 	case strings.HasPrefix(configID, "google-"):
@@ -382,7 +382,7 @@ func (a *App) ListAuthContextsForProvider(provider string) ([]AuthContextInfo, e
 			if s == nil {
 				continue
 			}
-			if s.AccountID != nil && *s.AccountID != "" {
+			if s.Type != carddav.SourceTypeGoogle && s.AccountID != nil && *s.AccountID != "" {
 				continue // linked to a mail account — already covered above
 			}
 			if string(s.Type) != provider {
@@ -414,4 +414,3 @@ func contactSourceEmail(s *carddav.Source) string {
 	}
 	return s.Username
 }
-

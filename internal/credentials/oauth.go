@@ -412,6 +412,14 @@ func (s *Store) SetContactSourceOAuthTokens(sourceID string, tokens *OAuthTokens
 	// informational/routing-only — used by the Auth Broker when an extension
 	// later wants to discover which OAuth client backs this source.
 	clientConfigID := oauth2.ClientConfigIDForProvider(tokens.Provider)
+	// Old standalone metadata used the Mail provider name. Its tokens still
+	// belong exclusively to Contacts; never label this storage as a Mail slot.
+	switch tokens.Provider {
+	case "google", "google-contacts":
+		clientConfigID = "google-contacts"
+	case "microsoft", "microsoft-contacts":
+		clientConfigID = "microsoft-contacts"
+	}
 	if clientConfigID == "" {
 		return fmt.Errorf("cannot derive client_config_id for provider %q", tokens.Provider)
 	}

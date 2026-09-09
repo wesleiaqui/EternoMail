@@ -17,11 +17,11 @@ type Source struct {
 	ID           string     `json:"id"`
 	Name         string     `json:"name"`
 	Type         SourceType `json:"type"`
-	URL          string     `json:"url"`          // CardDAV server URL (empty for OAuth sources)
-	Username     string     `json:"username"`     // CardDAV username (empty for OAuth sources)
-	AccountID    *string    `json:"account_id,omitempty"` // Linked email account ID (for OAuth sources using account's token)
+	URL          string     `json:"url"`                  // CardDAV server URL (empty for OAuth sources)
+	Username     string     `json:"username"`             // CardDAV username or verified OAuth email
+	AccountID    *string    `json:"account_id,omitempty"` // Logical Mail association for Google; credential identity for custom CardDAV
 	Enabled      bool       `json:"enabled"`
-	Writable     bool       `json:"writable"` // Phase 2b: write capability flag (opt-in per source)
+	Writable     bool       `json:"writable"`      // Phase 2b: write capability flag (opt-in per source)
 	SyncInterval int        `json:"sync_interval"` // Minutes (0 = manual only)
 	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
 	LastError    string     `json:"last_error,omitempty"`
@@ -36,9 +36,9 @@ type Source struct {
 type SourceConfig struct {
 	Name         string     `json:"name"`
 	Type         SourceType `json:"type"`
-	URL          string     `json:"url"`      // CardDAV server URL (empty for OAuth sources)
-	Username     string     `json:"username"` // CardDAV username (empty for OAuth sources)
-	Password     string     `json:"password"` // CardDAV password, only used for create/update, not stored in DB
+	URL          string     `json:"url"`                  // CardDAV server URL (empty for OAuth sources)
+	Username     string     `json:"username"`             // CardDAV username or verified OAuth email
+	Password     string     `json:"password"`             // CardDAV password, only used for create/update, not stored in DB
 	AccountID    string     `json:"account_id,omitempty"` // Linked email account ID (for OAuth sources)
 	Enabled      bool       `json:"enabled"`
 	Writable     bool       `json:"writable"`

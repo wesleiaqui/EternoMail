@@ -1,6 +1,6 @@
 <!--
-  ContactEditDialog — multi-field Edit dialog for local + CardDAV +
-  Google + Microsoft contacts.
+  ContactEditDialog — multi-field Edit dialog for local, CardDAV, and
+  Microsoft contacts.
 
   Layout owns the source/header/buttons; the actual field section is
   rendered by the shared <ContactFieldsForm> component which AddContactDialog

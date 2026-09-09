@@ -50,7 +50,9 @@ func (a *App) initContactsExtension() {
 		// create/update/delete succeed regardless of whether the user
 		// linked the source to an email account or set it up via the
 		// contacts-only OAuth flow.
-		GetStandaloneSourceToken: a.getValidContactSourceOAuthToken,
+		GetStandaloneSourceToken:  a.getValidContactSourceOAuthToken,
+		ReauthorizeSource:         a.ReauthorizeContactSource,
+		CancelSourceAuthorization: a.CancelContactSourceOAuthFlow,
 	})
 
 	// Live-refresh the contact list after any source sync (background

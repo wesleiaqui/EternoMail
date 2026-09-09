@@ -6,7 +6,7 @@
   import { addToast } from '$lib/stores/toast'
   import { refreshExtensionRegistry } from '$lib/stores/extensionRegistry.svelte'
   // @ts-ignore - wailsjs bindings
-  import { SetExtensionEnabled } from '$wailsjs/go/app/App'
+  import { SetExtensionEnabled, Contacts_CancelSourceAuthorization } from '$wailsjs/go/app/App'
   // @ts-ignore - wailsjs bindings
   import type { v1 } from '$wailsjs/go/models'
 
@@ -28,7 +28,7 @@
     busy = true
     error = null
     try {
-      // Link the account as a read-only CardDAV contact source. 60-minute
+      // Open separate Contacts authorization for the selected identity. 60-minute
       // sync interval matches the default for new sources; a future settings
       // affordance may let the user override it.
       await contactSourcesStore.linkAccount(accountId, accountName, 60)
@@ -76,7 +76,7 @@
 
   {#if !done}
     <div class="flex justify-end gap-2">
-      <Button variant="ghost" onclick={skip} disabled={busy}>{$_('contacts.hook.skip')}</Button>
+      <Button variant="ghost" onclick={async () => { if (busy) await Contacts_CancelSourceAuthorization(); else skip() }}>{$_('contacts.hook.skip')}</Button>
       <Button onclick={setUp} disabled={busy}>
         {#if busy}
           <Icon icon="mdi:loading" class="w-4 h-4 mr-2 animate-spin" />

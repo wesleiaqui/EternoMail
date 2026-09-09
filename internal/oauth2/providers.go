@@ -30,11 +30,9 @@ func GoogleProvider() ProviderConfig {
 		AuthURL:     "https://accounts.google.com/o/oauth2/v2/auth",
 		TokenURL:    "https://oauth2.googleapis.com/token",
 		Scopes: []string{
-			"https://mail.google.com/",                                // Full Gmail access (IMAP/SMTP)
-			"https://www.googleapis.com/auth/contacts.other.readonly", // Other contacts (for autocomplete)
-			"https://www.googleapis.com/auth/contacts.readonly",       // Full contacts read access (for sync)
-			"https://www.googleapis.com/auth/userinfo.email",          // Get user's email address
-			"https://www.googleapis.com/auth/userinfo.profile",        // Read the signed-in user's profile photo
+			"https://mail.google.com/",                         // Full Gmail access (IMAP/SMTP)
+			"https://www.googleapis.com/auth/userinfo.email",   // Get user's email address
+			"https://www.googleapis.com/auth/userinfo.profile", // Read the signed-in user's profile photo
 			"openid", // OpenID Connect
 		},
 		ClientID:     GoogleClientID,
@@ -154,11 +152,8 @@ func MicrosoftContactsOnlyProvider() ProviderConfig {
 // would silently use the embedded ClientID even after the user saved
 // their own override — issue #138.
 //
-// Other names (extension / standalone-contacts variants) return their
-// static ProviderConfig unchanged. Their callers (app/coreimpl.go and
-// GetProviderForClientConfig) already overlay slot-resolved creds on top
-// of the returned config, so retrofitting them here would be redundant
-// and would change the URL/scope semantics of standalone callers.
+// Contacts names resolve their own credential slots while preserving the
+// Contacts-only scopes. Calendar callers overlay their slot credentials.
 func GetProvider(name string) (ProviderConfig, error) {
 	switch name {
 	case "google":
@@ -166,9 +161,9 @@ func GetProvider(name string) (ProviderConfig, error) {
 	case "microsoft":
 		return overlayResolvedCreds(MicrosoftProvider(), "microsoft-mail"), nil
 	case "google-contacts":
-		return GoogleContactsOnlyProvider(), nil
+		return overlayResolvedCreds(GoogleContactsOnlyProvider(), "google-contacts"), nil
 	case "microsoft-contacts":
-		return MicrosoftContactsOnlyProvider(), nil
+		return overlayResolvedCreds(MicrosoftContactsOnlyProvider(), "microsoft-contacts"), nil
 	case "google-calendar":
 		return GoogleCalendarProvider(), nil
 	case "microsoft-calendar":

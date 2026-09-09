@@ -1569,3 +1569,10 @@ func parseSyncedAt(s string) time.Time {
 	}
 	return time.Time{}
 }
+
+// SetOAuthIdentity persists the verified provider email, independently of a
+// logical Mail association. It survives account deletion and supports reauth.
+func (s *Store) SetOAuthIdentity(id, email string) error {
+	_, err := s.db.Exec("UPDATE contact_sources SET username = ?, account_id = CASE WHEN type = 'microsoft' THEN NULL ELSE account_id END WHERE id = ?", email, id)
+	return err
+}

@@ -19,53 +19,9 @@ import (
 // SearchContacts searches for contacts matching the query
 // Returns contacts from multiple sources: local database, vCard files, CardDAV, and Google Contacts
 func (a *App) SearchContacts(query string, limit int) ([]*contact.Contact, error) {
-	log := logging.WithComponent("app")
-
-	// First search local contacts (DB + vCard + CardDAV)
-	contacts, err := a.contactStore.Search(query, limit)
-	if err != nil {
-		return nil, err
-	}
-
-	// For OAuth accounts, also search Google Contacts API
-	accounts, _ := a.accountStore.List()
-	for _, acc := range accounts {
-		if acc.AuthType == account.AuthOAuth2 && strings.Contains(acc.IMAPHost, "gmail") {
-			// Get valid OAuth token
-			tokens, err := a.getValidOAuthToken(acc.ID)
-			if err != nil {
-				log.Warn().Err(err).Str("accountID", acc.ID).Msg("Failed to get OAuth token for Google Contacts search")
-				continue
-			}
-
-			// Search Google Contacts
-			googleContacts, err := a.googleContactsClient.Search(tokens.AccessToken, query, limit-len(contacts))
-			if err != nil {
-				log.Warn().Err(err).Str("accountID", acc.ID).Msg("Google Contacts search failed")
-				continue
-			}
-
-			// Append to results (deduplicate by email)
-			existingEmails := make(map[string]bool)
-			for _, c := range contacts {
-				existingEmails[strings.ToLower(c.Email)] = true
-			}
-
-			for _, gc := range googleContacts {
-				if !existingEmails[strings.ToLower(gc.Email)] {
-					contacts = append(contacts, gc)
-					existingEmails[strings.ToLower(gc.Email)] = true
-				}
-			}
-		}
-	}
-
-	// Limit results
-	if len(contacts) > limit {
-		contacts = contacts[:limit]
-	}
-
-	return contacts, nil
+	// Synced Google contacts, saved/collected addresses and vCards are local.
+	// Autocomplete must not authorize Contacts or refresh Mail credentials.
+	return a.contactStore.Search(query, limit)
 }
 
 // GetContact returns a single contact by ID

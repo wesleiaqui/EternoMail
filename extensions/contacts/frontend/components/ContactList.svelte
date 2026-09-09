@@ -51,8 +51,7 @@
   // Delete-confirmation state for keyboard-triggered deletes. ContactDetail
   // has its own button-triggered confirm dialog; this one fires when the user
   // has the LIST focused and hits Delete/Backspace on the highlighted row.
-  // Mirrors ContactDetail's writability gate: local always writable; CardDAV
-  // gated on the source's writable flag.
+  // Mirrors ContactDetail's writability gate; Google Contacts is read-only.
   let showDeleteConfirm = $state(false)
   let pendingDelete = $state<v1.Contact | null>(null)
   let deleting = $state(false)
@@ -60,8 +59,8 @@
   function requestDelete(id: string) {
     const found = contactsView.contacts.find(c => c.id === id)
     if (!found) return
-    const writable =
-      found.sourceId === 'aerion' || contactSourcesStore.isSourceWritable(found.sourceId)
+    const source = contactSourcesStore.sources.find(s => s.id === found.sourceId)
+    const writable = found.sourceId === 'aerion' || (!!source && source.type !== 'google' && source.writable)
     if (!writable) return
     pendingDelete = found
     showDeleteConfirm = true

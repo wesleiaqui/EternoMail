@@ -163,6 +163,7 @@
     "neverChecked": "Not checked yet"
   },
   "viewer": {
+    "moveToInbox": "Move to inbox",
     "selectConversation": "Select a conversation to read",
     "failedToLoad": "Failed to load conversation",
     "tryAgain": "Try again",
@@ -845,6 +846,9 @@
     "berConversionConfirm": "Convert & Import"
   },
   "contactSource": {
+    "separateConsent": "Contacts requires a separate sign-in. Saving opens Google Contacts authorization for the selected account.",
+    "authorizeContacts": "Authorize Contacts",
+    "authorized": "Contacts authorized.",
     "title": "Contact Sources",
     "noSources": "No contact sources configured",
     "addSource": "Add Contact Source",

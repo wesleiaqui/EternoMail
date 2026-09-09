@@ -313,6 +313,7 @@
   }
 
   async function handleStartOAuth() {
+    selectedAccountId = ''
     oauthInProgress = true
     try {
       await contactSourcesStore.startOAuthFlow(sourceType)
@@ -405,7 +406,8 @@
           await UpdateContactSource(editSource.id, config)
           addToast({ type: 'success', message: $_('toast.contactSourceUpdated') })
         } else if (selectedAccountId) {
-          // Link to existing email account
+          // Explicit separate Contacts consent for this identity.
+          oauthInProgress = true
           await contactSourcesStore.linkAccount(selectedAccountId, name, syncInterval)
           addToast({ type: 'success', message: $_('toast.contactSourceLinked') })
         } else if (oauthEmail) {
@@ -422,16 +424,16 @@
       onClose?.()
     } catch (err) {
       console.error('Failed to save:', err)
-      addToast({ type: 'error', message: $_('toast.failedToSave') })
+      addToast({ type: 'error', message: String(err) })
     } finally {
       saving = false
+      oauthInProgress = false
+      oauthAuthURL = null
     }
   }
 
   function handleCancel() {
-    if (oauthInProgress) {
-      contactSourcesStore.cancelOAuthFlow()
-    }
+    contactSourcesStore.cancelOAuthFlow()
     open = false
     onClose?.()
   }
@@ -439,14 +441,13 @@
   function handleOpenChange(isOpen: boolean) {
     open = isOpen
     if (!isOpen) {
-      if (oauthInProgress) {
-        contactSourcesStore.cancelOAuthFlow()
-      }
+      contactSourcesStore.cancelOAuthFlow()
       onClose?.()
     }
   }
 
   function handleTabChange(value: string) {
+    contactSourcesStore.cancelOAuthFlow()
     sourceType = value as SourceType
     // Reset OAuth state when switching tabs
     selectedAccountId = ''
@@ -723,13 +724,16 @@
             <!-- Link existing account section -->
             {#if availableAccounts.length > 0}
               <div class="space-y-3">
+                <p class="text-sm text-muted-foreground">{$_('contactSource.separateConsent')}</p>
                 <Label>{$_('contactSource.linkToExisting', { values: { provider: sourceType === 'google' ? 'Google' : 'Microsoft' } })}</Label>
                 <div class="border border-border rounded-md divide-y divide-border">
                   {#each availableAccounts as account (account.accountId)}
                     <button
                       type="button"
+                      disabled={saving || oauthInProgress}
                       class="w-full flex items-center gap-3 p-3 text-left hover:bg-muted/50 transition-colors"
                       onclick={() => {
+                        contactSourcesStore.cancelOAuthFlow()
                         selectedAccountId = account.accountId
                         oauthEmail = ''
                         if (!name) name = $_('contactSource.autoName', { values: { name: account.name || account.email } })
@@ -744,12 +748,6 @@
                         <div class="font-medium text-sm truncate">{account.name || account.email}</div>
                         <div class="text-xs text-muted-foreground truncate">{account.email}</div>
                       </div>
-                      {#if !account.hasContactScope}
-                        <span class="text-xs text-amber-500 flex items-center gap-1">
-                          <Icon icon="mdi:alert" class="w-3 h-3" />
-                          {$_('contactSource.reauthNeeded')}
-                        </span>
-                      {/if}
                     </button>
                   {/each}
                 </div>

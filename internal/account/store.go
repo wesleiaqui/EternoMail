@@ -449,7 +449,22 @@ func (s *Store) UpdateFolderMappings(id, sent, drafts, trash, spam, archive, all
 
 // Delete deletes an account and all associated data
 func (s *Store) Delete(id string) error {
-	result, err := s.db.Exec("DELETE FROM accounts WHERE id = ?", id)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// Google sources own their credentials. Detach the logical association
+	// before the legacy account FK cascade, retaining contacts and identity.
+	if _, err := tx.Exec(`
+		UPDATE contact_sources SET
+			username = CASE WHEN username = '' THEN COALESCE((SELECT email FROM accounts WHERE id = ?), '') ELSE username END,
+			account_id = NULL
+		WHERE account_id = ? AND type = 'google'
+	`, id, id); err != nil {
+		return err
+	}
+	result, err := tx.Exec("DELETE FROM accounts WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("failed to delete account: %w", err)
 	}
@@ -459,7 +474,7 @@ func (s *Store) Delete(id string) error {
 		return ErrAccountNotFound
 	}
 
-	return nil
+	return tx.Commit()
 }
 
 // SetEnabled enables or disables an account

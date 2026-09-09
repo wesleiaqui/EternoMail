@@ -836,7 +836,7 @@ func (a *App) copyMessagesAcrossAccounts(messages []*message.Message, destFolder
 	})
 }
 
-// Archive moves messages to the Archive folder
+// Archive moves messages to Archive, or All Mail for Gmail.
 func (a *App) Archive(messageIDs []string) error {
 	if len(messageIDs) == 0 {
 		return nil
@@ -850,21 +850,7 @@ func (a *App) Archive(messageIDs []string) error {
 		return a.archiveCrossAccount(messageIDs)
 	}
 
-	// Get first message to determine account
-	messages, err := a.messageStore.GetByIDs(messageIDs[:1])
-	if err != nil || len(messages) == 0 {
-		return fmt.Errorf("failed to get message")
-	}
-
-	archiveFolder, err := a.GetSpecialFolder(messages[0].AccountID, folder.TypeArchive)
-	if err != nil {
-		return fmt.Errorf("failed to get archive folder: %w", err)
-	}
-	if archiveFolder == nil {
-		return fmt.Errorf("no archive folder configured")
-	}
-
-	return a.MoveToFolder(messageIDs, archiveFolder.ID)
+	return a.RemoveFromInbox(messageIDs)
 }
 
 // RemoveFromInbox removes the Inbox label from messages. Gmail represents
@@ -1100,6 +1086,11 @@ func (a *App) MarkAsSpam(messageIDs []string) (bool, error) {
 
 // MarkAsNotSpam moves messages from Spam to Inbox
 func (a *App) MarkAsNotSpam(messageIDs []string) error {
+	return a.MoveToInbox(messageIDs)
+}
+
+// MoveToInbox restores messages to the Inbox of their respective accounts.
+func (a *App) MoveToInbox(messageIDs []string) error {
 	if len(messageIDs) == 0 {
 		return nil
 	}
@@ -1108,7 +1099,7 @@ func (a *App) MarkAsNotSpam(messageIDs []string) error {
 	// helper that recurses through this same function with uniform
 	// single-account slices.
 	if spans, _ := a.messageStore.SpansMultipleAccounts(messageIDs); spans {
-		return a.markAsNotSpamCrossAccount(messageIDs)
+		return a.moveToInboxCrossAccount(messageIDs)
 	}
 
 	messages, err := a.messageStore.GetByIDs(messageIDs[:1])
@@ -1116,7 +1107,7 @@ func (a *App) MarkAsNotSpam(messageIDs []string) error {
 		return fmt.Errorf("failed to get message")
 	}
 
-	inboxFolder, err := a.folderStore.GetByType(messages[0].AccountID, folder.TypeInbox)
+	inboxFolder, err := a.GetSpecialFolder(messages[0].AccountID, folder.TypeInbox)
 	if err != nil {
 		return fmt.Errorf("failed to get inbox folder: %w", err)
 	}
@@ -1355,15 +1346,15 @@ func (a *App) markAsSpamCrossAccount(messageIDs []string) (bool, error) {
 	return anyMoved, firstErr
 }
 
-// markAsNotSpamCrossAccount fan-outs MarkAsNotSpam() per account partition.
-func (a *App) markAsNotSpamCrossAccount(messageIDs []string) error {
+// moveToInboxCrossAccount fan-outs MoveToInbox() per account partition.
+func (a *App) moveToInboxCrossAccount(messageIDs []string) error {
 	byAccount, err := a.partitionByAccount(messageIDs)
 	if err != nil {
 		return err
 	}
 	var firstErr error
 	for _, ids := range byAccount {
-		if err := a.MarkAsNotSpam(ids); err != nil && firstErr == nil {
+		if err := a.MoveToInbox(ids); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}

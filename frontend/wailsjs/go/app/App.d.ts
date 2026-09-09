@@ -135,6 +135,8 @@ export function CompleteCustomOAuthAccountSetup(arg1:account.AccountConfig):Prom
 
 export function CompleteOAuthAccountSetup(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string):Promise<account.Account>;
 
+export function Contacts_CancelSourceAuthorization():Promise<void>;
+
 export function Contacts_CreateContact(arg1:v1.ContactCreateInput):Promise<string>;
 
 export function Contacts_DeleteLocalContact(arg1:string):Promise<void>;
@@ -150,6 +152,8 @@ export function Contacts_ListAddressbooks(arg1:string):Promise<Array<v1.Addressb
 export function Contacts_ListContactsForBrowse(arg1:string,arg2:string,arg3:number,arg4:number):Promise<Array<v1.Contact>>;
 
 export function Contacts_ListSources():Promise<Array<v1.ContactSource>>;
+
+export function Contacts_ReauthorizeSource(arg1:string):Promise<void>;
 
 export function Contacts_ResizeContactPhoto(arg1:string):Promise<backend.ResizedContactPhoto>;
 
@@ -493,6 +497,8 @@ export function MoveMessagesToFolder(arg1:Array<string>,arg2:string):Promise<voi
 
 export function MoveToFolder(arg1:Array<string>,arg2:string):Promise<void>;
 
+export function MoveToInbox(arg1:Array<string>):Promise<void>;
+
 export function NotifyStartupComplete():Promise<void>;
 
 export function OpenAttachment(arg1:string):Promise<void>;
@@ -530,6 +536,8 @@ export function QuitApp():Promise<void>;
 export function ReadFileAsAttachment(arg1:string):Promise<app.ComposerAttachment>;
 
 export function ReauthorizeAccount(arg1:string):Promise<void>;
+
+export function ReauthorizeContactSource(arg1:string):Promise<void>;
 
 export function RebuildFTSIndex(arg1:string):Promise<void>;
 

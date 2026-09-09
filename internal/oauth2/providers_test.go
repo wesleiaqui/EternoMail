@@ -269,3 +269,71 @@ func TestSupportedProviders(t *testing.T) {
 		}
 	}
 }
+
+// The exact sets also prohibit Contacts/Other Contacts and Gmail REST scopes
+// on Mail, and prohibit Mail/profile/Other Contacts on initial Contacts login.
+func TestGoogleAuthorizationLeastPrivilege(t *testing.T) {
+	mail := []string{"https://mail.google.com/", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile", "openid"}
+	contacts := []string{"https://www.googleapis.com/auth/contacts.readonly", "https://www.googleapis.com/auth/userinfo.email", "openid"}
+	for _, tc := range []struct {
+		name     string
+		provider ProviderConfig
+		want     []string
+	}{
+		{"mail", GoogleProvider(), mail},
+		{"contacts", GoogleContactsOnlyProvider(), contacts},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if strings.Join(tc.provider.Scopes, " ") != strings.Join(tc.want, " ") {
+				t.Fatalf("unexpected scopes: %v", tc.provider.Scopes)
+			}
+			cfg, err := GetProvider(tc.provider.Name) // also used by Mail reauth
+			if err != nil {
+				t.Fatal(err)
+			}
+			u, err := url.Parse(buildAuthURL(cfg, "state", "pkce", "http://127.0.0.1/callback"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if u.Query().Get("scope") != strings.Join(tc.want, " ") {
+				t.Fatalf("auth URL changed scopes: %s", u.Query().Get("scope"))
+			}
+			if u.Query().Get("include_granted_scopes") != "false" {
+				t.Fatal("Google must not combine prior Mail/Contacts grants")
+			}
+			if u.Query().Get("access_type") != "offline" || u.Query().Get("prompt") != "consent" {
+				t.Fatal("refresh-token authorization settings lost")
+			}
+		})
+	}
+}
+
+func TestContactsClientResolverKeepsContactsScopes(t *testing.T) {
+	previous := UserOverrideLookup
+	UserOverrideLookup = func(id string) (ClientCredentials, bool) {
+		return ClientCredentials{ClientID: id + "-test", ClientSecret: "test"}, true
+	}
+	t.Cleanup(func() { UserOverrideLookup = previous })
+	for _, id := range []string{"google-mail", "google-contacts", "microsoft-contacts", "google-calendar"} {
+		cfg, err := GetProviderForClientConfig(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.ClientID != id+"-test" {
+			t.Fatal("client override not applied")
+		}
+		if id == "google-contacts" {
+			if strings.Join(cfg.Scopes, " ") != strings.Join(GoogleContactsOnlyProvider().Scopes, " ") {
+				t.Fatalf("Contacts resolver returned Mail scopes: %v", cfg.Scopes)
+			}
+			cfg.LoginHint = "person@example.com"
+			u, _ := url.Parse(buildAuthURL(cfg, "state", "pkce", "http://localhost"))
+			if u.Query().Get("login_hint") != cfg.LoginHint {
+				t.Fatal("missing login hint")
+			}
+		}
+		if id == "microsoft-contacts" && cfg.Scopes[0] != "https://graph.microsoft.com/Contacts.Read" {
+			t.Fatal("Microsoft Contacts resolved to Outlook audience")
+		}
+	}
+}

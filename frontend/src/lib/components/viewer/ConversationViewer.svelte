@@ -4,7 +4,7 @@
   // @ts-ignore - wailsjs bindings
   import { GetConversation, GetReadReceiptResponsePolicy, SendReadReceipt, IgnoreReadReceipt, GetMarkAsReadDelay, GetMessageSource, ProcessSMIMEMessage, ProcessPGPMessage, FetchMessageBody } from '../../../../wailsjs/go/app/App'
   // @ts-ignore - wailsjs bindings
-  import { MarkAsRead, MarkAsUnread, Star, Unstar, Archive, RemoveFromInbox, Trash, MarkAsSpam, MarkAsNotSpam, DeletePermanently, Undo } from '../../../../wailsjs/go/app/App'
+  import { MoveToInbox, MarkAsRead, MarkAsUnread, Star, Unstar, Archive, RemoveFromInbox, Trash, MarkAsSpam, MarkAsNotSpam, DeletePermanently, Undo } from '../../../../wailsjs/go/app/App'
   // @ts-ignore - wailsjs path
   import { EventsOn } from '../../../../wailsjs/runtime/runtime'
   // @ts-ignore - wailsjs path
@@ -976,6 +976,18 @@
     return toastId
   }
 
+  async function handleMoveToInbox() {
+    if (!conversation?.messages) return
+    try {
+      await MoveToInbox(conversation.messages.map(m => m.id))
+      toasts.success($_('toast.movedTo', { values: { folder: $_('sidebar.inbox') } }), [{ label: $_('common.undo'), onClick: handleUndo }])
+      onActionComplete?.(true)
+    } catch (err) {
+      console.error('Move to inbox failed:', err)
+      toasts.error($_('toast.failedToMove'))
+    }
+  }
+
   async function handleArchive() {
     if (!conversation?.messages) return
     const messageIds = conversation.messages.map(m => m.id)
@@ -1597,6 +1609,12 @@
         </button>
 
         <div class="w-px h-5 bg-border mx-1"></div>
+        {#if isTrashFolder}
+          <button class="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-muted" onclick={handleMoveToInbox}>
+            <Icon icon="mdi:inbox-arrow-down-outline" class="w-5 h-5" />
+            {$_('viewer.moveToInbox')}
+          </button>
+        {/if}
         <button
           class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95"
           data-tooltip={$_('viewer.archive')}

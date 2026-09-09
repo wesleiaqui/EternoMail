@@ -10,11 +10,13 @@
   import { _ } from '$lib/i18n'
   import { getCurrentDateFnsLocale } from '$lib/stores/settings.svelte'
   // @ts-ignore - wailsjs path
+  import { ReauthorizeContactSource, CancelContactSourceOAuthFlow } from '../../../../wailsjs/go/app/App'
   import type { carddav } from '../../../../wailsjs/go/models'
 
   // Dialog state
   let showAddDialog = $state(false)
   let editingSource = $state<carddav.Source | null>(null)
+  let reauthorizingSourceId = $state<string | null>(null)
   let syncingSourceId = $state<string | null>(null)
   let forceSyncingSourceId = $state<string | null>(null)
 
@@ -37,6 +39,19 @@
       return $_('contactSource.syncedAgo', { values: { time: formatDistanceToNow(new Date(source.last_synced_at), { addSuffix: true, locale: getCurrentDateFnsLocale() }) } })
     } catch {
       return $_('contactSource.neverSynced')
+    }
+  }
+
+  async function handleReauthorize(source: carddav.Source) {
+    reauthorizingSourceId = source.id
+    try {
+      await ReauthorizeContactSource(source.id)
+      await contactSourcesStore.refresh()
+      addToast({ type: 'success', message: $_('contactSource.authorized') })
+    } catch (err) {
+      addToast({ type: 'error', message: String(err) })
+    } finally {
+      reauthorizingSourceId = null
     }
   }
 
@@ -177,6 +192,17 @@
                 <div class="text-xs text-muted-foreground break-all max-h-24 overflow-y-auto">{source.last_error}</div>
               </div>
             </div>
+          {/if}
+
+          {#if source.type === 'google' || source.type === 'microsoft'}
+            <Button size="sm" variant="outline" onclick={() => handleReauthorize(source)} disabled={reauthorizingSourceId !== null}>
+              <Icon icon="mdi:account-key-outline" class="w-4 h-4 mr-1" />
+              {$_('contactSource.authorizeContacts')}
+            </Button>
+            {#if reauthorizingSourceId === source.id}
+              <span class="text-sm text-muted-foreground">{$_('contactSource.waitingForSignIn')}</span>
+              <Button size="sm" variant="ghost" onclick={() => CancelContactSourceOAuthFlow()}>{$_('common.cancel')}</Button>
+            {/if}
           {/if}
 
           <!-- Actions -->

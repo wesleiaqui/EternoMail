@@ -137,7 +137,6 @@ This shape is **subprocess-ready**: if community-extension demand emerges and a 
   ],
   "oauth": {
     "first_party_uses_core_for_scopes": [
-      "https://www.googleapis.com/auth/contacts.readonly",
       "Contacts.Read",
       "Contacts.ReadBasic"
     ]
@@ -1048,7 +1047,7 @@ Resolution order:
 provider, err := oauth2.GetProviderForClientConfig("google-contacts")
 // provider.ClientID, provider.ClientSecret are populated from the extension's slot
 // (via ClientConfigForID's resolution chain).
-// provider.Scopes are the default Google scopes (override per-extension as needed).
+// provider.Scopes are Contacts-only; the Mail scope is not included.
 ```
 
 ### Provisioning a new client config
@@ -1074,7 +1073,7 @@ Eterno Mail core's public Google and Microsoft client IDs have source defaults i
 | `google`, `google-contacts` | `google-mail` |
 | `microsoft`, `microsoft-contacts` | `microsoft-mail` |
 
-Used internally for back-compat queries; extension code rarely needs this directly.
+Used internally for legacy Mail queries only. Contact-source storage explicitly maps both legacy and new provider names to `google-contacts` / `microsoft-contacts`; it never uses this legacy Mail mapping.
 
 ---
 
@@ -1142,7 +1141,7 @@ Wired in Phase 2a via [`AccountDialog.svelte`](../frontend/src/lib/components/se
 1. After `AccountDialog.handleSubmit` successfully creates an account, the dialog computes a `provider` string: `oauthCredentials.provider` for OAuth accounts (`"google"` or `"microsoft"`), `"imap"` otherwise.
 2. Dialog calls `loadAccountSetupHooks(provider)` ([`extensionRegistry.svelte.ts`](../frontend/src/lib/stores/extensionRegistry.svelte.ts)) which wraps the Wails-bound `App.ListAccountSetupHooksForProvider`. Hooks are returned regardless of enable state — the hook IS the discovery surface that enables the extension.
 3. **Zero hooks** → dialog closes. **Non-zero** → dialog renders a "hooks step" UI that dispatches each hook to its registered Svelte component by `hook.component` name (e.g., `"AccountContactsHookPanel"` → [`extensions/contacts/frontend/hooks/AccountContactsHookPanel.svelte`](../extensions/contacts/frontend/hooks/AccountContactsHookPanel.svelte)).
-4. Each panel is opt-in: user clicks "Set up" or "Skip". The "Set up" handler runs the extension's onboarding (Phase 2a Contacts: `LinkAccountContactSource` + `SetExtensionEnabled('contacts', true)` + `refreshExtensionRegistry()`).
+4. Each panel is opt-in: user clicks "Set up" or "Skip". The "Set up" handler runs the extension's onboarding (Phase 2a Contacts: `LinkAccountContactSource` (separate Contacts OAuth with identity validation) + `SetExtensionEnabled('contacts', true)` + `refreshExtensionRegistry()`).
 5. When all panels resolve (set up or skipped), or the user clicks "Skip all", the dialog closes.
 
 The dispatch in `AccountDialog.svelte` is a static `{#if hook.component === '...'}` block. When you add a new hook component, extend that block — don't switch to `<svelte:component>` dynamic mounting (the component identifier is descriptive only).
@@ -1239,7 +1238,7 @@ Extension-relevant subset. Many other `App.*` methods exist for mail-side concer
 | `App.GetOAuthCredsStatus(configID string) (app.OAuthCredsStatus, error)` | Reports per-slot config presence (`hasUserOverride`, `hasShipped`, last-4-char fingerprint of the active client_id). Never returns secret values. Used by the OAuth Credentials editor in each extension's settings dialog. |
 | `App.SetOAuthCreds(configID, clientID, clientSecret string) error` | Persist user-supplied client_id + secret for a slot (overrides any shipped defaults). |
 | `App.ClearOAuthCreds(configID string) error` | Remove a user override for a slot (reverts to shipped values, if any). Used both by the editor's "Clear" action and when the slot dropdown switches from Custom back to the Eterno Mail-shipped option. |
-| `App.ListAuthContextsForProvider(provider string) ([]app.AuthContextInfo, error)` | Enumerates existing matching-provider auth identities: mail accounts (from `accountStore`) + standalone contact sources (`carddavStore.ListSources()` where `AccountID IS NULL` and `Type == provider`). Drives the `WriteAccessAccountPicker` dialog's radio list. Result entries carry `kind` (`"mail"` or `"standalone-contacts"`), `identifier` (account_id or source_id), `email`, and a pre-built display `label`. |
+| `App.ListAuthContextsForProvider(provider string) ([]app.AuthContextInfo, error)` | Enumerates existing matching-provider auth identities: mail accounts (from `accountStore`) + standalone contact sources (`carddavStore.ListSources()` where `Type == provider` (Google includes logical Mail associations)). Drives the `WriteAccessAccountPicker` dialog's radio list. Result entries carry `kind` (`"mail"` or `"standalone-contacts"`), `identifier` (account_id or source_id), `email`, and a pre-built display `label`. |
 | `App.CancelOAuthFlow()` | Cancel any in-progress OAuth flow (account add, write-access grant, etc.). Stops the OAuth manager's callback server; in-flight backend code returns with a cancellation error. |
 
 ### Extension bridge methods (`<Extension>_` prefix, defined on the embedded `*Bridge`)
@@ -1269,7 +1268,7 @@ Currently bound by the Contacts extension's bridge (all gate on `extension_conta
 | `App.Contacts_ListAddressbooks(sourceID string) ([]v1.Addressbook, error)` | Addressbooks for a source — CardDAV addressbooks; Google contactGroups (as `google-group:*` synthetic IDs) + a `google-mycontacts:*` default; Microsoft contactFolders (as `ms-folder:*`) + a `ms-default:*` default. See [§ Contacts](#contacts) for the synthetic-ID table. |
 | `App.Contacts_ListSources() ([]v1.ContactSource, error)` | All configured contact sources. Routes through `coreapi.Contacts.ListSources` (host-owned, not bridge-API). |
 | `App.Contacts_LinkAccountSource(accountID, name string, syncInterval int) (string, error)` | Creates a contact source backed by an existing OAuth account. Routes through `coreapi.Contacts.LinkAccountSource`. Used by `AccountContactsHookPanel`. |
-| `App.Contacts_EnableWriteAccess(sourceID, authContextKind, authContextIdentifier, expectedEmail string) error` | Single entry point for granting write access on a Google or Microsoft contacts source. The frontend `WriteAccessAccountPicker` calls this after the user picks an existing auth identity (mail account or standalone contacts source). Backend derives `clientConfigID` and write-scope from the source's provider, then dispatches into `coreapi.Auth.StartIncrementalConsent` with either `AccountID` (for `"mail"` contexts) or `SourceID` (for `"standalone-contacts"` contexts) populated. `expectedEmail` is enforced post-callback — if the granted identity's email doesn't match, the tokens are discarded and the call returns an error. Flips the source's writable flag on success. Cancellable mid-flow via `App.CancelOAuthFlow`. |
+| `App.Contacts_EnableWriteAccess(sourceID, authContextKind, authContextIdentifier, expectedEmail string) error` | Single entry point for granting write access on a Google or Microsoft contacts source. The frontend `WriteAccessAccountPicker` calls this after the user picks an existing auth identity (mail account or standalone contacts source). Backend derives `clientConfigID` and write-scope from the source's provider, then dispatches into `coreapi.Auth.StartIncrementalConsent` with either `AccountID` (for `"mail"` contexts) or `SourceID` (for `"standalone-contacts"` contexts) populated. `expectedEmail` is enforced post-callback — if the granted identity's email doesn't match, the tokens are discarded and the call returns an error. Flips the source's writable flag on success. Google write consent targets the selected contact source, validates its persisted email, and never writes Mail credentials. Cancellable mid-flow via `App.CancelOAuthFlow`. |
 
 ### Frontend logger
 
@@ -1956,16 +1955,16 @@ When a future extension needs a primitive that doesn't exist yet (e.g., Calendar
 
 ## Write capability
 
-Phase 2b introduces write capability to extensions. Reads continue through Eterno Mail core's existing data paths (mail OAuth + per-source CardDAV creds); writes go through a parallel per-extension OAuth path.
+Phase 2b introduces write capability to extensions. Google reads use source-owned Contacts OAuth credentials; optional Google write consent upgrades that source grant. Custom CardDAV and Microsoft keep their provider-specific authentication paths.
 
 ### Per-extension OAuth client configs
 
 Each first-party extension that needs OAuth has its own client config slot. Eterno Mail's public provider defaults are centralized in core rather than injected as extension secrets.
 
 ```
-google-mail            ← Eterno Mail core (mail + contacts READ via existing grant)
+google-mail            ← Eterno Mail core (IMAP/SMTP + identity only)
 microsoft-mail         ← Eterno Mail core
-google-contacts        ← Contacts extension (WRITE only)
+google-contacts        ← Contacts (optional READ, then optional WRITE consent)
 microsoft-contacts     ← Contacts extension
 google-calendar        ← Calendar extension (READ + WRITE; future)
 microsoft-calendar     ← Calendar extension (future)
@@ -1992,12 +1991,12 @@ When an extension calls `core.Auth().HTTPClient(accountID, scopes)`, the Auth Br
 - **Routes to the extension's own creds** (`<provider>-<extensionID>`) — NOT listed. If the account lacks those scopes under the extension's config, broker returns `*coreapi.ErrAdditionalConsentRequired`; the host runs an incremental-consent flow.
 
 ```jsonc
-// Contacts: READ piggybacks on mail OAuth, WRITE uses own creds
+// Contacts: Google READ and optional WRITE use separate source credentials.
+// These legacy declarations apply only to Microsoft routing.
 {
   "id": "contacts",
   "oauth": {
     "first_party_uses_core_for_scopes": [
-      "https://www.googleapis.com/auth/contacts.readonly",
       "Contacts.Read"
     ]
   }
@@ -2030,7 +2029,7 @@ Both UIs use the same shared primitive [`kit/OAuthCredsSlotEditor.svelte`](../fr
   - `google-contacts` / `google-calendar` → **"Eterno Mail testing"** (un-Google-verified).
   - `microsoft-*` slots → **"Eterno Mail - Microsoft"** (backed by mail's client after the core consolidation).
   - `<provider>-mail` → **"Eterno Mail - Google"** / **"Eterno Mail - Microsoft"** (mail's own settings UI).
-- **`aerion-mail`** — reuse the core `<provider>-mail` slot's client for this extension. Only listed when the extension's manifest declares the provider's scopes in `first_party_uses_core_for_scopes` AND the mail slot has shipped creds. Today only Google contacts qualifies (mail's verified client carries `contacts.readonly`).
+- **`aerion-mail`** — reuse the core `<provider>-mail` slot's client for this extension. Offered for first-party Google extension slots when the mail client is configured, independently of manifest token routing. Sharing a client registration does not share Mail tokens or add Contacts scopes to Mail.
 
 Resolution order in `oauth2.ClientConfigForID(configID)`:
 1. User override (`oauth2.UserOverrideLookup`) — Settings UI `custom` choice.
@@ -2063,8 +2062,8 @@ On Continue, the dialog calls the extension's `<Extension>_EnableWriteAccess(sou
 
 **Backend.** The extension's bridge method ([`Contacts_EnableWriteAccess`](../extensions/contacts/backend/bridge.go) is the reference) does:
 
-1. Derive the slot's `clientConfigID` and the write scope from the source's provider (e.g. `google-contacts` + `https://www.googleapis.com/auth/contacts`).
-2. Build a `coreapi.StartIncrementalConsentRequest`. Set exactly one of `AccountID` (when `authContextKind == "mail"`) or `SourceID` (when `"standalone-contacts"`). Set `ExpectedEmail` to the picked identity's email. Pass through to `core.Auth().StartIncrementalConsent(req)`.
+1. Derive the slot's `clientConfigID` and write scope only for providers that support writes in the current release. Google Contacts is read-only and has no incremental-consent write path.
+2. For Google, use the target source identity and persist only under `SourceID`. For Microsoft, build a `coreapi.StartIncrementalConsentRequest`. Set exactly one of `AccountID` (when `authContextKind == "mail"`) or `SourceID` (when `"standalone-contacts"`). Set `ExpectedEmail` to the picked identity's email. Pass through to `core.Auth().StartIncrementalConsent(req)`.
 3. On `nil` return, call `core.Contacts().SetSourceWritable(sourceID, true)`.
 
 The host's `StartIncrementalConsent` implementation:

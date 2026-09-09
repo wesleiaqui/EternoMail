@@ -7,6 +7,7 @@
   //
   // Opens via Settings → Extensions → Edit button on the Contacts row.
 
+  import { Contacts_ReauthorizeSource, Contacts_CancelSourceAuthorization } from '$wailsjs/go/app/App'
   import { _ } from 'svelte-i18n'
   import Icon from '@iconify/svelte'
   import * as Dialog from '$lib/components/ui/dialog'
@@ -35,7 +36,21 @@
 
   // Picker state — only one picker open at a time.
   let pickerOpen = $state(false)
-  let pickerProvider = $state<'google' | 'microsoft'>('google')
+  let reauthorizing = $state<string | null>(null)
+  async function reauthorize(sourceId: string) {
+    reauthorizing = sourceId
+    try {
+      await Contacts_ReauthorizeSource(sourceId)
+      await contactSourcesStore.load()
+      toasts.success($_('contactSource.authorized'))
+    } catch (err) {
+      toasts.error(String(err))
+    } finally {
+      reauthorizing = null
+    }
+  }
+
+  let pickerProvider = $state<'microsoft'>('microsoft')
   let pickerSourceID = $state('')
   let pickerSourceName = $state('')
 
@@ -48,8 +63,8 @@
     }
   })
 
-  // Source rows surfaced in the Write Access section. Every external source
-  // type (CardDAV, Google, Microsoft) appears here regardless of state — the
+  // Source rows surfaced in the Write Access section. CardDAV and Microsoft
+  // appear here regardless of state — Google Contacts is read-only.
   // dialog is the canonical on/off lever for write access. Per-row button
   // text flips: "Enable" when read-only, "Disable" when writable. Local is
   // always writable so it's excluded.
@@ -59,13 +74,13 @@
   // the list once everything's set up). Disable lives only here.
   const writeAccessRows = $derived(
     contactSourcesStore.sources.filter(
-      (s) => s.type === 'google' || s.type === 'microsoft' || s.type === 'carddav',
+      (s) => s.type === 'microsoft' || s.type === 'carddav',
     ),
   )
 
   // Disable write access on a source. Pure flag flip via
-  // SetContactSourceWritable(id, false) — works for all three external
-  // source types. Note: for Google/Microsoft this does NOT revoke the OAuth
+  // SetContactSourceWritable(id, false) — works for the supported external
+  // source types. Note: for Microsoft this does NOT revoke the OAuth
   // token at the provider; it just stops Aerion from using it. If the user
   // re-enables later, the existing token is reused if still valid, so the
   // write-access picker won't need to re-grant. To fully revoke, the user
@@ -86,7 +101,7 @@
 
   // Single entry point for "enable write access on this source." Same end
   // state across providers (writable=true); only the precondition differs:
-  // CardDAV is a pure flag flip via SetContactSourceWritable; Google/MS open
+  // CardDAV is a pure flag flip via SetContactSourceWritable; Microsoft opens
   // the account picker dialog, which dispatches into Contacts_EnableWriteAccess
   // on confirm.
   async function enableWriteAccess(source: v1.ContactSource) {
@@ -108,12 +123,12 @@
     openWriteAccessPicker(source)
   }
 
-  // Open the account-picker consent flow for an OAuth (Google/Microsoft)
+  // Open the account-picker consent flow for a Microsoft
   // source. Used both to grant write access initially and to reauthorize a
   // source whose token grant went stale — re-running Contacts_EnableWriteAccess
   // refreshes the tokens (writable stays on).
   function openWriteAccessPicker(source: v1.ContactSource) {
-    if (source.type !== 'google' && source.type !== 'microsoft') return
+    if (source.type !== 'microsoft') return
     pickerProvider = source.type
     pickerSourceID = source.id
     pickerSourceName = source.name
@@ -164,6 +179,17 @@
 
       {#if writeAccessRows.length > 0}
         <section>
+          <div class="space-y-2 mb-4">
+            {#each contactSourcesStore.sources.filter(s => s.type === 'google' || s.type === 'microsoft') as source (source.id)}
+              <div class="flex items-center gap-2">
+                <span class="text-sm flex-1">{source.name}</span>
+                <Button size="sm" variant="outline" disabled={reauthorizing !== null} onclick={() => reauthorize(source.id)}>{$_('contactSource.authorizeContacts')}</Button>
+                {#if reauthorizing === source.id}
+                  <Button size="sm" variant="ghost" onclick={() => Contacts_CancelSourceAuthorization()}>{$_('common.cancel')}</Button>
+                {/if}
+              </div>
+            {/each}
+          </div>
           <h3 class="text-sm font-semibold text-foreground mb-2">{$_('contacts.settings.writeAccessHeading')}</h3>
           <p class="text-xs text-muted-foreground mb-3">
             {$_('contacts.settings.writeAccessDescription')}
@@ -174,7 +200,7 @@
               <div class="flex items-center justify-between gap-3 rounded-md border border-border p-3">
                 <div class="flex items-center gap-3 min-w-0">
                   <Icon
-                    icon={source.type === 'google' ? 'mdi:google' : source.type === 'microsoft' ? 'mdi:microsoft' : 'mdi:server'}
+                    icon={source.type === 'microsoft' ? 'mdi:microsoft' : 'mdi:server'}
                     class="w-5 h-5 text-muted-foreground flex-shrink-0"
                   />
                   <div class="min-w-0">
@@ -188,7 +214,7 @@
                 </div>
                 {#if source.writable}
                   <div class="flex items-center gap-2 flex-shrink-0">
-                    {#if source.type === 'google' || source.type === 'microsoft'}
+                    {#if source.type === 'microsoft'}
                       <Button
                         size="sm"
                         variant="ghost"

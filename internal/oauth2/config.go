@@ -13,9 +13,8 @@ import "os"
 // ProviderConfig also supports custom provider credentials.
 var (
 	// GoogleClientID is the OAuth2 client ID for Google/Gmail (Mail-scoped project).
-	// Same client also backs first-party extensions' Google flows for any scopes
-	// listed in the extension manifest's first_party_uses_core_for_scopes (today:
-	// contacts.readonly). When that's not enough (write scopes, full Calendar),
+	// Optional services may use the same client registration, but always
+	// obtain separate consent and store their own tokens.
 	GoogleClientID     string
 	GoogleClientSecret string
 

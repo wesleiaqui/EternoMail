@@ -75,7 +75,7 @@ func (a *API) createMicrosoftContact(input coreapi.ContactCreateInput, email str
 		return "", fmt.Errorf("contacts.createMicrosoftContact: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), googleCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), contactsWriteTimeout)
 	defer cancel()
 
 	log := logging.WithComponent("microsoft-contacts-write")
@@ -200,7 +200,7 @@ func (a *API) updateMicrosoftContact(rec *contact.Record) error {
 		return fmt.Errorf("contacts.updateMicrosoftContact: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), googleCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), contactsWriteTimeout)
 	defer cancel()
 
 	log := logging.WithComponent("microsoft-contacts-write")
@@ -291,7 +291,7 @@ func (a *API) deleteMicrosoftContact(rec *contact.Record) error {
 		return fmt.Errorf("contacts.deleteMicrosoftContact: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), googleCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), contactsWriteTimeout)
 	defer cancel()
 
 	log := logging.WithComponent("microsoft-contacts-write")
@@ -337,7 +337,7 @@ func (a *API) listMicrosoftAddressbooks(source *carddav.Source) ([]coreapi.Addre
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), googleCallTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), contactsWriteTimeout)
 	defer cancel()
 
 	writer := NewMicrosoftContactsWriter(httpClient)

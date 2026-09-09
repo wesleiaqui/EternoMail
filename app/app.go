@@ -298,13 +298,11 @@ type App struct {
 	// endpoints/creds can be persisted per account for later refresh/reauth.
 	pendingCustomProvider *oauth2.ProviderConfig
 
-	// Temporary OAuth token storage (for pending contact source creation)
-	pendingContactSourceOAuthTokens   *oauth2.TokenResponse
-	pendingContactSourceOAuthEmail    string
-	pendingContactSourceOAuthProvider string
-
-	// Google Contacts API client (for OAuth accounts)
-	googleContactsClient *contact.GoogleContactsClient
+	// Contacts consent has its own manager/session and never consumes Mail tokens.
+	contactOAuthMu      goSync.Mutex
+	contactOAuthManager *oauth2.Manager
+	pendingContactOAuth *pendingContactOAuth
+	contactTokenMu      goSync.Mutex
 
 	// Pending mailto: URL data (from command line)
 	PendingMailto *MailtoData
@@ -762,9 +760,6 @@ func (a *App) Startup(ctx context.Context) {
 		draftOps:       &a.draftOps,
 	}
 
-	// Initialize Google Contacts client for OAuth account contact search
-	a.googleContactsClient = contact.NewGoogleContactsClient()
-
 	// Initialize IPC for multi-window support
 	a.initIPC(ctx)
 
@@ -1022,6 +1017,7 @@ func (a *App) Shutdown(ctx context.Context) {
 }
 
 func (a *App) shutdown(ctx context.Context) {
+	a.clearContactOAuth()
 	log := logging.WithComponent("app")
 
 	// Broadcast shutdown to all composer windows
@@ -1129,11 +1125,13 @@ func (a *App) GetContext() context.Context {
 
 // getValidContactSourceOAuthToken returns a valid OAuth token for a standalone contact source
 func (a *App) getValidContactSourceOAuthToken(sourceID string) (string, error) {
+	a.contactTokenMu.Lock()
+	defer a.contactTokenMu.Unlock()
 	log := logging.WithComponent("app")
 
 	tokens, err := a.credStore.GetContactSourceOAuthTokens(sourceID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get contact source OAuth tokens: %w", err)
+		return "", fmt.Errorf("authorize this contact source in Contacts settings: %w", err)
 	}
 
 	// Check if token expires within 5 minutes
@@ -1144,7 +1142,11 @@ func (a *App) getValidContactSourceOAuthToken(sourceID string) (string, error) {
 			Msg("Contact source OAuth token expiring soon, refreshing")
 
 		// Refresh the token
-		newTokenResp, err := a.oauth2Manager.RefreshToken(tokens.Provider, tokens.RefreshToken)
+		provider, err := contactRefreshProvider(tokens.Provider)
+		if err != nil {
+			return "", err
+		}
+		newTokenResp, err := a.oauth2Manager.RefreshTokenWithProvider(provider, tokens.RefreshToken)
 		if err != nil {
 			log.Error().Err(err).
 				Str("source_id", sourceID).

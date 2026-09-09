@@ -56,7 +56,7 @@ func (e *Extension) Register(core coreapi.Core) (coreapi.Unregister, error) {
 		ExtensionID: e.manifest.ID,
 		Providers:   []string{"google", "microsoft"},
 		ButtonLabel: "Also set up your contacts",
-		Description: "Sync contacts from this account for autocomplete and browsing.",
+		Description: "Authorize Contacts separately to sync saved contacts for autocomplete and browsing.",
 		Component:   "AccountContactsHookPanel",
 	})
 	if err != nil {

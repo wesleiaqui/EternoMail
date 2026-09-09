@@ -7,8 +7,8 @@ import (
 
 	"github.com/hkdb/aerion/internal/carddav"
 	"github.com/hkdb/aerion/internal/contact"
-	"github.com/hkdb/aerion/internal/database"
 	coreapi "github.com/hkdb/aerion/internal/core/api/v1"
+	"github.com/hkdb/aerion/internal/database"
 	"github.com/hkdb/aerion/internal/platform"
 )
 
@@ -48,6 +48,10 @@ type ContactsBridge struct {
 // Grouped into a struct so adding a new dep (e.g., logger, event bus)
 // doesn't churn every call site in the host.
 type ContactsBridgeDeps struct {
+	// Consent stays host-owned, with separate Contacts sessions and tokens.
+	ReauthorizeSource         func(sourceID string) error
+	CancelSourceAuthorization func()
+
 	// SettingsStore is consulted on every bridge call for the enabled gate
 	// (lightweight invariant — disabled calls short-circuit before any work).
 	SettingsStore SettingsStore
@@ -386,13 +390,14 @@ type ResizedContactPhoto struct {
 // dialog `await`s this.
 //
 // Inputs:
-//   sourceID              — the contact source being granted write access
-//   authContextKind       — "mail" or "standalone-contacts"
-//   authContextIdentifier — account_id (for "mail") or source_id (for
-//                           "standalone-contacts"); identifies the
-//                           OAuth identity the new tokens attach to
-//   expectedEmail         — the picked identity's email; enforced on
-//                           OAuth callback (mismatch = reject)
+//
+//	sourceID              — the contact source being granted write access
+//	authContextKind       — "mail" or "standalone-contacts"
+//	authContextIdentifier — account_id (for "mail") or source_id (for
+//	                        "standalone-contacts"); identifies the
+//	                        OAuth identity the new tokens attach to
+//	expectedEmail         — the picked identity's email; enforced on
+//	                        OAuth callback (mismatch = reject)
 //
 // Aerion's design forbids creating new accounts from inside the contacts
 // extension; all auth contexts MUST be one the user already set up in core
@@ -414,7 +419,8 @@ func (b *ContactsBridge) Contacts_EnableWriteAccess(sourceID, authContextKind, a
 		return errors.New("contacts: expectedEmail is required")
 	}
 
-	// Resolve the source's provider → clientConfigID + write scope.
+	// Google Contacts is read-only. Only providers with an explicit write
+	// integration may reach incremental consent here.
 	sources, err := b.deps.Core.Contacts().ListSources()
 	if err != nil {
 		return err
@@ -433,9 +439,6 @@ func (b *ContactsBridge) Contacts_EnableWriteAccess(sourceID, authContextKind, a
 	var clientConfigID coreapi.ClientConfigID
 	var writeScope string
 	switch providerType {
-	case "google":
-		clientConfigID = "google-contacts"
-		writeScope = "https://www.googleapis.com/auth/contacts"
 	case "microsoft":
 		clientConfigID = "microsoft-contacts"
 		writeScope = "https://graph.microsoft.com/Contacts.ReadWrite"
@@ -481,4 +484,19 @@ func (b *ContactsBridge) Contacts_ResizeContactPhoto(b64In string) (ResizedConta
 		return ResizedContactPhoto{}, err
 	}
 	return ResizedContactPhoto{Data: data, MediaType: mediaType}, nil
+}
+
+// Contacts_ReauthorizeSource reconnects read access without changing Mail.
+func (b *ContactsBridge) Contacts_ReauthorizeSource(sourceID string) error {
+	if b.deps.ReauthorizeSource == nil {
+		return errors.New("Contacts authorization unavailable")
+	}
+	return b.deps.ReauthorizeSource(sourceID)
+}
+
+// Contacts_CancelSourceAuthorization also works during optional account onboarding.
+func (b *ContactsBridge) Contacts_CancelSourceAuthorization() {
+	if b.deps.CancelSourceAuthorization != nil {
+		b.deps.CancelSourceAuthorization()
+	}
 }

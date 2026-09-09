@@ -525,7 +525,7 @@ export namespace app {
 	    name: string;
 	    provider: string;
 	    isLinked: boolean;
-	    hasContactScope: boolean;
+	    contactSourceId: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new LinkedAccountInfo(source);
@@ -538,7 +538,7 @@ export namespace app {
 	        this.name = source["name"];
 	        this.provider = source["provider"];
 	        this.isLinked = source["isLinked"];
-	        this.hasContactScope = source["hasContactScope"];
+	        this.contactSourceId = source["contactSourceId"];
 	    }
 	}
 	export class MailtoData {
