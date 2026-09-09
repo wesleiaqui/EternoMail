@@ -1423,4 +1423,23 @@ var migrations = []Migration{
 			ALTER TABLE trusted_certificates_new RENAME TO trusted_certificates;
 		`,
 	},
+	{
+		Version: 49,
+		SQL: `
+			-- A fallback ciphertext is authoritative only when this marker says so.
+			-- Without it, a stale keyring entry can override a newer fallback write.
+			ALTER TABLE accounts ADD COLUMN password_storage TEXT NOT NULL DEFAULT '';
+			ALTER TABLE accounts ADD COLUMN smtp_password_storage TEXT NOT NULL DEFAULT '';
+			ALTER TABLE contact_sources ADD COLUMN password_storage TEXT NOT NULL DEFAULT '';
+
+			-- Existing ciphertexts were the fallback representation before source
+			-- selection was explicit, so preserve them as the current value.
+			UPDATE accounts SET password_storage = 'fallback'
+				WHERE encrypted_password IS NOT NULL AND encrypted_password != '';
+			UPDATE accounts SET smtp_password_storage = 'fallback'
+				WHERE encrypted_smtp_password IS NOT NULL AND encrypted_smtp_password != '';
+			UPDATE contact_sources SET password_storage = 'fallback'
+				WHERE encrypted_password IS NOT NULL AND encrypted_password != '';
+		`,
+	},
 }
