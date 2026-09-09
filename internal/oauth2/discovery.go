@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -82,9 +81,9 @@ func fetchDiscovery(ctx context.Context, client *http.Client, endpoint string) (
 		return OIDCDiscovery{}, fmt.Errorf("discovery request to %s returned %d", endpoint, resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1 MiB cap
+	body, err := readOAuthResponseBody(resp.Body)
 	if err != nil {
-		return OIDCDiscovery{}, err
+		return OIDCDiscovery{}, fmt.Errorf("failed to read discovery document: %w", err)
 	}
 
 	var doc OIDCDiscovery
