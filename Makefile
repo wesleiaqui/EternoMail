@@ -39,6 +39,7 @@ MODULE := github.com/hkdb/aerion
 
 # Wails build tags
 BUILD_TAGS := webkit2_41
+GO_WEBKIT_FLAGS := -tags=$(BUILD_TAGS)
 
 # NOTE: AppImage build target has been removed due to webkit bundling incompatibility.
 # See archive/AppImage/README.md for details on what was tried and why it didn't work.
@@ -104,7 +105,7 @@ generate:
 # Run Go tests
 test:
 	@echo "Running tests..."
-	go test ./...
+	GOFLAGS="$(GOFLAGS) $(GO_WEBKIT_FLAGS)" go test ./...
 
 # Run all linters (Go + frontend)
 lint: lint-go lint-frontend
@@ -112,7 +113,7 @@ lint: lint-go lint-frontend
 # Run Go linter (requires golangci-lint)
 lint-go:
 	@echo "Running Go linter..."
-	golangci-lint run
+	GOFLAGS="$(GOFLAGS) $(GO_WEBKIT_FLAGS)" golangci-lint run
 
 # Run frontend linter (ESLint)
 lint-frontend:
