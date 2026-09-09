@@ -2,6 +2,7 @@ package pgp
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -14,6 +15,12 @@ import (
 	"github.com/hkdb/aerion/internal/logging"
 	"github.com/rs/zerolog"
 )
+
+// maxDecryptedMessageBytes matches the raw message limit enforced by sync.
+// It applies after OpenPGP has decrypted and decompressed the message.
+const maxDecryptedMessageBytes = 50 * 1024 * 1024
+
+var ErrDecryptedMessageTooLarge = errors.New("decrypted PGP message exceeds 50 MiB limit")
 
 // Decryptor handles PGP/MIME message decryption
 type Decryptor struct {
@@ -55,7 +62,7 @@ func (d *Decryptor) DecryptBytes(accountID, recipientEmail string, encryptedData
 		return nil, fmt.Errorf("failed to decrypt data: %w", err)
 	}
 
-	decrypted, err := io.ReadAll(md.UnverifiedBody)
+	decrypted, err := readDecryptedBody(md.UnverifiedBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read decrypted data: %w", err)
 	}
@@ -144,13 +151,24 @@ func (d *Decryptor) DecryptMessage(accountID, recipientEmail string, raw []byte)
 		return nil, true, fmt.Errorf("failed to decrypt message: %w", err)
 	}
 
-	decrypted, err := io.ReadAll(md.UnverifiedBody)
+	decrypted, err := readDecryptedBody(md.UnverifiedBody)
 	if err != nil {
 		return nil, true, fmt.Errorf("failed to read decrypted message: %w", err)
 	}
 
 	d.log.Info().Str("accountID", accountID).Msg("Successfully decrypted PGP message")
 	return decrypted, true, nil
+}
+
+func readDecryptedBody(r io.Reader) ([]byte, error) {
+	decrypted, err := io.ReadAll(io.LimitReader(r, maxDecryptedMessageBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(decrypted) > maxDecryptedMessageBytes {
+		return nil, ErrDecryptedMessageTooLarge
+	}
+	return decrypted, nil
 }
 
 // buildKeyringForEmail builds a keyring preferring the key matching recipientEmail, falling back to all keys.
