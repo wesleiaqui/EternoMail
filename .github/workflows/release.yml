@@ -324,6 +324,9 @@ jobs:
           source: ./
           destination: ./_site
 
+      - name: Make Pages output writable
+        run: sudo chown -R "$(id -u):$(id -g)" _site
+
       - name: Install repository tools
         run: |
           sudo apt-get update
