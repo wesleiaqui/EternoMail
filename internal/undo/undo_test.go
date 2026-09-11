@@ -1,6 +1,7 @@
 package undo
 
 import (
+	"sync"
 	"testing"
 	"time"
 )
@@ -168,5 +169,133 @@ func TestSize(t *testing.T) {
 	}
 	if s.Size() != n {
 		t.Fatalf("expected size %d, got %d", n, s.Size())
+	}
+}
+
+func TestPopOperationClaimsOnlyRequestedAction(t *testing.T) {
+	s := NewStack(50, 30*time.Second)
+	a := s.PushOperation("action-a", newMock("Done A"))
+	s.PushOperation("action-b", newMock("Delete B"))
+
+	if a != "action-a" {
+		t.Fatalf("expected stable operation id, got %q", a)
+	}
+	commands := s.PopOperation("action-a")
+	if len(commands) != 1 || commands[0].Description() != "Done A" {
+		t.Fatalf("unexpected targeted undo: %#v", commands)
+	}
+	if got := s.Pop(); got == nil || got.Description() != "Delete B" {
+		t.Fatalf("targeted undo consumed another action: %#v", got)
+	}
+	if again := s.PopOperation("action-a"); len(again) != 0 {
+		t.Fatalf("claimed operation must not run twice: %#v", again)
+	}
+}
+
+func TestPushOperationGeneratesDistinctTokens(t *testing.T) {
+	s := NewStack(50, 30*time.Second)
+	first := s.Push(newMock("first"))
+	second := s.Push(newMock("second"))
+	if first == "" || second == "" || first == second {
+		t.Fatalf("expected distinct non-empty operation IDs, got %q and %q", first, second)
+	}
+}
+
+func TestPushOperationGroupsCommandsUnderOneToken(t *testing.T) {
+	s := NewStack(50, 30*time.Second)
+	operationID := s.PushOperation("", newMock("first folder"))
+	operationID = s.PushOperation(operationID, newMock("second folder"))
+
+	commands := s.PopOperation(operationID)
+	if len(commands) != 2 {
+		t.Fatalf("expected both commands in one operation, got %d", len(commands))
+	}
+	if commands[0].Description() != "second folder" || commands[1].Description() != "first folder" {
+		t.Fatalf("commands were not returned in reverse execution order: %q, %q", commands[0].Description(), commands[1].Description())
+	}
+}
+
+func TestPopOperationConcurrentClaimsOnlyOnce(t *testing.T) {
+	s := NewStack(50, 30*time.Second)
+	s.PushOperation("action", newMock("only once"))
+
+	var wg sync.WaitGroup
+	claimed := make(chan int, 2)
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			claimed <- len(s.PopOperation("action"))
+		}()
+	}
+	wg.Wait()
+	close(claimed)
+
+	total := 0
+	for count := range claimed {
+		total += count
+	}
+	if total != 1 {
+		t.Fatalf("concurrent claims executed %d commands, want 1", total)
+	}
+}
+
+func TestTargetedAndGlobalUndoKeepOperationLIFO(t *testing.T) {
+	s := NewStack(50, 30*time.Second)
+	s.PushOperation("A", newMock("A"))
+	s.PushOperation("B", newMock("B"))
+	s.PushOperation("C", newMock("C"))
+
+	if got := s.PopOperation("B"); len(got) != 1 || got[0].Description() != "B" {
+		t.Fatalf("targeted B = %#v", got)
+	}
+	claimC := s.PopLatestOperation()
+	if claimC == nil || claimC.OperationID != "C" || len(claimC.Commands()) != 1 || claimC.Commands()[0].Description() != "C" {
+		t.Fatalf("first global claim = %#v", claimC)
+	}
+	claimA := s.PopLatestOperation()
+	if claimA == nil || claimA.OperationID != "A" || len(claimA.Commands()) != 1 || claimA.Commands()[0].Description() != "A" {
+		t.Fatalf("second global claim = %#v", claimA)
+	}
+}
+
+func TestFailedGlobalOperationCanBeRetried(t *testing.T) {
+	s := NewStack(50, 20*time.Millisecond)
+	s.PushOperation("A", newMock("A"))
+	s.PushOperation("B", newMock("B"))
+	if got := s.PopOperation("B"); len(got) != 1 {
+		t.Fatalf("targeted B = %#v", got)
+	}
+
+	claim := s.PopLatestOperation()
+	if claim == nil || claim.OperationID != "A" {
+		t.Fatalf("global claim = %#v", claim)
+	}
+	// A failed command is restored with a fresh retry window, even if its
+	// original TTL expires while the failed attempt is being reported.
+	time.Sleep(25 * time.Millisecond)
+	s.RestoreOperation(claim, 0)
+	retry := s.PopLatestOperation()
+	if retry == nil || retry.OperationID != "A" || len(retry.Commands()) != 1 {
+		t.Fatalf("retry claim = %#v", retry)
+	}
+}
+
+func TestFailedGroupedOperationRestoresOnlyUnfinishedCommands(t *testing.T) {
+	s := NewStack(50, 30*time.Second)
+	s.PushOperation("group", newMock("first"))
+	s.PushOperation("group", newMock("second"))
+	s.PushOperation("group", newMock("third"))
+
+	claim := s.PopLatestOperation()
+	if claim == nil || len(claim.Commands()) != 3 {
+		t.Fatalf("group claim = %#v", claim)
+	}
+	// "third" completed, "second" failed, so second and first are retried.
+	s.RestoreOperation(claim, 1)
+	retry := s.PopLatestOperation()
+	commands := retry.Commands()
+	if len(commands) != 2 || commands[0].Description() != "second" || commands[1].Description() != "first" {
+		t.Fatalf("unfinished retry commands = %#v", commands)
 	}
 }

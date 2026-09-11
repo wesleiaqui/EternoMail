@@ -1192,12 +1192,13 @@ func (s *Store) CountByFolder(folderID string) (int, error) {
 	return count, nil
 }
 
-// DeleteOlderThan deletes messages older than the specified time for an account
+// DeleteOlderThanInFolder deletes messages older than the specified time only
+// in the folder whose sync window is being reconciled.
 // Returns the number of messages deleted
-func (s *Store) DeleteOlderThan(accountID string, before time.Time) (int, error) {
+func (s *Store) DeleteOlderThanInFolder(folderID string, before time.Time) (int, error) {
 	result, err := s.db.Exec(
-		"DELETE FROM messages WHERE account_id = ? AND date < ?",
-		accountID, before,
+		"DELETE FROM messages WHERE folder_id = ? AND date < ?",
+		folderID, before,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete old messages: %w", err)
@@ -1210,7 +1211,7 @@ func (s *Store) DeleteOlderThan(accountID string, before time.Time) (int, error)
 
 	if affected > 0 {
 		s.log.Info().
-			Str("accountID", accountID).
+			Str("folderID", folderID).
 			Time("before", before).
 			Int64("deleted", affected).
 			Msg("Deleted old messages based on sync period")
@@ -2168,6 +2169,235 @@ func (s *Store) MoveMessages(ids []string, newFolderID string) error {
 	return nil
 }
 
+// MoveSourceState is the stable server identity captured immediately before a
+// local-first move. It is used only to compensate a move whose remote COPY was
+// never attempted.
+type MoveSourceState struct {
+	ID       string
+	FolderID string
+	UID      uint32
+}
+
+// RestoreUnstartedMove atomically restores rows still carrying MoveMessages'
+// temporary UID in the expected destination. A row changed by reconciliation
+// or another actor is rejected rather than overwritten as stale state.
+func (s *Store) RestoreUnstartedMove(destinationFolderID string, states []MoveSourceState) error {
+	if len(states) == 0 {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin unstarted move compensation: %w", err)
+	}
+	defer tx.Rollback()
+
+	for _, state := range states {
+		result, err := tx.Exec(`
+			UPDATE messages
+			SET folder_id = ?, uid = ?
+			WHERE id = ? AND folder_id = ? AND uid < 0`,
+			state.FolderID,
+			int64(state.UID),
+			state.ID,
+			destinationFolderID,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to restore unstarted move for %s: %w", state.ID, err)
+		}
+		updated, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("failed to verify unstarted move compensation for %s: %w", state.ID, err)
+		}
+		if updated != 1 {
+			return fmt.Errorf("message %s changed before unstarted move compensation", state.ID)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit unstarted move compensation: %w", err)
+	}
+	return nil
+}
+
+// MovedUIDReconcileResult describes how one locally-moved row acquired its
+// final server UID. The IDs are safe diagnostic identifiers; no message
+// content is included.
+type MovedUIDReconcileResult struct {
+	MovingLocalID   string
+	ExistingLocalID string
+	DestinationUID  uint32
+	MessageIDMatch  bool
+	Resolution      string
+}
+
+// MovedUIDConflictError reports that the UID returned for a move is already
+// owned by a different logical message. Callers must not overwrite or delete
+// either row in this state.
+type MovedUIDConflictError struct {
+	MovingLocalID   string
+	ExistingLocalID string
+	DestinationUID  uint32
+	MessageIDMatch  bool
+}
+
+func (e *MovedUIDConflictError) Error() string {
+	return fmt.Sprintf("destination UID %d is owned by a different local message", e.DestinationUID)
+}
+
+// ReconcileMovedMessageUIDs replaces temporary negative UIDs with destination
+// UIDs returned by IMAP. A destination sync may have inserted the same remote
+// message while the COPY was in flight; in that case this method consolidates
+// the sync-created row into the stable locally-moved row transactionally.
+func (s *Store) ReconcileMovedMessageUIDs(destinationFolderID string, uidsByLocalID map[string]uint32) ([]MovedUIDReconcileResult, error) {
+	if len(uidsByLocalID) == 0 {
+		return nil, nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin moved UID reconcile: %w", err)
+	}
+	defer tx.Rollback()
+	results := make([]MovedUIDReconcileResult, 0, len(uidsByLocalID))
+	for movingLocalID, uid := range uidsByLocalID {
+		if uid == 0 {
+			return nil, fmt.Errorf("invalid destination UID for message %s", movingLocalID)
+		}
+
+		var movingAccountID string
+		var movingUID int64
+		var movingMessageID sql.NullString
+		err := tx.QueryRow(
+			"SELECT account_id, uid, message_id FROM messages WHERE id = ? AND folder_id = ?",
+			movingLocalID, destinationFolderID,
+		).Scan(&movingAccountID, &movingUID, &movingMessageID)
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("moved message %s is no longer in destination", movingLocalID)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to inspect moved message %s: %w", movingLocalID, err)
+		}
+		if movingUID == int64(uid) {
+			results = append(results, MovedUIDReconcileResult{
+				MovingLocalID:  movingLocalID,
+				DestinationUID: uid,
+				MessageIDMatch: true,
+				Resolution:     "noop",
+			})
+			continue
+		}
+		if movingUID >= 0 {
+			return nil, fmt.Errorf("moved message %s already has a different final UID", movingLocalID)
+		}
+
+		var existingLocalID, existingAccountID string
+		var existingMessageID sql.NullString
+		err = tx.QueryRow(
+			"SELECT id, account_id, message_id FROM messages WHERE folder_id = ? AND uid = ?",
+			destinationFolderID, uid,
+		).Scan(&existingLocalID, &existingAccountID, &existingMessageID)
+		if err != nil && err != sql.ErrNoRows {
+			return nil, fmt.Errorf("failed to inspect destination UID owner: %w", err)
+		}
+		if err == sql.ErrNoRows {
+			if _, err := tx.Exec(
+				"UPDATE messages SET uid = ? WHERE id = ? AND folder_id = ? AND uid < 0",
+				uid, movingLocalID, destinationFolderID,
+			); err != nil {
+				return nil, fmt.Errorf("failed to update moved message UID: %w", err)
+			}
+			results = append(results, MovedUIDReconcileResult{
+				MovingLocalID:  movingLocalID,
+				DestinationUID: uid,
+				Resolution:     "updated",
+			})
+			continue
+		}
+
+		messageIDMatch := movingAccountID == existingAccountID &&
+			movingMessageID.Valid && movingMessageID.String != "" &&
+			existingMessageID.Valid && movingMessageID.String == existingMessageID.String
+		if !messageIDMatch {
+			return nil, &MovedUIDConflictError{
+				MovingLocalID:   movingLocalID,
+				ExistingLocalID: existingLocalID,
+				DestinationUID:  uid,
+				MessageIDMatch:  false,
+			}
+		}
+
+		// Preserve the stable local ID and its richer cached content, but adopt
+		// server-authoritative flags from the sync-created row. Fill optional
+		// body/security/thread fields only when the moving row lacks them.
+		if _, err := tx.Exec(`
+			UPDATE messages SET
+				in_reply_to = COALESCE(in_reply_to, (SELECT in_reply_to FROM messages WHERE id = ?1)),
+				references_list = COALESCE(references_list, (SELECT references_list FROM messages WHERE id = ?1)),
+				thread_id = COALESCE(NULLIF(thread_id, ''), (SELECT thread_id FROM messages WHERE id = ?1)),
+				inbox_category = CASE WHEN inbox_category = '' THEN COALESCE((SELECT inbox_category FROM messages WHERE id = ?1), '') ELSE inbox_category END,
+				is_read = (SELECT is_read FROM messages WHERE id = ?1),
+				is_starred = (SELECT is_starred FROM messages WHERE id = ?1),
+				is_answered = (SELECT is_answered FROM messages WHERE id = ?1),
+				is_forwarded = (SELECT is_forwarded FROM messages WHERE id = ?1),
+				is_draft = (SELECT is_draft FROM messages WHERE id = ?1),
+				is_deleted = (SELECT is_deleted FROM messages WHERE id = ?1),
+				has_attachments = CASE WHEN has_attachments = 1 OR (SELECT has_attachments FROM messages WHERE id = ?1) = 1 THEN 1 ELSE 0 END,
+				body_text = CASE WHEN body_fetched = 1 THEN body_text ELSE COALESCE((SELECT body_text FROM messages WHERE id = ?1), body_text) END,
+				body_html = CASE WHEN body_fetched = 1 THEN body_html ELSE COALESCE((SELECT body_html FROM messages WHERE id = ?1), body_html) END,
+				body_fetched = CASE WHEN body_fetched = 1 OR (SELECT body_fetched FROM messages WHERE id = ?1) = 1 THEN 1 ELSE 0 END,
+				body_failed = CASE
+					WHEN body_fetched = 1 OR (SELECT body_fetched FROM messages WHERE id = ?1) = 1 THEN 0
+					WHEN body_failed = 1 OR (SELECT body_failed FROM messages WHERE id = ?1) = 1 THEN 1
+					ELSE 0 END,
+				read_receipt_to = COALESCE(read_receipt_to, (SELECT read_receipt_to FROM messages WHERE id = ?1)),
+				read_receipt_handled = CASE WHEN read_receipt_handled = 1 OR (SELECT read_receipt_handled FROM messages WHERE id = ?1) = 1 THEN 1 ELSE 0 END,
+				smime_status = COALESCE(smime_status, (SELECT smime_status FROM messages WHERE id = ?1)),
+				smime_signer_email = COALESCE(smime_signer_email, (SELECT smime_signer_email FROM messages WHERE id = ?1)),
+				smime_signer_subject = COALESCE(smime_signer_subject, (SELECT smime_signer_subject FROM messages WHERE id = ?1)),
+				smime_raw_body = COALESCE(smime_raw_body, (SELECT smime_raw_body FROM messages WHERE id = ?1)),
+				smime_encrypted = CASE WHEN smime_encrypted = 1 OR (SELECT smime_encrypted FROM messages WHERE id = ?1) = 1 THEN 1 ELSE 0 END,
+				pgp_status = COALESCE(pgp_status, (SELECT pgp_status FROM messages WHERE id = ?1)),
+				pgp_signer_email = COALESCE(pgp_signer_email, (SELECT pgp_signer_email FROM messages WHERE id = ?1)),
+				pgp_signer_key_id = COALESCE(pgp_signer_key_id, (SELECT pgp_signer_key_id FROM messages WHERE id = ?1)),
+				pgp_raw_body = COALESCE(pgp_raw_body, (SELECT pgp_raw_body FROM messages WHERE id = ?1)),
+				pgp_encrypted = CASE WHEN pgp_encrypted = 1 OR (SELECT pgp_encrypted FROM messages WHERE id = ?1) = 1 THEN 1 ELSE 0 END
+			WHERE id = ?2 AND folder_id = ?3 AND uid < 0`,
+			existingLocalID, movingLocalID, destinationFolderID,
+		); err != nil {
+			return nil, fmt.Errorf("failed to merge sync-created message state: %w", err)
+		}
+		if _, err := tx.Exec("UPDATE attachments SET message_id = ? WHERE message_id = ?", movingLocalID, existingLocalID); err != nil {
+			return nil, fmt.Errorf("failed to preserve sync-created message attachments: %w", err)
+		}
+		if _, err := tx.Exec("DELETE FROM messages WHERE id = ?", existingLocalID); err != nil {
+			return nil, fmt.Errorf("failed to remove merged sync-created message: %w", err)
+		}
+		if _, err := tx.Exec(
+			"UPDATE messages SET uid = ? WHERE id = ? AND folder_id = ? AND uid < 0",
+			uid, movingLocalID, destinationFolderID,
+		); err != nil {
+			return nil, fmt.Errorf("failed to finalize merged message UID: %w", err)
+		}
+		results = append(results, MovedUIDReconcileResult{
+			MovingLocalID:   movingLocalID,
+			ExistingLocalID: existingLocalID,
+			DestinationUID:  uid,
+			MessageIDMatch:  true,
+			Resolution:      "merged",
+		})
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit moved UID reconcile: %w", err)
+	}
+	return results, nil
+}
+
+// SetMovedMessageUIDs preserves the prior API for callers that do not need
+// per-row reconciliation diagnostics.
+func (s *Store) SetMovedMessageUIDs(destinationFolderID string, uidsByLocalID map[string]uint32) error {
+	_, err := s.ReconcileMovedMessageUIDs(destinationFolderID, uidsByLocalID)
+	return err
+}
+
 // DeleteTempUIDs removes messages with temporary negative UIDs in a folder.
 // These are left over after MoveMessages assigns -rowid as a placeholder UID.
 func (s *Store) DeleteTempUIDs(folderID string) error {
@@ -2212,6 +2442,38 @@ func (s *Store) GetIDsByMessageIDs(accountID, folderID string, rfc822MessageIDs 
 		var id string
 		if err := rows.Scan(&id); err != nil {
 			return nil, fmt.Errorf("failed to scan message ID: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// GetExistingIDsInFolder validates stable local IDs against their expected
+// account and current folder for Move Undo fallback lookup.
+func (s *Store) GetExistingIDsInFolder(accountID, folderID string, localMessageIDs []string) ([]string, error) {
+	if len(localMessageIDs) == 0 {
+		return nil, nil
+	}
+	placeholders := make([]string, len(localMessageIDs))
+	args := []interface{}{accountID, folderID}
+	for i, id := range localMessageIDs {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	query := fmt.Sprintf(
+		"SELECT id FROM messages WHERE account_id = ? AND folder_id = ? AND id IN (%s)",
+		strings.Join(placeholders, ", "),
+	)
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query local message IDs: %w", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("failed to scan local message ID: %w", err)
 		}
 		ids = append(ids, id)
 	}

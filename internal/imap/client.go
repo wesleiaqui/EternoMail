@@ -981,9 +981,12 @@ func (c *Client) CopyMessages(uids []imap.UID, destMailbox string) ([]imap.UID, 
 	// Extract destination UIDs if available (UIDPLUS extension)
 	var destUIDs []imap.UID
 	if copyData != nil && copyData.DestUIDs != nil {
-		// The DestUIDs is a UIDSet - for now we just log that it's available
-		// Full extraction would require iterating the UIDSet ranges
-		c.log.Debug().Msg("Messages copied with UIDPLUS, destination UIDs available")
+		if expanded, ok := copyData.DestUIDs.Nums(); ok {
+			destUIDs = expanded
+			c.log.Debug().Int("destinationUIDs", len(destUIDs)).Msg("Messages copied with UIDPLUS")
+		} else {
+			c.log.Warn().Msg("COPYUID returned a dynamic destination UID set")
+		}
 	}
 
 	c.log.Debug().

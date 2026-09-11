@@ -195,6 +195,9 @@ type App struct {
 	*extcalendarbe.CalendarBridge
 
 	ctx context.Context
+	// Optional test seam for mutation/event integration tests. Production uses
+	// the Wails lifecycle context through emitRuntimeEvent.
+	runtimeEventEmitter func(string, ...interface{})
 
 	// ready is the backend-up signal the frontend polls before mounting the
 	// main app. False until Startup completes. The boot splash in
@@ -281,6 +284,13 @@ type App struct {
 
 	// Undo system
 	undoStack *undo.Stack
+
+	// Move mutations are coordinated per account + local message ID. The map
+	// only serializes overlapping items; unrelated messages continue in
+	// parallel. Entries live until the local-first move's remote completion so
+	// a repeated Wails call reuses the original result/operation ID.
+	moveMutationMu      goSync.Mutex
+	moveMutationFlights map[string]*moveMutationFlight
 
 	// IPC for multi-window support (composer windows)
 	ipcServer   ipc.Server
@@ -372,8 +382,9 @@ type App struct {
 // NewApp creates a new App application struct
 func NewApp(debugModeFn func() bool, useDirectDBus bool) *App {
 	return &App{
-		debugMode:     debugModeFn,
-		useDirectDBus: useDirectDBus,
+		debugMode:           debugModeFn,
+		useDirectDBus:       useDirectDBus,
+		moveMutationFlights: make(map[string]*moveMutationFlight),
 	}
 }
 

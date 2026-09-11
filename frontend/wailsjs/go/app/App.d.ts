@@ -3,9 +3,9 @@
 import {certificate} from '../models';
 import {account} from '../models';
 import {carddav} from '../models';
+import {app} from '../models';
 import {backend} from '../models';
 import {v1} from '../models';
-import {app} from '../models';
 import {message} from '../models';
 import {folder} from '../models';
 import {contact} from '../models';
@@ -38,6 +38,8 @@ export function AddPGPKeyServer(arg1:string):Promise<void>;
 export function AddSpellcheckCustomWord(arg1:string):Promise<void>;
 
 export function Archive(arg1:Array<string>):Promise<void>;
+
+export function ArchiveWithUndo(arg1:Array<string>):Promise<app.UndoableActionResult>;
 
 export function BroadcastThemeChange(arg1:string):Promise<void>;
 
@@ -206,6 +208,8 @@ export function FetchMessageBody(arg1:string):Promise<message.Message>;
 export function FetchServerMessage(arg1:string,arg2:string,arg3:number):Promise<message.Message>;
 
 export function FindLocalMessageIDs(arg1:string,arg2:string,arg3:Array<string>):Promise<Array<string>>;
+
+export function FindLocalMessageIDsByLocalID(arg1:string,arg2:string,arg3:Array<string>):Promise<Array<string>>;
 
 export function ForceSyncContactSource(arg1:string):Promise<void>;
 
@@ -485,9 +489,13 @@ export function MarkAllFolderMessagesAsUnread(arg1:string):Promise<void>;
 
 export function MarkAsNotSpam(arg1:Array<string>):Promise<void>;
 
+export function MarkAsNotSpamWithUndo(arg1:Array<string>):Promise<app.UndoableActionResult>;
+
 export function MarkAsRead(arg1:Array<string>):Promise<void>;
 
 export function MarkAsSpam(arg1:Array<string>):Promise<boolean>;
+
+export function MarkAsSpamWithUndo(arg1:Array<string>):Promise<app.SpamUndoResult>;
 
 export function MarkAsUnread(arg1:Array<string>):Promise<void>;
 
@@ -497,7 +505,11 @@ export function MoveMessagesToFolder(arg1:Array<string>,arg2:string):Promise<voi
 
 export function MoveToFolder(arg1:Array<string>,arg2:string):Promise<void>;
 
+export function MoveToFolderWithUndo(arg1:Array<string>,arg2:string):Promise<app.UndoableActionResult>;
+
 export function MoveToInbox(arg1:Array<string>):Promise<void>;
+
+export function MoveToInboxWithUndo(arg1:Array<string>):Promise<app.UndoableActionResult>;
 
 export function NotifyStartupComplete():Promise<void>;
 
@@ -546,6 +558,8 @@ export function RefreshWindowConstraints():Promise<void>;
 export function RemoveAccount(arg1:string):Promise<void>;
 
 export function RemoveFromInbox(arg1:Array<string>):Promise<void>;
+
+export function RemoveFromInboxWithUndo(arg1:Array<string>):Promise<app.UndoableActionResult>;
 
 export function RemoveImageAllowlist(arg1:number):Promise<void>;
 
@@ -709,7 +723,13 @@ export function TestSMTPConnection(arg1:string,arg2:number,arg3:string,arg4:stri
 
 export function Trash(arg1:Array<string>):Promise<boolean>;
 
+export function TrashWithUndo(arg1:Array<string>):Promise<app.TrashUndoResult>;
+
 export function Undo():Promise<string>;
+
+export function UndoLatestWithResult():Promise<app.UndoLatestResult>;
+
+export function UndoOperation(arg1:string):Promise<string>;
 
 export function Unstar(arg1:Array<string>):Promise<void>;
 

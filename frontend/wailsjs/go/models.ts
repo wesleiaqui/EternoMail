@@ -790,6 +790,66 @@ export namespace app {
 		    return a;
 		}
 	}
+	export class SpamUndoResult {
+	    movedToSpam: boolean;
+	    operationId: string;
+	    coalesced: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new SpamUndoResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.movedToSpam = source["movedToSpam"];
+	        this.operationId = source["operationId"];
+	        this.coalesced = source["coalesced"];
+	    }
+	}
+	export class TrashUndoResult {
+	    movedToTrash: boolean;
+	    operationId: string;
+	    coalesced: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new TrashUndoResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.movedToTrash = source["movedToTrash"];
+	        this.operationId = source["operationId"];
+	        this.coalesced = source["coalesced"];
+	    }
+	}
+	export class UndoLatestResult {
+	    operationId: string;
+	    description: string;
+
+	    static createFrom(source: any = {}) {
+	        return new UndoLatestResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.operationId = source["operationId"];
+	        this.description = source["description"];
+	    }
+	}
+	export class UndoableActionResult {
+	    operationId: string;
+	    coalesced: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new UndoableActionResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.operationId = source["operationId"];
+	        this.coalesced = source["coalesced"];
+	    }
+	}
 
 }
 
@@ -3223,4 +3283,3 @@ export namespace v1 {
 	}
 
 }
-

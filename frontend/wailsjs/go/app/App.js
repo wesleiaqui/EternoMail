@@ -38,6 +38,10 @@ export function Archive(arg1) {
   return window['go']['app']['App']['Archive'](arg1);
 }
 
+export function ArchiveWithUndo(arg1) {
+  return window['go']['app']['App']['ArchiveWithUndo'](arg1);
+}
+
 export function BroadcastThemeChange(arg1) {
   return window['go']['app']['App']['BroadcastThemeChange'](arg1);
 }
@@ -372,6 +376,10 @@ export function FetchServerMessage(arg1, arg2, arg3) {
 
 export function FindLocalMessageIDs(arg1, arg2, arg3) {
   return window['go']['app']['App']['FindLocalMessageIDs'](arg1, arg2, arg3);
+}
+
+export function FindLocalMessageIDsByLocalID(arg1, arg2, arg3) {
+  return window['go']['app']['App']['FindLocalMessageIDsByLocalID'](arg1, arg2, arg3);
 }
 
 export function ForceSyncContactSource(arg1) {
@@ -930,12 +938,20 @@ export function MarkAsNotSpam(arg1) {
   return window['go']['app']['App']['MarkAsNotSpam'](arg1);
 }
 
+export function MarkAsNotSpamWithUndo(arg1) {
+  return window['go']['app']['App']['MarkAsNotSpamWithUndo'](arg1);
+}
+
 export function MarkAsRead(arg1) {
   return window['go']['app']['App']['MarkAsRead'](arg1);
 }
 
 export function MarkAsSpam(arg1) {
   return window['go']['app']['App']['MarkAsSpam'](arg1);
+}
+
+export function MarkAsSpamWithUndo(arg1) {
+  return window['go']['app']['App']['MarkAsSpamWithUndo'](arg1);
 }
 
 export function MarkAsUnread(arg1) {
@@ -954,8 +970,16 @@ export function MoveToFolder(arg1, arg2) {
   return window['go']['app']['App']['MoveToFolder'](arg1, arg2);
 }
 
+export function MoveToFolderWithUndo(arg1, arg2) {
+  return window['go']['app']['App']['MoveToFolderWithUndo'](arg1, arg2);
+}
+
 export function MoveToInbox(arg1) {
   return window['go']['app']['App']['MoveToInbox'](arg1);
+}
+
+export function MoveToInboxWithUndo(arg1) {
+  return window['go']['app']['App']['MoveToInboxWithUndo'](arg1);
 }
 
 export function NotifyStartupComplete() {
@@ -1052,6 +1076,10 @@ export function RemoveAccount(arg1) {
 
 export function RemoveFromInbox(arg1) {
   return window['go']['app']['App']['RemoveFromInbox'](arg1);
+}
+
+export function RemoveFromInboxWithUndo(arg1) {
+  return window['go']['app']['App']['RemoveFromInboxWithUndo'](arg1);
 }
 
 export function RemoveImageAllowlist(arg1) {
@@ -1378,8 +1406,20 @@ export function Trash(arg1) {
   return window['go']['app']['App']['Trash'](arg1);
 }
 
+export function TrashWithUndo(arg1) {
+  return window['go']['app']['App']['TrashWithUndo'](arg1);
+}
+
 export function Undo() {
   return window['go']['app']['App']['Undo']();
+}
+
+export function UndoLatestWithResult() {
+  return window['go']['app']['App']['UndoLatestWithResult']();
+}
+
+export function UndoOperation(arg1) {
+  return window['go']['app']['App']['UndoOperation'](arg1);
 }
 
 export function Unstar(arg1) {

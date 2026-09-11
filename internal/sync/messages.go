@@ -161,7 +161,7 @@ func (e *Engine) SyncMessages(ctx context.Context, accountID, folderID string, s
 
 		// Delete local messages older than sync period
 		cleanupStarted := time.Now()
-		deleted, err := e.messageStore.DeleteOlderThan(accountID, sinceDate)
+		deleted, err := e.messageStore.DeleteOlderThanInFolder(folderID, sinceDate)
 		timings.cleanup += time.Since(cleanupStarted)
 		if err != nil {
 			e.log.Warn().Err(err).Msg("Failed to delete old messages")
