@@ -25,7 +25,7 @@
   import { KEY } from '$lib/keyboard/shortcuts'
   import * as AlertDialog from '$lib/components/ui/alert-dialog'
   import { accountStore } from '$lib/stores/accounts.svelte'
-  import { addToast } from '$lib/stores/toast'
+  import { addToast, toasts } from '$lib/stores/toast'
   import { loadSettings, getThemeMode, getShowTitleBar, getNativeTitleBar, getComposerMode, getMailtoMode } from '$lib/stores/settings.svelte'
   import { loadImageAllowlist } from '$lib/stores/imageAllowlist.svelte'
   import { initializeUpdateChecker } from '$lib/stores/updateChecker.svelte'
@@ -46,8 +46,10 @@
   import { isDialogGuardActive } from '$lib/stores/dialogGuard'
   import { dispatchExtensionShortcut } from '$lib/stores/extensionShortcuts.svelte'
   import { initLayout, getLayoutMode, getResponsiveView, showViewer, hideViewer, showSidebar, hideSidebar, isResponsive } from '$lib/stores/layout.svelte'
+  import { publishUndoOperationCompleted, publishUndoOperationCreated } from '$lib/components/list/undoMutationEvents'
+  import { runMessageMutation } from '$lib/components/list/mutationInFlight'
   // @ts-ignore - wailsjs path
-  import { PrepareReply, GetPendingMailto, GetDraftForEdit, MarkAsRead, MarkAsUnread, Star, Unstar, Archive, MarkAsSpam, MarkAsNotSpam, Undo, GetTermsAccepted, SetTermsAccepted, RefreshWindowConstraints, AcceptCertificate, GetStartHiddenActive, CloseWindow, QuitApp, OpenComposerWindow, GetSystemTheme, NotifyStartupComplete, GetOAuthBuildStatus, GetOAuthWarningDisabled, SetOAuthWarningDisabled, GetLastSeenVersion, SetLastSeenVersion, GetAppInfo, GetWindowDecorationStatus } from '../wailsjs/go/app/App.js'
+  import { PrepareReply, GetPendingMailto, GetDraftForEdit, MarkAsRead, MarkAsUnread, Star, Unstar, ArchiveWithUndo, MarkAsSpamWithUndo, MarkAsNotSpamWithUndo, UndoOperation, UndoLatestWithResult, GetTermsAccepted, SetTermsAccepted, RefreshWindowConstraints, AcceptCertificate, GetStartHiddenActive, CloseWindow, QuitApp, OpenComposerWindow, GetSystemTheme, NotifyStartupComplete, GetOAuthBuildStatus, GetOAuthWarningDisabled, SetOAuthWarningDisabled, GetLastSeenVersion, SetLastSeenVersion, GetAppInfo, GetWindowDecorationStatus } from '../wailsjs/go/app/App.js'
   // @ts-ignore - wailsjs path
   import { smtp, folder, certificate } from '../wailsjs/go/models'
   // @ts-ignore - wailsjs runtime
@@ -87,6 +89,7 @@
   // undo stack (automatic read timers would otherwise pollute it). Keep the
   // last explicit bulk action locally so its toast and Ctrl+Z can undo it.
   let lastFlagUndo = $state<{ messageIds: string[], restoreRead: boolean } | null>(null)
+  const targetedUndoInFlight = new Set<string>()
 
   // Composer state
   let showComposer = $state(false)
@@ -1138,7 +1141,7 @@
           if (lastFlagUndo) {
             handleUndoLastFlag()
           } else {
-            handleUndo()
+            handleGlobalUndo()
           }
           return
         case 'l':
@@ -1580,12 +1583,51 @@
   }
 
   // Bulk action handlers
+  function showTargetedUndoToast(message: string, operationID: string, messageIds: string[], action: string, undoable = true) {
+    const canUndo = undoable && typeof operationID === 'string' && operationID.length > 0
+    if (canUndo) publishUndoOperationCreated(operationID, messageIds, action)
+    let toastId = ''
+    const actions = canUndo
+      ? [{ label: $_('common.undo'), onClick: () => { void handleTargetedUndo(toastId, operationID) } }]
+      : []
+    toastId = toasts.success(message, actions)
+  }
+
+  async function handleTargetedUndo(toastId: string, operationID: string) {
+    if (!operationID || targetedUndoInFlight.has(operationID)) return
+    targetedUndoInFlight.add(operationID)
+    toasts.replace(toastId, { message: 'Undoing...', actions: [], duration: 20_000 })
+    try {
+      const description = await UndoOperation(operationID)
+      publishUndoOperationCompleted(operationID)
+      toasts.replace(toastId, {
+        message: $_('toast.undone', { values: { description } }),
+        type: 'success',
+        actions: [],
+        duration: 4000,
+      })
+    } catch (err) {
+      console.error('Undo failed:', err)
+      toasts.replace(toastId, {
+        message: $_('toast.undoFailed'),
+        type: 'error',
+        actions: [],
+        duration: 6000,
+      })
+    } finally {
+      targetedUndoInFlight.delete(operationID)
+    }
+  }
+
   async function handleBulkArchive(messageIds: string[]) {
     try {
-      await Archive(messageIds)
-      addToast({ type: 'success', message: $_('toast.archived'), actions: [{ label: $_('common.undo'), onClick: handleUndo }] })
-      messageListRef?.clearChecked()
-      messageListRef?.handleActionComplete(true)
+      await runMessageMutation(messageIds, async () => {
+        const result = await ArchiveWithUndo(messageIds)
+        if (result.coalesced) return
+        showTargetedUndoToast($_('toast.archived'), result.operationId, messageIds, 'archive')
+        messageListRef?.clearChecked()
+        messageListRef?.handleActionComplete(true)
+      })
     } catch (err) {
       console.error('Archive failed:', err)
       addToast({ type: 'error', message: $_('toast.failedToArchive') })
@@ -1594,20 +1636,25 @@
 
   async function handleBulkSpam(messageIds: string[]) {
     try {
-      const isSpamFolder = selectedFolderType === 'spam'
+      await runMessageMutation(messageIds, async () => {
+        const isSpamFolder = selectedFolderType === 'spam'
 
-      if (isSpamFolder) {
-        // If we're in spam folder, mark as NOT spam
-        await MarkAsNotSpam(messageIds)
-        addToast({ type: 'success', message: $_('toast.markedAsNotSpam'), actions: [{ label: $_('common.undo'), onClick: handleUndo }] })
-      } else {
-        // Otherwise, mark as spam
-        await MarkAsSpam(messageIds)
-        addToast({ type: 'success', message: $_('toast.markedAsSpam'), actions: [{ label: $_('common.undo'), onClick: handleUndo }] })
-      }
+        if (isSpamFolder) {
+          // If we're in spam folder, mark as NOT spam
+          const result = await MarkAsNotSpamWithUndo(messageIds)
+          if (result.coalesced) return
+          showTargetedUndoToast($_('toast.markedAsNotSpam'), result.operationId, messageIds, 'mark-as-not-spam')
+        } else {
+          // Otherwise, mark as spam
+          const result = await MarkAsSpamWithUndo(messageIds)
+          if (result.coalesced) return
+          const toastMsg = result.movedToSpam ? $_('toast.markedAsSpam') : $_('toast.deletedFromFolder')
+          showTargetedUndoToast(toastMsg, result.operationId, messageIds, 'mark-as-spam', result.movedToSpam)
+        }
 
-      messageListRef?.clearChecked()
-      messageListRef?.handleActionComplete(true)
+        messageListRef?.clearChecked()
+        messageListRef?.handleActionComplete(true)
+      })
     } catch (err) {
       const isSpamFolder = selectedFolderType === 'spam'
       console.error('Spam toggle failed:', err)
@@ -1617,11 +1664,13 @@
 
   async function handleBulkMarkRead(messageIds: string[]) {
     try {
-      await MarkAsRead(messageIds)
-      lastFlagUndo = { messageIds: [...messageIds], restoreRead: false }
-      addToast({ type: 'success', message: $_('toast.markedAsRead'), duration: 10_000, actions: [{ label: $_('common.undo'), onClick: handleUndoLastFlag }] })
-      messageListRef?.clearChecked()
-      messageListRef?.handleActionComplete()
+      await runMessageMutation(messageIds, async () => {
+        await MarkAsRead(messageIds)
+        lastFlagUndo = { messageIds: [...messageIds], restoreRead: false }
+        addToast({ type: 'success', message: $_('toast.markedAsRead'), duration: 10_000, actions: [{ label: $_('common.undo'), onClick: handleUndoLastFlag }] })
+        messageListRef?.clearChecked()
+        messageListRef?.handleActionComplete()
+      })
     } catch (err) {
       console.error('Mark as read failed:', err)
       addToast({ type: 'error', message: $_('toast.failedToMarkAsRead') })
@@ -1631,16 +1680,18 @@
   async function handleUndoLastFlag() {
     if (!lastFlagUndo) return
     const { messageIds, restoreRead } = lastFlagUndo
-    lastFlagUndo = null
     try {
-      if (restoreRead) {
-        await MarkAsRead(messageIds)
-        addToast({ type: 'success', message: $_('toast.markedAsRead') })
-      } else {
-        await MarkAsUnread(messageIds)
-        addToast({ type: 'success', message: $_('toast.markedAsUnread') })
-      }
-      messageListRef?.handleActionComplete()
+      await runMessageMutation(messageIds, async () => {
+        lastFlagUndo = null
+        if (restoreRead) {
+          await MarkAsRead(messageIds)
+          addToast({ type: 'success', message: $_('toast.markedAsRead') })
+        } else {
+          await MarkAsUnread(messageIds)
+          addToast({ type: 'success', message: $_('toast.markedAsUnread') })
+        }
+        messageListRef?.handleActionComplete()
+      })
     } catch (err) {
       // Keep the target available when a transient IMAP/local error occurs.
       lastFlagUndo = { messageIds, restoreRead }
@@ -1651,11 +1702,13 @@
 
   async function handleBulkMarkUnread(messageIds: string[]) {
     try {
-      await MarkAsUnread(messageIds)
-      lastFlagUndo = { messageIds: [...messageIds], restoreRead: true }
-      addToast({ type: 'success', message: $_('toast.markedAsUnread'), duration: 10_000, actions: [{ label: $_('common.undo'), onClick: handleUndoLastFlag }] })
-      messageListRef?.clearChecked()
-      messageListRef?.handleActionComplete()
+      await runMessageMutation(messageIds, async () => {
+        await MarkAsUnread(messageIds)
+        lastFlagUndo = { messageIds: [...messageIds], restoreRead: true }
+        addToast({ type: 'success', message: $_('toast.markedAsUnread'), duration: 10_000, actions: [{ label: $_('common.undo'), onClick: handleUndoLastFlag }] })
+        messageListRef?.clearChecked()
+        messageListRef?.handleActionComplete()
+      })
     } catch (err) {
       console.error('Mark as unread failed:', err)
       addToast({ type: 'error', message: $_('toast.failedToMarkAsUnread') })
@@ -1664,26 +1717,29 @@
 
   async function handleBulkToggleStar(messageIds: string[], shouldStar: boolean) {
     try {
-      if (shouldStar) {
-        await Star(messageIds)
-        addToast({ type: 'success', message: $_('toast.starred') })
-      } else {
-        await Unstar(messageIds)
-        addToast({ type: 'success', message: $_('toast.starRemoved') })
-      }
-      messageListRef?.clearChecked()
-      messageListRef?.handleActionComplete()
+      await runMessageMutation(messageIds, async () => {
+        if (shouldStar) {
+          await Star(messageIds)
+          addToast({ type: 'success', message: $_('toast.starred') })
+        } else {
+          await Unstar(messageIds)
+          addToast({ type: 'success', message: $_('toast.starRemoved') })
+        }
+        messageListRef?.clearChecked()
+        messageListRef?.handleActionComplete()
+      })
     } catch (err) {
       console.error('Star toggle failed:', err)
       addToast({ type: 'error', message: $_('toast.failedToUpdateStar') })
     }
   }
 
-  async function handleUndo() {
+  // Ctrl+Z is the true global LIFO path; toast Undo uses handleTargetedUndo.
+  async function handleGlobalUndo() {
     try {
-      const description = await Undo()
-      addToast({ type: 'success', message: $_('toast.undone', { values: { description } }) })
-      messageListRef?.handleActionComplete()
+      const result = await UndoLatestWithResult()
+      publishUndoOperationCompleted(result.operationId)
+      addToast({ type: 'success', message: $_('toast.undone', { values: { description: result.description } }) })
     } catch (err) {
       console.error('Undo failed:', err)
       addToast({ type: 'error', message: $_('toast.undoFailed') })
@@ -1829,6 +1885,7 @@
         isFlashing={isPaneFlashing('viewer')}
         showBackButton={isResponsive()}
         onBack={() => { focusMode = 'off'; focusedMessageIdInFocus = null; hideViewer() }}
+        isViewerVisible={getActiveExtension() === 'mail' && (focusMode !== 'off' || !isResponsive() || getResponsiveView() === 'viewer')}
         inFocusMode={focusMode !== 'off'}
         focusModeKind={focusMode === 'off' ? null : focusMode}
         focusedMessageIdInFocus={focusedMessageIdInFocus}

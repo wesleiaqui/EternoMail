@@ -3,11 +3,13 @@
   // @ts-ignore - wailsjs path
   import { folder } from '../../../../wailsjs/go/models'
   // @ts-ignore - wailsjs path
-  import { MoveToFolder, Undo } from '../../../../wailsjs/go/app/App.js'
+  import { MoveToFolderWithUndo, UndoOperation } from '../../../../wailsjs/go/app/App.js'
   import FolderContextMenu from './FolderContextMenu.svelte'
   import Self from './FolderTreeItem.svelte'
   import { toasts } from '$lib/stores/toast'
   import { _ } from '$lib/i18n'
+  import { runMessageMutation } from '$lib/components/list/mutationInFlight'
+  import { publishUndoOperationCompleted, publishUndoOperationCreated } from '$lib/components/list/undoMutationEvents'
 
   interface Props {
     tree: folder.FolderTree
@@ -60,6 +62,7 @@
 
   // Drag-and-drop state for receiving message drops on this folder
   let isDragOver = $state(false)
+  const undoInFlight = new Set<string>()
 
   function hasMessagesPayload(e: DragEvent): boolean {
     return !!e.dataTransfer?.types.includes('application/x-aerion-messages')
@@ -79,6 +82,42 @@
 
   function handleDragLeave() {
     isDragOver = false
+  }
+
+  function showTargetedUndoToast(message: string, operationID: string, messageIds: string[], action: string) {
+    const canUndo = typeof operationID === 'string' && operationID.length > 0
+    if (canUndo) publishUndoOperationCreated(operationID, messageIds, action)
+    let toastId = ''
+    const actions = canUndo
+      ? [{ label: $_('common.undo'), onClick: () => { void handleTargetedUndo(toastId, operationID) } }]
+      : []
+    toastId = toasts.success(message, actions)
+  }
+
+  async function handleTargetedUndo(toastId: string, operationID: string) {
+    if (!operationID || undoInFlight.has(operationID)) return
+    undoInFlight.add(operationID)
+    toasts.replace(toastId, { message: 'Undoing...', actions: [], duration: 20_000 })
+    try {
+      const description = await UndoOperation(operationID)
+      publishUndoOperationCompleted(operationID)
+      toasts.replace(toastId, {
+        message: $_('toast.undone', { values: { description } }),
+        type: 'success',
+        actions: [],
+        duration: 4000,
+      })
+    } catch (err) {
+      console.error('Undo failed:', err)
+      toasts.replace(toastId, {
+        message: $_('toast.undoFailed'),
+        type: 'error',
+        actions: [],
+        duration: 6000,
+      })
+    } finally {
+      undoInFlight.delete(operationID)
+    }
   }
 
   async function handleDrop(e: DragEvent) {
@@ -102,23 +141,20 @@
 
     const folderName = tree.folder.name
     try {
-      await MoveToFolder(payload.messageIds, tree.folder.id)
-      onMessagesMoved?.()
-      toasts.success($_('toast.movedTo', { values: { folder: folderName } }), [
-        { label: $_('common.undo'), onClick: handleUndo },
-      ])
+      await runMessageMutation(payload.messageIds, async () => {
+        const result = await MoveToFolderWithUndo(payload.messageIds, tree.folder!.id)
+        if (result.coalesced) return
+        onMessagesMoved?.()
+        showTargetedUndoToast(
+          $_('toast.movedTo', { values: { folder: folderName } }),
+          result.operationId,
+          payload.messageIds,
+          'move-to-folder',
+        )
+      })
     } catch (err) {
       console.error('Drag-drop move failed:', err)
       toasts.error($_('toast.failedToMove'))
-    }
-  }
-
-  async function handleUndo() {
-    try {
-      await Undo()
-    } catch (err) {
-      console.error('Undo failed:', err)
-      toasts.error($_('toast.undoFailed'))
     }
   }
 </script>

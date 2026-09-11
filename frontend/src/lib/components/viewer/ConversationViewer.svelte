@@ -2,9 +2,9 @@
   import { onMount, onDestroy, tick } from 'svelte'
   import Icon from '@iconify/svelte'
   // @ts-ignore - wailsjs bindings
-  import { GetConversation, GetReadReceiptResponsePolicy, SendReadReceipt, IgnoreReadReceipt, GetMarkAsReadDelay, GetMessageSource, ProcessSMIMEMessage, ProcessPGPMessage, FetchMessageBody } from '../../../../wailsjs/go/app/App'
+  import { GetConversation, GetReadReceiptResponsePolicy, SendReadReceipt, IgnoreReadReceipt, GetMessageSource, ProcessSMIMEMessage, ProcessPGPMessage, FetchMessageBody } from '../../../../wailsjs/go/app/App'
   // @ts-ignore - wailsjs bindings
-  import { MoveToInbox, MarkAsRead, MarkAsUnread, Star, Unstar, Archive, RemoveFromInbox, Trash, MarkAsSpam, MarkAsNotSpam, DeletePermanently, Undo } from '../../../../wailsjs/go/app/App'
+  import { MoveToInboxWithUndo, MarkAsRead, MarkAsUnread, Star, Unstar, ArchiveWithUndo, RemoveFromInboxWithUndo, TrashWithUndo, MarkAsSpamWithUndo, MarkAsNotSpamWithUndo, DeletePermanently, UndoOperation } from '../../../../wailsjs/go/app/App'
   // @ts-ignore - wailsjs path
   import { EventsOn } from '../../../../wailsjs/runtime/runtime'
   // @ts-ignore - wailsjs path
@@ -21,6 +21,9 @@
   import { getShowViewerCircles, getDarkMailContent } from '$lib/stores/settings.svelte'
   import { getIsDarkActive } from '$lib/stores/theme.svelte'
   import { contactPhotos } from '$lib/stores/contactPhotos.svelte'
+  import { PendingReadOnLeave } from './pendingReadOnLeave'
+  import { publishUndoOperationCompleted, publishUndoOperationCreated } from '../list/undoMutationEvents'
+  import { runMessageMutation } from '../list/mutationInFlight'
 
   interface Props {
     threadId?: string | null
@@ -35,6 +38,8 @@
     isFlashing?: boolean
     showBackButton?: boolean
     onBack?: () => void
+    /** True while the mail viewer is actually visible, including responsive layouts. */
+    isViewerVisible?: boolean
     // Focus mode (whole thread or single message takes full window)
     inFocusMode?: boolean
     focusModeKind?: 'thread' | 'message' | null
@@ -56,6 +61,7 @@
     isFlashing = false,
     showBackButton = false,
     onBack,
+    isViewerVisible = true,
     inFocusMode = false,
     focusModeKind = null,
     focusedMessageIdInFocus = null,
@@ -65,6 +71,7 @@
 
   // Track which messages have had their remote images loaded by the user
   const messagesWithImagesLoaded = new Set<string>()
+  let moveMutationInFlight = $state(false)
 
   // Decrypted attachment metadata
   interface DecryptedAttachment {
@@ -152,10 +159,9 @@
   // Delete confirmation state
   let showDeleteConfirm = $state(false)
 
-  // Auto-mark-as-read state
-  let markAsReadDelay = $state(1000) // Default 1 second, loaded from settings
-  let markAsReadTimer: ReturnType<typeof setTimeout> | null = null
-  let pendingMarkAsReadIds = $state<Set<string>>(new Set()) // Track message IDs we're marking as read
+  // Messages that were unread when this conversation was first displayed.
+  // They are marked read only after this viewer is no longer visible.
+  const pendingReadOnLeave = new PendingReadOnLeave()
 
   // Debounce timer for refreshConversation (coalesces rapid sync events)
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -168,12 +174,8 @@
   // Load settings and set up event listeners on mount
   onMount(async () => {
     try {
-      const [policy, delay] = await Promise.all([
-        GetReadReceiptResponsePolicy(),
-        GetMarkAsReadDelay(),
-      ])
+      const policy = await GetReadReceiptResponsePolicy()
       readReceiptPolicy = policy as 'never' | 'ask' | 'always'
-      markAsReadDelay = delay
     } catch (err) {
       console.error('Failed to load settings:', err)
     }
@@ -181,56 +183,32 @@
     // Listen for message changes from backend
     cleanupFunctions.push(
       EventsOn('messages:readChanged', (data: { messageIds: string[], isRead: boolean }) => {
-        // Check if this is our own mark-as-read operation
-        const isOwnOperation = data.messageIds.every(id => pendingMarkAsReadIds.has(id))
-
-        if (isOwnOperation) {
-          // Clear pending IDs and update local state
-          pendingMarkAsReadIds = new Set()
-          if (conversation?.messages) {
-            // Update isRead flag locally
-            for (const m of conversation.messages) {
-              if (data.messageIds.includes(m.id)) {
-                m.isRead = data.isRead
-              }
-            }
-            // Update conversation unread count
-            const delta = data.isRead ? -data.messageIds.length : data.messageIds.length
-            conversation.unreadCount = Math.max(0, (conversation.unreadCount || 0) + delta)
-            // Trigger reactivity
-            conversation = conversation
-          }
-        } else {
-          // External change on displayed conversation
-          if (conversation?.messages?.some(m => data.messageIds.includes(m.id))) {
-            if (!data.isRead) {
-              // Marked as unread externally — close the conversation to prevent
-              // scheduleMarkAsRead from re-marking it read
-              if (markAsReadTimer) {
-                clearTimeout(markAsReadTimer)
-                markAsReadTimer = null
-              }
-              conversation = null
-              return
-            }
-            if (threadId && folderId) {
-              loadConversation(threadId, folderId)
-            }
-          }
+        if (!conversation?.messages?.some(m => data.messageIds.includes(m.id))) return
+        // A manual or external state change wins over an old snapshot. This
+        // includes explicit Mark as unread while the viewer stays open.
+        pendingReadOnLeave.cancel(data.messageIds)
+        const changed = new Set(data.messageIds)
+        for (const message of conversation.messages) {
+          if (changed.has(message.id)) message.isRead = data.isRead
         }
+        conversation = conversation
       })
     )
 
     cleanupFunctions.push(
       EventsOn('messages:moved', (data: { messageIds: string[], destFolderId: string }) => {
         if (!conversation?.messages?.some(m => data.messageIds.includes(m.id))) return
+        // A destructive/move action owns these messages. Leaving the viewer
+        // must not launch a second MarkAsRead mutation against temporary UIDs.
+        pendingReadOnLeave.cancel(data.messageIds)
 
         const movedCount = conversation.messages.filter(m => data.messageIds.includes(m.id)).length
         const remainingCount = conversation.messages.length - movedCount
 
         if (remainingCount === 0) {
-          // All messages moved out — dismiss and auto-select next
-          dismissConversation(true)
+          // The mutation Promise owns auto-selection. The backend event only
+          // invalidates the viewer, preventing event + Promise double-complete.
+          dismissConversation(false)
           return
         }
         // Some messages remain — reload conversation
@@ -243,14 +221,14 @@
     cleanupFunctions.push(
       EventsOn('messages:deleted', async (messageIds: string[]) => {
         if (conversation?.messages?.some(m => messageIds.includes(m.id))) {
+          pendingReadOnLeave.cancel(messageIds)
           // Check how many messages were deleted
           const deletedCount = conversation.messages.filter(m => messageIds.includes(m.id)).length
           const remainingCount = conversation.messages.length - deletedCount
 
           if (remainingCount === 0) {
-            // All messages deleted - navigate away
-            conversation = null
-            onActionComplete?.(true)
+            // The mutation Promise owns auto-selection (same rule as moved).
+            dismissConversation(false)
           } else {
             // Some messages remain - reload conversation
             if (threadId && folderId) {
@@ -261,14 +239,9 @@
       })
     )
 
-    cleanupFunctions.push(
-      EventsOn('undo:completed', () => {
-        // Reload conversation after undo
-        if (threadId && folderId) {
-          loadConversation(threadId, folderId)
-        }
-      })
-    )
+    // Targeted undo updates the list through normal message events. Do not
+    // reload here: an undo of a previously viewed conversation must not steal
+    // focus from the conversation currently open in the viewer.
 
     cleanupFunctions.push(
       EventsOn('messages:updated', (data: { accountId: string; folderId: string }) => {
@@ -364,11 +337,9 @@
   })
 
   onDestroy(() => {
-    // Clean up timers
-    if (markAsReadTimer) {
-      clearTimeout(markAsReadTimer)
-      markAsReadTimer = null
-    }
+    // Do not issue an asynchronous read-state mutation during process shutdown.
+    // Normal navigation finalizes the snapshot before this component unmounts.
+    pendingReadOnLeave.clear()
     if (refreshTimer) {
       clearTimeout(refreshTimer)
       refreshTimer = null
@@ -382,6 +353,9 @@
 
   // Load conversation when threadId changes
   $effect(() => {
+    // Props have already changed by the time this effect runs, so finalizing
+    // here cannot reorder the list before the next conversation is selected.
+    finalizeReadOnLeave()
     void accountId
     viewGeneration++
     conversation = null
@@ -403,19 +377,17 @@
     focusedMessageId = null
 
     if (threadId && folderId) {
-      // Setting is already loaded on mount - no need to fetch on every conversation switch
       loadConversation(threadId, folderId)
     }
 
     if (!threadId || !folderId) {
-      // Clear any pending mark-as-read timer when navigating away
-      if (markAsReadTimer) {
-        clearTimeout(markAsReadTimer)
-        markAsReadTimer = null
-      }
       conversation = null
       expandedMessages = new Set()
     }
+  })
+
+  $effect(() => {
+    if (!isViewerVisible) finalizeReadOnLeave()
   })
 
   // Debounced refresh: coalesces rapid sync events (e.g. folder:synced + messages:updated)
@@ -470,7 +442,6 @@
           }
         })
         expandedMessages = newExpanded
-        scheduleMarkAsRead(tid, conversation.messages)
         processSMIMEMessages(conversation.messages)
         processPGPMessages(conversation.messages)
       }
@@ -486,12 +457,6 @@
 
   async function loadConversation(tid: string, fid: string) {
     const generation = viewGeneration
-    // Clear any pending mark-as-read timer from previous conversation
-    if (markAsReadTimer) {
-      clearTimeout(markAsReadTimer)
-      markAsReadTimer = null
-    }
-
     loading = true
     error = null
 
@@ -514,9 +479,6 @@
         })
         expandedMessages = newExpanded
 
-        // Schedule auto-mark-as-read for unread messages
-        scheduleMarkAsRead(tid, conversation.messages)
-
         // Process S/MIME messages on-view
         processSMIMEMessages(conversation.messages)
 
@@ -537,17 +499,26 @@
       if (contentContainerRef) {
         contentContainerRef.scrollTop = contentContainerRef.scrollHeight
       }
+      // Capture only after the conversation is actually rendered and still
+      // visible. A restored selection that is replaced during startup never
+      // becomes a pending read operation merely because it mounted briefly.
+      if (threadId === tid && folderId === fid && isViewerVisible && conversation?.messages) {
+        pendingReadOnLeave.capture(conversation.messages)
+      }
     }
   }
 
   /** Dismiss the current conversation from the viewer.
-   *  Cancels any pending mark-as-read timer, clears the conversation state,
+   *  Finalizes the captured unread set, clears the conversation state,
    *  and optionally tells the message list to auto-select the next item. */
   function dismissConversation(autoSelectNext: boolean) {
-    if (markAsReadTimer) {
-      clearTimeout(markAsReadTimer)
-      markAsReadTimer = null
+    viewGeneration++
+    pendingRefresh = null
+    if (refreshTimer) {
+      clearTimeout(refreshTimer)
+      refreshTimer = null
     }
+    finalizeReadOnLeave()
     conversation = null
     if (autoSelectNext) {
       onActionComplete?.(true)
@@ -557,10 +528,14 @@
   // Process S/MIME messages on-view (verify/decrypt fresh each time)
   // Fetch bodies on-demand for messages that don't have them yet
   async function fetchUnfetchedBodies(messages: messageModels.Message[]) {
+    const generation = viewGeneration
     for (const msg of messages) {
       if ((msg as any).bodyFetched === false && !msg.bodyHtml && !msg.bodyText) {
         try {
           const updated = await FetchMessageBody(msg.id)
+          if (generation !== viewGeneration) {
+            continue
+          }
           // Update the message in the conversation if still viewing
           if (conversation?.messages) {
             const idx = conversation.messages.findIndex(m => m.id === msg.id)
@@ -570,6 +545,9 @@
             }
           }
         } catch (err) {
+          if (generation !== viewGeneration) {
+            continue
+          }
           console.error('Failed to fetch body for message:', msg.id, err)
           // Message may have been deleted from server — remove from conversation display
           if (conversation?.messages) {
@@ -633,49 +611,16 @@
     }
   }
 
-  // Schedule marking messages as read based on user's delay setting
-  function scheduleMarkAsRead(capturedThreadId: string, messages: messageModels.Message[]) {
-    // Clear any existing timer to prevent stale fires
-    if (markAsReadTimer) {
-      clearTimeout(markAsReadTimer)
-      markAsReadTimer = null
-    }
-
-    // Get unread message IDs
-    const unreadIds = messages.filter(m => !m.isRead).map(m => m.id)
-
-    if (unreadIds.length === 0) {
-      return // No unread messages
-    }
-
-    // markAsReadDelay: -1 = manual only, 0 = immediate, >0 = delay in ms
-    if (markAsReadDelay < 0) {
-      return // Manual only, don't auto-mark
-    }
-
-    // Track these IDs as pending
-    pendingMarkAsReadIds = new Set(unreadIds)
-
-    if (markAsReadDelay === 0) {
-      // Immediate
-      MarkAsRead(unreadIds).catch(err => {
-        console.error('Failed to mark messages as read:', err)
-        pendingMarkAsReadIds = new Set() // Clear on error
-      })
-    } else {
-      // With delay
-      markAsReadTimer = setTimeout(() => {
-        // Verify we're still viewing the same conversation
-        if (threadId === capturedThreadId) {
-          MarkAsRead(unreadIds).catch(err => {
-            console.error('Failed to mark messages as read:', err)
-            pendingMarkAsReadIds = new Set() // Clear on error
-          })
-        } else {
-          pendingMarkAsReadIds = new Set() // Clear if we navigated away
-        }
-      }, markAsReadDelay)
-    }
+  function finalizeReadOnLeave() {
+    const messageIds = pendingReadOnLeave.take()
+    if (!messageIds.length) return
+    // This lifecycle write deliberately does not use the reject-on-conflict
+    // interaction guard: take() is single-consumer, and dropping the write
+    // while a non-destructive action (such as Star) is active would violate
+    // read-on-leave. Move/delete paths cancel the pending IDs before this runs.
+    MarkAsRead(messageIds).catch(err => {
+      console.error('Failed to mark messages as read after leaving conversation:', err)
+    })
   }
 
   function toggleMessage(messageId: string) {
@@ -784,7 +729,8 @@
   // their presentation so rapid triage doesn't flood the screen with cards.
   const ARCHIVE_TOAST_BATCH_MS = 1800
 
-  const archiveUndoCounts = new Map<string, number>()
+  const archiveUndoOperations = new Map<string, string[]>()
+  const undoInFlight = new Set<string>()
   const archiveToastCleanupTimers =
     new Map<string, ReturnType<typeof setTimeout>>()
 
@@ -798,7 +744,7 @@
     archiveToastCleanupTimers.set(
       toastId,
       setTimeout(() => {
-        archiveUndoCounts.delete(toastId)
+        archiveUndoOperations.delete(toastId)
         archiveToastCleanupTimers.delete(toastId)
 
         if (activeArchiveToastId === toastId) {
@@ -810,7 +756,7 @@
   }
 
   function clearArchiveToastTracking(toastId: string) {
-    archiveUndoCounts.delete(toastId)
+    archiveUndoOperations.delete(toastId)
 
     const timer = archiveToastCleanupTimers.get(toastId)
     if (timer) {
@@ -824,19 +770,25 @@
     }
   }
 
-  function showArchiveUndoToast() {
+  function showArchiveUndoToast(operationID: string) {
+    if (!operationID) {
+      toasts.success($_('toast.conversationArchived'))
+      return
+    }
     const now = Date.now()
     const baseMessage = $_('toast.conversationArchived')
 
     if (
       activeArchiveToastId &&
-      archiveUndoCounts.has(activeArchiveToastId) &&
+      archiveUndoOperations.has(activeArchiveToastId) &&
       now - activeArchiveToastAt <= ARCHIVE_TOAST_BATCH_MS
     ) {
       const toastId = activeArchiveToastId
-      const count = (archiveUndoCounts.get(toastId) ?? 1) + 1
+      const operations = archiveUndoOperations.get(toastId) ?? []
+      operations.push(operationID)
+      const count = operations.length
 
-      archiveUndoCounts.set(toastId, count)
+      archiveUndoOperations.set(toastId, operations)
       activeArchiveToastAt = now
 
       toasts.replace(
@@ -866,14 +818,14 @@
       }
     ])
 
-    archiveUndoCounts.set(toastId, 1)
+    archiveUndoOperations.set(toastId, [operationID])
     activeArchiveToastId = toastId
     activeArchiveToastAt = now
     scheduleArchiveToastCleanup(toastId)
   }
 
   async function handleArchiveBatchUndo(toastId: string) {
-    const undoCount = archiveUndoCounts.get(toastId) ?? 1
+    const operations = archiveUndoOperations.get(toastId) ?? []
 
     // This burst is closed as soon as Undo is clicked. Any subsequent Done
     // starts a fresh toast instead of joining an Undo already in progress.
@@ -884,22 +836,26 @@
     toasts.replace(
       toastId,
       {
+        message: 'Undoing...',
         actions: [],
         duration: 20000
       })
 
+    if (operations.length === 0 || undoInFlight.has(toastId)) return
+    undoInFlight.add(toastId)
     let description = ''
     let completed = 0
 
     try {
-      for (let i = 0; i < undoCount; i++) {
-        description = await Undo()
+      for (const operationID of [...operations].reverse()) {
+        description = await UndoOperation(operationID)
+        publishUndoOperationCompleted(operationID)
         completed++
       }
 
       const displayDescription =
-        undoCount > 1
-          ? `${undoCount} × ${description}`
+        operations.length > 1
+          ? `${operations.length} × ${description}`
           : description
 
       // Important: update the existing Conversation archived notification.
@@ -915,10 +871,6 @@
           duration: 4000
         })
 
-      if (threadId && folderId) {
-        await loadConversation(threadId, folderId)
-      }
-
       onActionComplete?.()
     } catch (err) {
       console.error('Archive batch undo failed:', err)
@@ -927,7 +879,7 @@
       toasts.replace(
         toastId,
         {
-          message: $_('toast.undoFailed'),
+          message: completed > 0 ? `${$_('toast.undoFailed')} (${completed}/${operations.length})` : $_('toast.undoFailed'),
           type: 'error',
           actions: [],
           duration: 5000
@@ -936,6 +888,8 @@
       if (completed > 0) {
         onActionComplete?.()
       }
+    } finally {
+      undoInFlight.delete(toastId)
     }
   }
 
@@ -961,14 +915,18 @@
     }
   }
 
-  function showUndoableSuccess(message: string) {
+  function showUndoableSuccess(message: string, operationID: string) {
+    if (!operationID) {
+      toasts.success(message)
+      return
+    }
     let toastId = ''
 
     toastId = toasts.success(message, [
       {
         label: $_('common.undo'),
         onClick: () => {
-          void handleUndo(toastId)
+          void handleUndo(toastId, operationID)
         }
       }
     ])
@@ -978,10 +936,21 @@
 
   async function handleMoveToInbox() {
     if (!conversation?.messages) return
+    const messageIds = conversation.messages.map(m => m.id)
     try {
-      await MoveToInbox(conversation.messages.map(m => m.id))
-      toasts.success($_('toast.movedTo', { values: { folder: $_('sidebar.inbox') } }), [{ label: $_('common.undo'), onClick: handleUndo }])
-      onActionComplete?.(true)
+      await runMessageMutation(messageIds, async () => {
+        moveMutationInFlight = true
+        try {
+          pendingReadOnLeave.cancel(messageIds)
+          const result = await MoveToInboxWithUndo(messageIds)
+          if (result.coalesced) return
+          publishUndoOperationCreated(result.operationId, messageIds, 'move-to-inbox')
+          showUndoableSuccess($_('toast.movedTo', { values: { folder: $_('sidebar.inbox') } }), result.operationId)
+          onActionComplete?.(true)
+        } finally {
+          moveMutationInFlight = false
+        }
+      })
     } catch (err) {
       console.error('Move to inbox failed:', err)
       toasts.error($_('toast.failedToMove'))
@@ -991,11 +960,20 @@
   async function handleArchive() {
     if (!conversation?.messages) return
     const messageIds = conversation.messages.map(m => m.id)
-
     try {
-      await Archive(messageIds)
-      showArchiveUndoToast()
-      onActionComplete?.(true)
+      await runMessageMutation(messageIds, async () => {
+        moveMutationInFlight = true
+        try {
+          pendingReadOnLeave.cancel(messageIds)
+          const result = await ArchiveWithUndo(messageIds)
+          if (result.coalesced) return
+          publishUndoOperationCreated(result.operationId, messageIds, 'archive')
+          showArchiveUndoToast(result.operationId)
+          onActionComplete?.(true)
+        } finally {
+          moveMutationInFlight = false
+        }
+      })
     } catch (err) {
       console.error('Archive failed:', err)
       toasts.error($_('toast.failedToArchive'))
@@ -1005,11 +983,20 @@
   async function handleDone() {
     if (!conversation?.messages) return
     const messageIds = conversation.messages.map(m => m.id)
-
     try {
-      await RemoveFromInbox(messageIds)
-      showArchiveUndoToast()
-      onActionComplete?.(true)
+      await runMessageMutation(messageIds, async () => {
+        moveMutationInFlight = true
+        try {
+          pendingReadOnLeave.cancel(messageIds)
+          const result = await RemoveFromInboxWithUndo(messageIds)
+          if (result.coalesced) return
+          publishUndoOperationCreated(result.operationId, messageIds, 'remove-from-inbox')
+          showArchiveUndoToast(result.operationId)
+          onActionComplete?.(true)
+        } finally {
+          moveMutationInFlight = false
+        }
+      })
     } catch (err) {
       console.error('Done failed:', err)
       toasts.error($_('toast.failedToArchive'))
@@ -1026,14 +1013,20 @@
       // Move to trash (undoable)
       const messageIds = conversation.messages.map(m => m.id)
       try {
-        const movedToTrash = await Trash(messageIds)
-        const toastMsg = movedToTrash ? $_('toast.movedToTrash') : $_('toast.deletedFromFolder')
-        if (movedToTrash) {
-          showUndoableSuccess(toastMsg)
-        } else {
-          toasts.success(toastMsg)
-        }
-        onActionComplete?.(true)
+        await runMessageMutation(messageIds, async () => {
+          moveMutationInFlight = true
+          try {
+            pendingReadOnLeave.cancel(messageIds)
+            const result = await TrashWithUndo(messageIds)
+            if (result.coalesced) return
+            publishUndoOperationCreated(result.operationId, messageIds, 'trash')
+            const toastMsg = result.movedToTrash ? $_('toast.movedToTrash') : $_('toast.deletedFromFolder')
+            showUndoableSuccess(toastMsg, result.operationId)
+            onActionComplete?.(true)
+          } finally {
+            moveMutationInFlight = false
+          }
+        })
       } catch (err) {
         console.error('Delete failed:', err)
         toasts.error($_('toast.failedToDelete'))
@@ -1046,10 +1039,17 @@
     const messageIds = conversation.messages.map(m => m.id)
 
     try {
-      await DeletePermanently(messageIds)
-      toasts.success($_('toast.permanentlyDeleted'))
-      showDeleteConfirm = false
-      onActionComplete?.(true)
+      await runMessageMutation(messageIds, async () => {
+        moveMutationInFlight = true
+        try {
+          await DeletePermanently(messageIds)
+          toasts.success($_('toast.permanentlyDeleted'))
+          showDeleteConfirm = false
+          onActionComplete?.(true)
+        } finally {
+          moveMutationInFlight = false
+        }
+      })
     } catch (err) {
       console.error('Permanent delete failed:', err)
       toasts.error($_('toast.failedToDelete'))
@@ -1060,14 +1060,22 @@
   // Delete the currently focused message (via keyboard)
   async function handleDeleteFocusedMessage() {
     if (!focusedMessageId) return
+	const messageID = focusedMessageId
 
     if (isTrashFolder) {
       // Permanent delete from trash
       try {
-        await DeletePermanently([focusedMessageId])
-        toasts.success($_('toast.permanentlyDeleted'))
-        focusedMessageId = null
-        // Will auto-reload via messages:deleted event
+        await runMessageMutation([messageID], async () => {
+          moveMutationInFlight = true
+          try {
+            await DeletePermanently([messageID])
+            toasts.success($_('toast.permanentlyDeleted'))
+            focusedMessageId = null
+            // Will auto-reload via messages:deleted event
+          } finally {
+            moveMutationInFlight = false
+          }
+        })
       } catch (err) {
         console.error('Permanent delete failed:', err)
         toasts.error($_('toast.failedToDelete'))
@@ -1075,15 +1083,21 @@
     } else {
       // Move to trash (undoable)
       try {
-        const movedToTrash = await Trash([focusedMessageId])
-        const toastMsg = movedToTrash ? $_('toast.movedToTrash') : $_('toast.deletedFromFolder')
-        if (movedToTrash) {
-          showUndoableSuccess(toastMsg)
-        } else {
-          toasts.success(toastMsg)
-        }
-        focusedMessageId = null
-        // Will auto-reload via messages:deleted event
+        await runMessageMutation([messageID], async () => {
+          moveMutationInFlight = true
+          try {
+            pendingReadOnLeave.cancel([messageID])
+            const result = await TrashWithUndo([messageID])
+            if (result.coalesced) return
+            publishUndoOperationCreated(result.operationId, [messageID], 'trash')
+            const toastMsg = result.movedToTrash ? $_('toast.movedToTrash') : $_('toast.deletedFromFolder')
+            showUndoableSuccess(toastMsg, result.operationId)
+            focusedMessageId = null
+            // Will auto-reload via messages:deleted event
+          } finally {
+            moveMutationInFlight = false
+          }
+        })
       } catch (err) {
         console.error('Delete failed:', err)
         toasts.error($_('toast.failedToDelete'))
@@ -1094,24 +1108,31 @@
   async function handleSpam() {
     if (!conversation?.messages) return
     const messageIds = conversation.messages.map(m => m.id)
-
     try {
-      if (isSpamFolder) {
-        // If we're in spam folder, mark as NOT spam
-        await MarkAsNotSpam(messageIds)
-        showUndoableSuccess($_('toast.markedAsNotSpam'))
-        onActionComplete?.(true)
-        return
-      }
-      // Otherwise, mark as spam
-      const movedToSpam = await MarkAsSpam(messageIds)
-      const toastMsg = movedToSpam ? $_('toast.markedAsSpam') : $_('toast.deletedFromFolder')
-      if (movedToSpam) {
-        showUndoableSuccess(toastMsg)
-      } else {
-        toasts.success(toastMsg)
-      }
-      onActionComplete?.(true)
+      await runMessageMutation(messageIds, async () => {
+        moveMutationInFlight = true
+        try {
+          pendingReadOnLeave.cancel(messageIds)
+          if (isSpamFolder) {
+            // If we're in spam folder, mark as NOT spam
+            const result = await MarkAsNotSpamWithUndo(messageIds)
+            if (result.coalesced) return
+            publishUndoOperationCreated(result.operationId, messageIds, 'mark-as-not-spam')
+            showUndoableSuccess($_('toast.markedAsNotSpam'), result.operationId)
+            onActionComplete?.(true)
+            return
+          }
+          // Otherwise, mark as spam
+          const result = await MarkAsSpamWithUndo(messageIds)
+          if (result.coalesced) return
+          publishUndoOperationCreated(result.operationId, messageIds, 'mark-as-spam')
+          const toastMsg = result.movedToSpam ? $_('toast.markedAsSpam') : $_('toast.deletedFromFolder')
+          showUndoableSuccess(toastMsg, result.operationId)
+          onActionComplete?.(true)
+        } finally {
+          moveMutationInFlight = false
+        }
+      })
     } catch (err) {
       console.error('Spam toggle failed:', err)
       toasts.error($_(isSpamFolder ? 'toast.failedToMarkAsNotSpam' : 'toast.failedToMarkAsSpam'))
@@ -1126,16 +1147,18 @@
     const messageIds = conversation.messages.map(m => m.id)
 
     try {
-      if (wasAllStarred) {
-        await Unstar(messageIds)
-        toasts.success($_('toast.removedStar'))
-      }
-      if (!wasAllStarred) {
-        await Star(messageIds)
-        toasts.success($_('toast.starred'))
-      }
-      conversation = await GetConversation(threadId, folderId)
-      onActionComplete?.()
+      await runMessageMutation(messageIds, async () => {
+        if (wasAllStarred) {
+          await Unstar(messageIds)
+          toasts.success($_('toast.removedStar'))
+        }
+        if (!wasAllStarred) {
+          await Star(messageIds)
+          toasts.success($_('toast.starred'))
+        }
+        conversation = await GetConversation(threadId, folderId)
+        onActionComplete?.()
+      })
     } catch (err) {
       console.error('Star toggle failed:', err)
       toasts.error($_('toast.failedToUpdateStar'))
@@ -1149,69 +1172,54 @@
     const allRead = conversation.messages.every(m => m.isRead)
     const messageIds = conversation.messages.map(m => m.id)
 
-    // Tag these as our own operation so the readChanged listener treats
-    // the resulting event as a local toggle (update flags + counts) rather
-    // than an external mark-unread (which closes the conversation to stop
-    // the auto-mark-as-read timer).
-    pendingMarkAsReadIds = new Set(messageIds)
-
     try {
-      if (allRead) {
-        await MarkAsUnread(messageIds)
-        toasts.success($_('toast.markedAsUnread'))
-      }
-      if (!allRead) {
-        await MarkAsRead(messageIds)
-        toasts.success($_('toast.markedAsRead'))
-      }
+      await runMessageMutation(messageIds, async () => {
+        // Explicit actions supersede the leave snapshot and remain immediate.
+        pendingReadOnLeave.cancel(messageIds)
+        if (allRead) {
+          await MarkAsUnread(messageIds)
+          toasts.success($_('toast.markedAsUnread'))
+        }
+        if (!allRead) {
+          await MarkAsRead(messageIds)
+          toasts.success($_('toast.markedAsRead'))
+        }
+      })
     } catch (err) {
       console.error('Read status toggle failed:', err)
       toasts.error($_('toast.failedToUpdateReadStatus'))
-      pendingMarkAsReadIds = new Set()
     }
   }
 
-  async function handleUndo(toastId?: string) {
+  async function handleUndo(toastId: string, operationID: string) {
+    if (undoInFlight.has(operationID)) return
+    undoInFlight.add(operationID)
+    toasts.replace(toastId, { message: 'Undoing...', actions: [], duration: 20000 })
     try {
-      const description = await Undo()
+      const description = await UndoOperation(operationID)
+      publishUndoOperationCompleted(operationID)
       const message = $_('toast.undone', { values: { description } })
 
       // Undo triggered from a toast should transform that same toast instead
       // of adding another card to the notification stack.
-      if (toastId) {
-        const replaced = toasts.replace(toastId, {
+      {
+        toasts.replace(toastId, {
           message,
           type: 'success'
         })
-
-        // Fallback for a toast that expired while Undo was running.
-        if (!replaced) {
-          toasts.success(message)
-        }
-      } else {
-        toasts.success(message)
-      }
-
-      // Reload conversation to show updated state
-      if (threadId && folderId) {
-        await loadConversation(threadId, folderId)
       }
       onActionComplete?.()
     } catch (err) {
       console.error('Undo failed:', err)
 
-      if (toastId) {
-        const replaced = toasts.replace(toastId, {
+      {
+        toasts.replace(toastId, {
           message: $_('toast.undoFailed'),
           type: 'error'
         })
-
-        if (!replaced) {
-          toasts.error($_('toast.undoFailed'))
-        }
-      } else {
-        toasts.error($_('toast.undoFailed'))
       }
+    } finally {
+      undoInFlight.delete(operationID)
     }
   }
 
@@ -1580,6 +1588,8 @@
           data-tooltip={$_('common.done')}
           aria-label={$_('common.done')}
           onclick={handleDone}
+          disabled={moveMutationInFlight}
+          aria-busy={moveMutationInFlight}
         >
           <Icon icon="mdi:check" class="w-5 h-5 text-muted-foreground" />
         </button>
@@ -1610,7 +1620,7 @@
 
         <div class="w-px h-5 bg-border mx-1"></div>
         {#if isTrashFolder}
-          <button class="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-muted" onclick={handleMoveToInbox}>
+          <button class="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-muted" onclick={handleMoveToInbox} disabled={moveMutationInFlight}>
             <Icon icon="mdi:inbox-arrow-down-outline" class="w-5 h-5" />
             {$_('viewer.moveToInbox')}
           </button>
@@ -1620,6 +1630,7 @@
           data-tooltip={$_('viewer.archive')}
           aria-label={$_('viewer.archive')}
           onclick={handleArchive}
+          disabled={moveMutationInFlight}
         >
           <Icon icon="mdi:archive-outline" class="w-5 h-5 text-muted-foreground" />
         </button>
@@ -1628,6 +1639,7 @@
           data-tooltip={$_(isTrashFolder ? 'viewer.deletePermanently' : 'viewer.delete')}
           aria-label={$_(isTrashFolder ? 'viewer.deletePermanently' : 'viewer.delete')}
           onclick={handleDelete}
+          disabled={moveMutationInFlight}
         >
           <Icon icon={isTrashFolder ? 'mdi:delete-forever' : 'mdi:delete-outline'} class="w-5 h-5 text-muted-foreground" />
         </button>
@@ -1636,6 +1648,7 @@
           data-tooltip={$_(isSpamFolder ? 'viewer.markAsNotSpam' : 'viewer.markAsSpam')}
           aria-label={$_(isSpamFolder ? 'viewer.markAsNotSpam' : 'viewer.markAsSpam')}
           onclick={handleSpam}
+          disabled={moveMutationInFlight}
         >
           <Icon icon={isSpamFolder ? 'mdi:email-check-outline' : 'mdi:alert-octagon-outline'} class="w-5 h-5 text-muted-foreground" />
         </button>

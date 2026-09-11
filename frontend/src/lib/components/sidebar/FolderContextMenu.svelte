@@ -8,7 +8,6 @@
   import {
     MarkAllFolderMessagesAsRead,
     MarkAllFolderMessagesAsUnread,
-    Undo,
   } from '../../../../wailsjs/go/app/App'
   import { toasts } from '$lib/stores/toast'
   import type { Snippet } from 'svelte'
@@ -24,20 +23,10 @@
     children,
   }: Props = $props()
 
-  async function handleUndo() {
-    try {
-      const description = await Undo()
-      toasts.success($_('toast.undone', { values: { description } }))
-    } catch (err) {
-      console.error('Undo failed:', err)
-      toasts.error($_('toast.undoFailed'))
-    }
-  }
-
   async function handleMarkAllRead() {
     try {
       await MarkAllFolderMessagesAsRead(folderId)
-      toasts.success($_('toast.markedAllAsRead'), [{ label: $_('common.undo'), onClick: handleUndo }])
+      toasts.success($_('toast.markedAllAsRead'))
     } catch (err) {
       console.error('Mark all as read failed:', err)
       toasts.error($_('toast.failedToMarkAllAsRead'))
@@ -47,7 +36,7 @@
   async function handleMarkAllUnread() {
     try {
       await MarkAllFolderMessagesAsUnread(folderId)
-      toasts.success($_('toast.markedAllAsUnread'), [{ label: $_('common.undo'), onClick: handleUndo }])
+      toasts.success($_('toast.markedAllAsUnread'))
     } catch (err) {
       console.error('Mark all as unread failed:', err)
       toasts.error($_('toast.failedToMarkAllAsUnread'))

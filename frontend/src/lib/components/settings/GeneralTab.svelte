@@ -2,7 +2,6 @@
   import Icon from '@iconify/svelte'
   import * as Select from '$lib/components/ui/select'
   import { Label } from '$lib/components/ui/label'
-  import { Input } from '$lib/components/ui/input'
   import Switch from '$lib/components/ui/switch/Switch.svelte'
   import { _, setLocale } from '$lib/i18n'
   import { supportedLocales } from '$lib/i18n'
@@ -10,7 +9,6 @@
   import { getSidebarWidth, setSidebarWidth } from '$lib/stores/uiState.svelte'
 
   interface Props {
-    markAsReadDelaySeconds: number
     messageListDensity: string
     themeMode: string
     nativeTitleBar: boolean
@@ -20,7 +18,6 @@
     startHidden: boolean
     autostart: boolean
     language: string
-    onDelayChange: (value: number) => void
     onDensityChange: (value: string) => void
     onThemeChange: (value: string) => void
     onTitleBarChange: (nativeTitleBar: boolean, showTitleBar: boolean) => void
@@ -38,7 +35,6 @@
   }
 
   let {
-    markAsReadDelaySeconds = $bindable(),
     messageListDensity = $bindable(),
     themeMode = $bindable(),
     nativeTitleBar = $bindable(),
@@ -48,7 +44,6 @@
     startHidden = $bindable(),
     autostart = $bindable(),
     language = $bindable(),
-    onDelayChange,
     onDensityChange,
     onThemeChange,
     onTitleBarChange,
@@ -172,13 +167,6 @@
 
   function getTitleBarLabel(value: string): string {
     return titleBarOptions.find(opt => opt.value === value)?.label || value
-  }
-
-  function handleDelayInput(e: Event) {
-    const target = e.target as HTMLInputElement
-    const value = parseFloat(target.value)
-    markAsReadDelaySeconds = value
-    onDelayChange?.(value)
   }
 
   function handleRunBackgroundChange(value: boolean) {
@@ -426,36 +414,6 @@
       </Select.Root>
       <p class="text-xs text-muted-foreground">
         {$_('settingsGeneral.messageListDensityHelp')}
-      </p>
-    </div>
-  </div>
-
-  <!-- Divider -->
-  <div class="border-t border-border"></div>
-
-  <!-- Mark as Read Section -->
-  <div class="space-y-4">
-    <h3 class="text-sm font-medium flex items-center gap-2">
-      <Icon icon="mdi:email-open-outline" class="w-4 h-4" />
-      {$_('settingsGeneral.markAsRead')}
-    </h3>
-
-    <div class="space-y-2">
-      <Label>{$_('settingsGeneral.markAsReadAfter')}</Label>
-      <div class="flex items-center gap-2">
-        <Input
-          type="number"
-          value={markAsReadDelaySeconds}
-          oninput={handleDelayInput}
-          min={-1}
-          max={5}
-          step={0.1}
-          class="w-24"
-        />
-        <span class="text-sm text-muted-foreground">{$_('common.seconds')}</span>
-      </div>
-      <p class="text-xs text-muted-foreground">
-        {$_('settingsGeneral.markAsReadHelp')}
       </p>
     </div>
   </div>

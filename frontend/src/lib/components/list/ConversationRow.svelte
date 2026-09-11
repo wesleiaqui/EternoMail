@@ -16,7 +16,7 @@
   // @ts-ignore - wailsjs path
   import { message } from '../../../../wailsjs/go/models'
   // @ts-ignore - wailsjs path
-  import { MarkAsRead, MarkAsUnread, RemoveFromInbox, Undo } from '../../../../wailsjs/go/app/App'
+  import { MarkAsRead, MarkAsUnread, RemoveFromInboxWithUndo, UndoOperation } from '../../../../wailsjs/go/app/App'
   import MessageContextMenu from '$lib/components/common/MessageContextMenu.svelte'
   import Avatar from '$lib/components/kit/Avatar.svelte'
   import { toasts } from '$lib/stores/toast'
@@ -25,6 +25,8 @@
   import { contactPhotos } from '$lib/stores/contactPhotos.svelte'
   import { domainFromEmail, senderLogos } from '$lib/stores/senderLogos.svelte'
   import { isConfiguredAccountEmail } from '$lib/stores/accounts.svelte'
+  import { publishUndoOperationCompleted, publishUndoOperationCreated } from './undoMutationEvents'
+  import { runMessageMutation } from './mutationInFlight'
 
   interface Props {
     conversation: message.Conversation
@@ -81,6 +83,8 @@
 
   // Forward keyboard access (Alt+M / Alt+C) to this row's context-menu folder picker
   let contextMenuRef: MessageContextMenu | null = null
+  const undoInFlight = new Set<string>()
+  let moveMutationInFlight = $state(false)
 
   export function isFolderPickerOpen(): boolean {
     return contextMenuRef?.isFolderPickerOpen() ?? false
@@ -217,9 +221,20 @@
   async function handleDoneClick(e: MouseEvent) {
     e.stopPropagation()
     try {
-      await RemoveFromInbox(ownMessageIds)
-      toasts.success($_('toast.archived'), [{ label: $_('common.undo'), onClick: handleUndo }])
-      onActionComplete?.(true)
+      await runMessageMutation(ownMessageIds, async () => {
+        moveMutationInFlight = true
+        try {
+          const result = await RemoveFromInboxWithUndo(ownMessageIds)
+          if (result.coalesced) return
+          const operationID = result.operationId
+          publishUndoOperationCreated(operationID, ownMessageIds, 'remove-from-inbox')
+          let toastId = ''
+          toastId = toasts.success($_('toast.archived'), operationID ? [{ label: $_('common.undo'), onClick: () => handleUndo(toastId, operationID) }] : [])
+          onActionComplete?.(true)
+        } finally {
+          moveMutationInFlight = false
+        }
+      })
     } catch (err) {
       console.error('Archive failed:', err)
       toasts.error($_('toast.failedToArchive'))
@@ -230,15 +245,17 @@
     e.stopPropagation()
     const markingAsUnread = ownIsRead
     try {
-      if (markingAsUnread) {
-        await MarkAsUnread(ownMessageIds)
-        toasts.success($_('toast.markedAsUnread'))
-      } else {
-        await MarkAsRead(ownMessageIds)
-        toasts.success($_('toast.markedAsRead'))
-      }
-      readOverride = !markingAsUnread
-      onActionComplete?.()
+      await runMessageMutation(ownMessageIds, async () => {
+        if (markingAsUnread) {
+          await MarkAsUnread(ownMessageIds)
+          toasts.success($_('toast.markedAsUnread'))
+        } else {
+          await MarkAsRead(ownMessageIds)
+          toasts.success($_('toast.markedAsRead'))
+        }
+        readOverride = !markingAsUnread
+        onActionComplete?.()
+      })
     } catch (err) {
       console.error('Read status toggle failed:', err)
       toasts.error($_('toast.failedToUpdateReadStatus'))
@@ -250,13 +267,20 @@
     onDelete?.(ownMessageIds)
   }
 
-  async function handleUndo() {
+  async function handleUndo(toastId: string, operationID: string) {
+    if (undoInFlight.has(operationID)) return
+    undoInFlight.add(operationID)
+    toasts.replace(toastId, { actions: [], duration: 20_000 })
     try {
-      const description = await Undo()
-      toasts.success($_('toast.undone', { values: { description } }))
+      const description = await UndoOperation(operationID)
+      publishUndoOperationCompleted(operationID)
+      toasts.replace(toastId, { message: $_('toast.undone', { values: { description } }), type: 'success', actions: [], duration: 4000 })
+      onActionComplete?.()
     } catch (err) {
       console.error('Undo failed:', err)
-      toasts.error($_('toast.undoFailed'))
+      toasts.replace(toastId, { message: $_('toast.undoFailed'), type: 'error', actions: [], duration: 6000 })
+    } finally {
+      undoInFlight.delete(operationID)
     }
   }
 
@@ -513,6 +537,8 @@
         title={$_('common.done')}
         aria-label={$_('common.done')}
         onclick={handleDoneClick}
+        disabled={moveMutationInFlight}
+        aria-busy={moveMutationInFlight}
       >
         <Icon icon="mdi:check" class="w-3.5 h-3.5" />
       </button>
@@ -531,6 +557,7 @@
         title={$_('common.delete')}
         aria-label={$_('common.delete')}
         onclick={handleQuickDelete}
+        disabled={moveMutationInFlight}
       >
         <Icon icon="mdi:trash-can-outline" class="w-3.5 h-3.5" />
       </button>

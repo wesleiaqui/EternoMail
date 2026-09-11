@@ -18,7 +18,7 @@
   import { cn } from '$lib/utils'
   import { Button } from '$lib/components/ui/button'
   // @ts-ignore - wailsjs bindings
-  import { MoveToInbox, GetConversations, GetConversationCount, SyncFolder, ForceSyncFolder, CancelFolderSync, SetMessageListSortOrder, GetUnifiedFolderConversations, GetUnifiedFolderCount, SearchConversations, SearchUnifiedFolder, GetSearchCount, GetSearchCountUnifiedFolder, SyncUnifiedFolder, EmptyUnifiedTrash, GetFTSIndexStatus, IsFTSIndexing, Trash, DeletePermanently, EmptyTrash, Undo, IMAPSearchFolder, IMAPSearchUnifiedInbox, FetchServerMessage } from '../../../../wailsjs/go/app/App'
+  import { MoveToInboxWithUndo, GetConversations, GetConversationCount, SyncFolder, ForceSyncFolder, CancelFolderSync, SetMessageListSortOrder, GetUnifiedFolderConversations, GetUnifiedFolderCount, SearchConversations, SearchUnifiedFolder, GetSearchCount, GetSearchCountUnifiedFolder, SyncUnifiedFolder, EmptyUnifiedTrash, GetFTSIndexStatus, IsFTSIndexing, TrashWithUndo, DeletePermanently, EmptyTrash, UndoOperation, IMAPSearchFolder, IMAPSearchUnifiedInbox, FetchServerMessage } from '../../../../wailsjs/go/app/App'
   import { toasts } from '$lib/stores/toast'
   import { _ } from '$lib/i18n'
   import { ConfirmDialog } from '$lib/components/ui/confirm-dialog'
@@ -33,6 +33,10 @@
   import { accountStore } from '$lib/stores/accounts.svelte'
   import { getLayoutMode, hideViewer } from '$lib/stores/layout.svelte'
   import { isDialogGuardActive } from '$lib/stores/dialogGuard'
+  import { captureAutoSelectNext, findAutoSelectNext, flattenVisibleInboxGroups } from './autoSelectNext'
+  import { removeServerSearchResults, restoreSearchResults, serverSearchResultIdentity, ServerSearchRequestState, updateServerSearchCounts } from './serverSearchResults'
+  import { publishUndoOperationCompleted, publishUndoOperationCreated, UNDO_OPERATION_COMPLETED_EVENT, UNDO_OPERATION_CREATED_EVENT, type UndoOperationCreatedDetail } from './undoMutationEvents'
+  import { runMessageMutation } from './mutationInFlight'
 
   interface Props {
     accountId?: string | null
@@ -43,7 +47,7 @@
     onReply?: (mode: 'reply' | 'reply-all' | 'forward', messageId: string) => void
     onRowActionComplete?: (autoSelectNext: boolean) => void
     onBulkMarkRead?: (messageIds: string[]) => void
-    onBulkArchive?: (messageIds: string[]) => void
+    onBulkArchive?: (messageIds: string[]) => void | Promise<void>
     isFocused?: boolean
     isFlashing?: boolean
     showFolderToggle?: boolean
@@ -70,7 +74,12 @@
   let conversations = $state<message.Conversation[]>([])
   let totalCount = $state(0)
   let loading = $state(false)
-  let error = $state<string | null>(null)
+  let moveMutationInFlight = $state(false)
+  // Each visible list owns its error. A background inbox reload must never
+  // replace an active search with an unrelated failure panel.
+  let listError = $state<string | null>(null)
+  let localSearchError = $state<string | null>(null)
+  let serverSearchError = $state<string | null>(null)
   // Immediate UI lock for manual syncs. Backend progress events may arrive
   // slightly later, especially for unified folders.
   let manualSyncing = $state(false)
@@ -120,6 +129,7 @@
   let searchTotalCount = $state(0)
   let searchOffset = $state(0)
   let isSearching = $state(false)
+  let localSearchGeneration = 0
   let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
   // Filter state
@@ -380,14 +390,25 @@
     { value: 'attachments', label: $_('messageList.filterAttachments') },
   ])
 
-  // Server search state
-  let serverSearchMode = $state(false)
+  type SearchSource = 'local' | 'server'
+
+  // The active source is explicit while a query is visible. Results, loading
+  // and errors are independent caches for the two sources.
+  let searchSource = $state<SearchSource>('local')
+  const serverSearchMode = $derived(searchSource === 'server')
   let serverSearchResults = $state<any[]>([])
   let serverSearchCount = $state(0)
   let serverSearchTotalCount = $state(0)  // Total matching UIDs on server (may exceed serverSearchCount when limited)
   let isServerSearching = $state(false)
-  let lastServerQuery = $state('')
   const SERVER_SEARCH_LIMIT = 200
+  let pendingServerActionSelection = $state<ReturnType<typeof captureAutoSelectNext> | null>(null)
+  type SearchMutationSnapshot = { source: SearchSource; query: string; result: any; index: number }
+  const removedSearchSnapshots = new Map<string, SearchMutationSnapshot>()
+  const undoSearchSnapshots = new Map<string, SearchMutationSnapshot[]>()
+  const undoInFlight = new Set<string>()
+  let serverSearchSelectionLocked = $state(false)
+  const serverSearchRequestState = new ServerSearchRequestState()
+  let serverResultFetchGeneration = 0
 
   // FTS indexing state
   let indexProgress = $state(0)
@@ -424,6 +445,11 @@
   // into a single loadConversations() call after they settle (300ms).
   // Defers if a dialog guard is active (e.g. folder picker open).
   function scheduleReload() {
+    // Folder sync updates the backing cache, but never replaces an active
+    // local or server-search pane.
+    if (isSearchMode) {
+      return
+    }
     if (isDialogGuardActive()) {
       pendingReload = true
       return
@@ -431,6 +457,7 @@
     if (syncReloadTimer) clearTimeout(syncReloadTimer)
     syncReloadTimer = setTimeout(() => {
       syncReloadTimer = null
+      if (isSearchMode) return
       if (loading) {
         pendingReload = true
         return
@@ -493,6 +520,19 @@
       }
     })
 
+    // A server-search result is scoped to its original mailbox. Moving or
+    // deleting its local message makes that row invalid immediately; waiting
+    // for another IMAP SEARCH leaves a stale, clickable result behind.
+    EventsOn('messages:moved', (data: { messageIds: string[] }) => {
+      invalidateActiveSearchResults(data.messageIds)
+    })
+    EventsOn('messages:deleted', (messageIds: string[]) => {
+      invalidateActiveSearchResults(messageIds)
+    })
+
+    window.addEventListener(UNDO_OPERATION_CREATED_EVENT, handleUndoOperationCreated as EventListener)
+    window.addEventListener(UNDO_OPERATION_COMPLETED_EVENT, handleUndoOperationCompleted as EventListener)
+
     // Listen for FTS indexing progress
     EventsOn('fts:progress', (data: { folderId: string; indexed: number; total: number; percentage: number }) => {
       if (folderId && data.folderId === folderId) {
@@ -542,9 +582,13 @@
     EventsOff('folder:synced')
     EventsOff('messages:updated')
     EventsOff('messages:readChanged')
+    EventsOff('messages:moved')
+    EventsOff('messages:deleted')
     EventsOff('fts:progress')
     EventsOff('fts:complete')
     EventsOff('fts:indexing')
+    window.removeEventListener(UNDO_OPERATION_CREATED_EVENT, handleUndoOperationCreated as EventListener)
+    window.removeEventListener(UNDO_OPERATION_COMPLETED_EVENT, handleUndoOperationCompleted as EventListener)
     if (reloadTimer) clearTimeout(reloadTimer)
     if (syncReloadTimer) clearTimeout(syncReloadTimer)
     if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
@@ -614,11 +658,12 @@
     searchResults = []
     searchTotalCount = 0
     searchOffset = 0
-    serverSearchMode = false
+    searchSource = 'local'
     serverSearchResults = []
     serverSearchCount = 0
     serverSearchTotalCount = 0
-    lastServerQuery = ''
+    serverSearchSelectionLocked = false
+    serverSearchRequestState.cancel()
     // Restore this folder's session state: reload the previously-paginated
     // window and put the scroll back where the user left it.
     const remembered = sessionListState.get(`${currentAccount}:${currentFolder}`)
@@ -648,11 +693,11 @@
   })
 
   // Compute selected message IDs from all checked conversations (for multi-select context menu)
-  // Check both conversations and searchResults since selections can span both
+  // Check normal, local-search and server-search result caches.
   // Use Set to deduplicate in case same conversation appears in both arrays
   const selectedMessageIds = $derived(
     [...new Set(
-      [...conversations, ...searchResults]
+      [...conversations, ...searchResults, ...serverSearchResults]
         .filter((c) => checkedThreadIds.has(c.threadId))
         .flatMap((c: any) => c.messageIds || c.messages?.map((m: any) => m.id) || [])
     )]
@@ -661,12 +706,12 @@
   // Aggregated star/read state for multi-select context menu
   // Show "Star" if any selected is unstarred, show "Mark as Read" if any selected is unread
   const selectedHasUnstarred = $derived(
-    [...conversations, ...searchResults]
+    [...conversations, ...searchResults, ...serverSearchResults]
       .filter((c) => checkedThreadIds.has(c.threadId))
       .some((c: any) => !c.isStarred)
   )
   const selectedHasUnread = $derived(
-    [...conversations, ...searchResults]
+    [...conversations, ...searchResults, ...serverSearchResults]
       .filter((c) => checkedThreadIds.has(c.threadId))
       .some((c: any) => (c.unreadCount || 0) > 0)
   )
@@ -708,6 +753,14 @@
     // For unified view, we don't need accountId/folderId
     if (!isUnifiedView && (!accountId || !folderId)) return
 
+    // A normal folder query has no ownership of an active Local or Server
+    // Search pane. Suppress it before setting loading or touching SQLite;
+    // generation/stale checks below remain as protection for loads that began
+    // before Search was activated.
+    if (isSearchMode) {
+      return
+    }
+
     // Prevent concurrent loads — defer instead of dropping
     if (loading) {
       pendingReload = true
@@ -715,7 +768,7 @@
     }
 
     loading = true
-    error = null
+    listError = null
 
     // Capture offset and generation at start — both may change during async operations
     const currentOffset = offset
@@ -745,7 +798,9 @@
       }
 
       // Discard stale result — folder was switched while this load was in-flight (#200)
-      if (generation !== loadGeneration) return
+      if (generation !== loadGeneration || isSearchMode) {
+        return
+      }
 
       if (currentOffset !== 0) {
         conversations = [...conversations, ...(convList || [])]
@@ -789,9 +844,11 @@
       totalCount = count
     } catch (err) {
       // Discard stale error — folder was switched while this load was in-flight (#200)
-      if (generation !== loadGeneration) return
+      if (generation !== loadGeneration || isSearchMode) {
+        return
+      }
       console.error('Failed to load messages:', err)
-      error = $_('viewer.failedToLoadMessages')
+      listError = $_('viewer.failedToLoadMessages')
     } finally {
       loading = false
       // Flush any deferred reload (from sync event during load or dialog guard).
@@ -818,7 +875,7 @@
     if (!isUnifiedView && (!accountId || !folderId)) return
 
     manualSyncing = true
-    error = null
+    listError = null
 
     try {
       const scrollTop = listContainerRef?.scrollTop ?? 0
@@ -840,7 +897,7 @@
       }
     } catch (err) {
       console.error('Failed to sync folder:', err)
-      error = $_('viewer.failedToLoadMessages')
+      listError = $_('viewer.failedToLoadMessages')
     } finally {
       manualSyncing = false
     }
@@ -870,7 +927,7 @@
   async function forceSyncFolder() {
     if (isUnifiedView || !accountId || !folderId) return
 
-    error = null
+    listError = null
 
     try {
       await ForceSyncFolder(accountId, folderId)
@@ -878,7 +935,7 @@
       await loadConversations()
     } catch (err) {
       console.error('Failed to force re-sync folder:', err)
-      error = $_('viewer.failedToLoadMessages')
+      listError = $_('viewer.failedToLoadMessages')
     }
   }
 
@@ -893,20 +950,31 @@
       serverSearchResults = []
       serverSearchCount = 0
       serverSearchTotalCount = 0
-      serverSearchMode = false
+      searchSource = 'local'
+      localSearchGeneration += 1
+      isSearching = false
+      serverSearchSelectionLocked = false
+      localSearchError = null
+      serverSearchError = null
+      serverSearchRequestState.cancel()
+      serverResultFetchGeneration += 1
       return
     }
 
-    // In server mode, don't auto-search locally — user will press Shift+Enter
-    if (serverSearchMode) return
+    if (searchSource === 'server') serverSearchError = null
+    else localSearchError = null
 
     searchDebounceTimer = setTimeout(() => {
-      performSearch()
+      if (searchSource === 'server') {
+        void performServerSearch()
+      } else {
+        void performSearch()
+      }
     }, 300)
   }
 
   // Perform the actual search
-  async function performSearch() {
+  async function performSearch(preserveSelection: boolean = false) {
     const query = searchQuery.trim()
     if (!query) {
       searchResults = []
@@ -915,12 +983,10 @@
       return
     }
 
-    // Don't start a new search if one is already in progress
-    if (isSearching) return
-
     isSearching = true
-    error = null
+    localSearchError = null
     searchOffset = 0  // Reset offset for new search
+    const generation = ++localSearchGeneration
 
     try {
       let results: any[] = []
@@ -938,29 +1004,24 @@
         ])
       }
 
+      if (generation !== localSearchGeneration || query !== searchQuery.trim() || searchSource !== 'local') {
+        return
+      }
       searchResults = results || []
       searchTotalCount = count
-      // Auto-select first search result for keyboard navigation.
-      if (searchResults.length > 0) {
+      // A list action chooses its own successor. Ordinary local searches
+      // retain the existing keyboard-navigation anchor behavior.
+      if (!preserveSelection && searchResults.length > 0) {
         selectedThreadId = searchResults[0].threadId
-      } else if (
-        accountStore.isOnline &&
-        filterMode === '' &&
-        query === searchQuery.trim() &&
-        (!isUnifiedView || folderId === 'inbox')
-      ) {
-        // The local database only contains the configured sync window.
-        // Transparently fall back to IMAP when it has no match so old mail
-        // can be found without requiring a separate "Search server" click.
-        serverSearchMode = true
-        lastServerQuery = query
-        await performServerSearch()
       }
     } catch (err) {
+      if (generation !== localSearchGeneration || query !== searchQuery.trim() || searchSource !== 'local') {
+        return
+      }
       console.error('Search failed:', err)
-      error = $_('viewer.failedToLoadMessages')
+      localSearchError = $_('viewer.failedToLoadMessages')
     } finally {
-      isSearching = false
+      if (generation === localSearchGeneration) isSearching = false
     }
   }
 
@@ -976,6 +1037,7 @@
     }
 
     isSearching = true
+    const generation = ++localSearchGeneration
     const newOffset = searchOffset + PAGE_SIZE
 
     try {
@@ -986,15 +1048,17 @@
         results = await SearchConversations(accountId, folderId, query, newOffset, PAGE_SIZE, filterMode)
       }
 
+      if (generation !== localSearchGeneration || query !== searchQuery.trim()) return
       if (results && results.length > 0) {
         searchResults = [...searchResults, ...results]
         searchOffset = newOffset
       }
     } catch (err) {
+      if (generation !== localSearchGeneration || query !== searchQuery.trim()) return
       console.error('Load more search results failed:', err)
-      error = $_('viewer.failedToLoadMessages')
+      localSearchError = $_('viewer.failedToLoadMessages')
     } finally {
-      isSearching = false
+      if (generation === localSearchGeneration) isSearching = false
     }
   }
 
@@ -1005,12 +1069,16 @@
     searchTotalCount = 0
     searchOffset = 0
     showSearch = false
-    serverSearchMode = false
+    searchSource = 'local'
+    localSearchGeneration += 1
+    isSearching = false
     serverSearchResults = []
     serverSearchCount = 0
     serverSearchTotalCount = 0
-    lastServerQuery = ''
     isServerSearching = false
+    serverSearchRequestState.cancel()
+    serverResultFetchGeneration += 1
+    serverSearchSelectionLocked = false
     if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
   }
 
@@ -1031,61 +1099,86 @@
     }
   }
 
-  // Smart toggle/re-search for server search (Shift+Enter)
+  // Shift+Enter is an explicit request to search the current query on IMAP.
   function handleShiftEnter() {
     const query = searchQuery.trim()
     if (!query) return
+    startServerSearch()
+  }
 
-    if (!serverSearchMode) {
-      // Local → server
-      serverSearchMode = true
-      lastServerQuery = query
-      performServerSearch()
+  function startServerSearch() {
+    if (!searchQuery.trim()) return
+    if (isUnifiedView && folderId !== 'inbox') {
+      toasts.error('Server search is currently available for unified Inbox only')
       return
     }
+    // An explicit action is never a toggle and never a no-op for a same
+    // query. It either shows the current server cache while the request runs
+    // or replaces it with the authoritative reply.
+    if (searchSource !== 'server') {
+      searchSource = 'server'
+      localSearchGeneration += 1
+      isSearching = false
+      loadGeneration += 1
+      loading = false
+      serverSearchSelectionLocked = false
+    }
+    void performServerSearch()
+  }
 
-    if (query !== lastServerQuery) {
-      // Server mode, query changed → re-search
-      lastServerQuery = query
-      performServerSearch()
+  function switchToLocalSearch() {
+    searchSource = 'local'
+    serverSearchRequestState.cancel()
+    serverResultFetchGeneration += 1
+    isServerSearching = false
+  }
+
+  function refreshActiveSearch() {
+    if (searchSource === 'server') {
+      void performServerSearch()
       return
     }
-
-    // Server mode, same query → toggle back to local
-    serverSearchMode = false
+    void performSearch(true)
   }
 
   // Perform IMAP server-side search. limit=0 means no limit (show all).
-  async function performServerSearch(limit: number = SERVER_SEARCH_LIMIT) {
+  async function performServerSearch(limit: number = SERVER_SEARCH_LIMIT, preserveSelection: boolean = false) {
     const query = searchQuery.trim()
     if (!query || (!isUnifiedView && (!accountId || !folderId))) return
 
-    // The IMAP fallback currently has only an inbox implementation. Keep local
-    // FTS search correct for every special view instead of silently searching
-    // inbox while the user is viewing a different unified folder.
+    // Unified IMAP search is scoped to Inbox; startServerSearch keeps the
+    // visible source local for unsupported unified folders.
     if (isUnifiedView && folderId !== 'inbox') {
       toasts.error('Server search is currently available for unified Inbox only')
       return
     }
 
     isServerSearching = true
-    error = null
+    serverSearchError = null
+    const requestGeneration = serverSearchRequestState.begin(query)
     try {
       const response = isUnifiedView
         ? await IMAPSearchUnifiedInbox(query, limit)
         : await IMAPSearchFolder(accountId!, folderId!, query, limit)
-      const items = (response?.results || []).map(adaptServerResult)
+      if (!serverSearchRequestState.accepts(requestGeneration, query) || searchSource !== 'server') {
+        return
+      }
+      const receivedItems = (response?.results || []).map(adaptServerResult)
+      const { results: items, suppressed } = serverSearchRequestState.filter(receivedItems)
       serverSearchResults = items
       serverSearchCount = items.length
-      serverSearchTotalCount = response?.totalCount ?? items.length
-      if (items.length > 0) {
+      serverSearchTotalCount = Math.max(items.length, (response?.totalCount ?? receivedItems.length) - suppressed)
+      if (!preserveSelection && !serverSearchSelectionLocked && items.length > 0) {
         selectedThreadId = items[0].threadId
       }
     } catch (err) {
+      if (!serverSearchRequestState.accepts(requestGeneration, query) || searchSource !== 'server') {
+        return
+      }
       console.error('Server search failed:', err)
-      error = $_('viewer.failedToLoadMessages')
+      serverSearchError = $_('viewer.failedToLoadMessages')
     } finally {
-      isServerSearching = false
+      if (serverSearchRequestState.accepts(requestGeneration, query)) isServerSearching = false
     }
   }
 
@@ -1122,13 +1215,27 @@
 
   // Check if we're in search mode with results
   const isSearchMode = $derived(showSearch && searchQuery.trim().length > 0)
+  const visibleError = $derived(
+    isSearchMode
+      ? (searchSource === 'server' ? serverSearchError : localSearchError)
+      : listError
+  )
   const canUseInboxDisplay = $derived(folderType === 'inbox' && !isSearchMode && !filterMode)
 
-  // Active list - either conversations, local search results, or server search results
+  // The list shared by rendering, keyboard navigation and action follow-up.
+  // Inbox cards deliberately omit collapsed and "Show all" rows, so using the
+  // raw backend list here would select a conversation the user cannot see.
   const activeList = $derived(
     isSearchMode
       ? (serverSearchMode ? serverSearchResults : searchResults)
-      : conversations
+      : canUseInboxDisplay
+        ? flattenVisibleInboxGroups(
+            inboxGroups(),
+            collapsedInboxGroups,
+            inboxDisplayMode === 'chronological',
+            visibleInboxConversations,
+          )
+        : conversations
   )
   const activeCount = $derived(
     isSearchMode
@@ -1214,7 +1321,7 @@
     const realAccountId = (isUnifiedView || isSearchMode) && conversation.accountId ? conversation.accountId : accountId!
 
     // If this is a non-local server result, fetch it first
-    if (serverSearchMode && conversation._isLocal === false && conversation._uid) {
+    if (searchSource === 'server' && conversation._isLocal === false && conversation._uid) {
       fetchAndSelectServerResult(conversation, realFolderId, realAccountId)
       return
     }
@@ -1223,8 +1330,14 @@
 
   // Fetch a non-local server result, save locally, update the result, then select
   async function fetchAndSelectServerResult(conversation: any, realFolderId: string, realAccountId: string) {
+    const generation = ++serverResultFetchGeneration
+    const query = searchQuery.trim()
+    const identity = serverSearchResultIdentity(conversation)
     try {
       const msg = await FetchServerMessage(realAccountId, realFolderId, conversation._uid)
+      if (generation !== serverResultFetchGeneration || searchSource !== 'server' || query !== searchQuery.trim() || !serverSearchResults.some(result => serverSearchResultIdentity(result) === identity)) {
+        return
+      }
       if (msg) {
         // Update the server result to be local
         const idx = serverSearchResults.findIndex(r => r._uid === conversation._uid)
@@ -1243,9 +1356,89 @@
         onConversationSelect?.(msg.threadId || msg.id, realFolderId, realAccountId)
       }
     } catch (err) {
+      if (generation !== serverResultFetchGeneration || searchSource !== 'server' || query !== searchQuery.trim()) {
+        return
+      }
+      if (isMissingServerSearchResult(err)) {
+        invalidateServerSearchResults([], [serverSearchResultIdentity(conversation)])
+        return
+      }
       console.error('Failed to fetch server message:', err)
-      error = $_('viewer.failedToLoadMessages')
+      serverSearchError = $_('viewer.failedToLoadMessages')
     }
+  }
+
+  function isMissingServerSearchResult(err: unknown): boolean {
+    return /message not found on server|folder not found/i.test(String(err))
+  }
+
+  function invalidateServerSearchResults(messageIds: Iterable<string>, identities: Iterable<string> = []) {
+    const affectedMessageIds = new Set(messageIds)
+    const affectedIdentities = new Set(identities)
+    const invalidatedIdentities = new Set(affectedIdentities)
+    for (const result of serverSearchResults) {
+      if (result.messageIds?.some((id: string) => affectedMessageIds.has(id))) {
+        invalidatedIdentities.add(serverSearchResultIdentity(result))
+      }
+    }
+    const selected = selectedThreadId
+    const selectedResult = selected
+      ? serverSearchResults.find(result => result.threadId === selected)
+      : undefined
+    if (selectedResult && (selectedResult.messageIds?.some((id: string) => affectedMessageIds.has(id)) || affectedIdentities.has(serverSearchResultIdentity(selectedResult)))) {
+      // Events are emitted during the backend action, before its promise and
+      // handleActionComplete resolve. Preserve the visual origin for the
+      // shared auto-select rule before removing the row.
+      pendingServerActionSelection ??= captureAutoSelectNext(activeList, selectedThreadId, checkedThreadIds)
+    }
+    const updated = removeServerSearchResults(serverSearchResults, affectedMessageIds, affectedIdentities)
+    for (let index = 0; index < serverSearchResults.length; index += 1) {
+      const result = serverSearchResults[index]
+      if (result.messageIds?.some((id: string) => affectedMessageIds.has(id)) || affectedIdentities.has(serverSearchResultIdentity(result))) {
+        for (const messageID of result.messageIds || []) removedSearchSnapshots.set(messageID, { source: 'server', query: searchQuery, result, index })
+      }
+    }
+    serverSearchRequestState.invalidate(invalidatedIdentities)
+    if (invalidatedIdentities.size > 0) serverResultFetchGeneration += 1
+    // A superseded request no longer owns this UI state. Its finally block is
+    // intentionally ignored by the generation guard, so clear its spinner now.
+    isServerSearching = false
+    serverSearchSelectionLocked = true
+    if (!updated.removed) return
+    serverSearchResults = updated.results as any[]
+    const counts = updateServerSearchCounts(serverSearchCount, serverSearchTotalCount, updated.removed)
+    serverSearchCount = counts.count
+    serverSearchTotalCount = counts.totalCount
+  }
+
+  function invalidateLocalSearchResults(messageIds: Iterable<string>, identities: Iterable<string> = []) {
+    const affectedMessageIds = new Set(messageIds)
+    const affectedIdentities = new Set(identities)
+    const selection = selectedThreadId
+      ? searchResults.find(result => result.threadId === selectedThreadId)
+      : undefined
+    if (selection && (selection.messageIds?.some((id: string) => affectedMessageIds.has(id)) || affectedIdentities.has(serverSearchResultIdentity(selection)))) {
+      pendingServerActionSelection ??= captureAutoSelectNext(activeList, selectedThreadId, checkedThreadIds)
+    }
+    const updated = removeServerSearchResults(searchResults, affectedMessageIds, affectedIdentities)
+    for (let index = 0; index < searchResults.length; index += 1) {
+      const result = searchResults[index]
+      if (result.messageIds?.some((id: string) => affectedMessageIds.has(id)) || affectedIdentities.has(serverSearchResultIdentity(result))) {
+        for (const messageID of result.messageIds || []) removedSearchSnapshots.set(messageID, { source: 'local', query: searchQuery, result, index })
+      }
+    }
+    if (!updated.removed) return
+    searchResults = updated.results as any[]
+    searchTotalCount = Math.max(searchResults.length, searchTotalCount - updated.removed)
+  }
+
+  function invalidateActiveSearchResults(messageIds: Iterable<string>, identities: Iterable<string> = []) {
+    if (!isSearchMode) return
+    if (searchSource === 'server') {
+      invalidateServerSearchResults(messageIds, identities)
+      return
+    }
+    invalidateLocalSearchResults(messageIds, identities)
   }
 
   function handleCheck(threadId: string, isChecked: boolean, index: number, event?: MouseEvent) {
@@ -1268,42 +1461,27 @@
   }
 
   export function handleActionComplete(autoSelectNext: boolean = false) {
+    // Capture before clearing the viewer: pendingReadOnLeave may immediately
+    // change the origin to read while this action reloads the list.
+    const selection = autoSelectNext
+      ? pendingServerActionSelection ?? captureAutoSelectNext(activeList, selectedThreadId, checkedThreadIds)
+      : null
+    pendingServerActionSelection = null
+    // The backend action has completed. Invalidate the current result before
+    // the viewer is cleared, even if runtime event delivery is delayed.
+    if (autoSelectNext && isSearchMode && selection?.originThreadId) {
+      const results = searchSource === 'server' ? serverSearchResults : searchResults
+      const origin = results.find(result => result.threadId === selection.originThreadId)
+      if (origin) invalidateActiveSearchResults([], [serverSearchResultIdentity(origin)])
+    }
     onRowActionComplete?.(autoSelectNext)
-    // Get target index BEFORE reload (for auto-select after delete/archive/spam)
-    // Uses earliest checked item's index so bulk delete doesn't overshoot
-    const currentIndex = getEarliestCheckedIndex()
     const scrollTop = listContainerRef?.scrollTop ?? 0
 
     // If in search mode, refresh search results instead of conversations
     if (isSearchMode) {
-      performSearch().then(() => {
-        // Restore scroll position
-        if (listContainerRef) {
-          requestAnimationFrame(() => {
-            listContainerRef!.scrollTop = scrollTop
-          })
-        }
-
-        // Auto-select next message if requested
-        if (autoSelectNext) {
-          const isNarrow = getLayoutMode() === 'narrow'
-          if (isNarrow) {
-            hideViewer()
-          }
-          if (currentIndex >= 0 && searchResults.length > 0) {
-            const newIndex = Math.min(currentIndex, searchResults.length - 1)
-            const conv = searchResults[newIndex]
-            if (conv) {
-              if (isNarrow) {
-                selectedThreadId = conv.threadId
-              }
-              if (!isNarrow) {
-                selectConversation(conv.threadId, newIndex)
-              }
-            }
-          }
-        }
-      })
+      // Mutations update the active result cache directly. They never issue a
+      // visible local or IMAP search; explicit Refresh owns reconciliation.
+      finishAutoSelectAfterSearchAction(selection, autoSelectNext, scrollTop)
       return
     }
 
@@ -1324,24 +1502,46 @@
       // After reload, the same index now points to what was the "next" message
       if (autoSelectNext) {
         const isNarrow = getLayoutMode() === 'narrow'
+        // The previous thread was removed. Keep the list anchor and viewer
+        // in agreement when there is no eligible visible successor.
+        selectedThreadId = null
         if (isNarrow) {
           hideViewer()
         }
-        if (currentIndex >= 0 && conversations.length > 0) {
-          const newIndex = Math.min(currentIndex, conversations.length - 1)
-          const conv = conversations[newIndex]
-          if (conv) {
-            if (isNarrow) {
-              selectedThreadId = conv.threadId
-            }
-            if (!isNarrow) {
-              selectConversation(conv.threadId, newIndex)
-            }
-          }
+        const conv = selection && findAutoSelectNext(activeList, selection)
+        if (conv) {
+          const newIndex = activeList.findIndex(item => item.threadId === conv.threadId)
+          if (newIndex >= 0) selectAutoSelectedConversation(conv as any, newIndex, isNarrow)
         }
       }
 
     })
+  }
+
+  function finishAutoSelectAfterSearchAction(
+    selection: ReturnType<typeof captureAutoSelectNext> | null,
+    autoSelectNext: boolean,
+    scrollTop: number,
+  ) {
+    if (listContainerRef) {
+      requestAnimationFrame(() => {
+        listContainerRef!.scrollTop = scrollTop
+      })
+    }
+    if (!autoSelectNext) return
+    const isNarrow = getLayoutMode() === 'narrow'
+    selectedThreadId = null
+    if (isNarrow) hideViewer()
+    const conversation = selection && findAutoSelectNext(activeList, selection)
+    if (!conversation) return
+    const index = activeList.findIndex(item => item.threadId === conversation.threadId)
+    if (index >= 0) selectAutoSelectedConversation(conversation as any, index, isNarrow)
+  }
+
+  function selectAutoSelectedConversation(conversation: any, index: number, isNarrow: boolean) {
+    selectedThreadId = conversation.threadId
+    scrollToIndex(index)
+    if (!isNarrow) selectConversation(conversation.threadId, index)
   }
 
   // Toggle sort order and persist to backend
@@ -1363,7 +1563,7 @@
     offset = 0
     if (isSearchMode) {
       searchOffset = 0
-      performSearch()
+      refreshActiveSearch()
       return
     }
     loadConversations()
@@ -1681,32 +1881,97 @@
   let showEmptyTrashConfirm = $state(false)
 
   async function handleMoveToInbox() {
+    const messageIds = [...selectedMessageIds]
     try {
-      await MoveToInbox(selectedMessageIds)
-      toasts.success($_('toast.movedTo', { values: { folder: $_('sidebar.inbox') } }), [{ label: $_('common.undo'), onClick: handleUndo }])
-      handleActionComplete(true)
+      await runMessageMutation(messageIds, async () => {
+        moveMutationInFlight = true
+        try {
+          const result = await MoveToInboxWithUndo(messageIds)
+          if (result.coalesced) return
+          const operationID = result.operationId
+          publishUndoOperationCreated(operationID, messageIds, 'move-to-inbox')
+          let toastId = ''
+          toastId = toasts.success($_('toast.movedTo', { values: { folder: $_('sidebar.inbox') } }), operationID ? [{ label: $_('common.undo'), onClick: () => handleUndo(toastId, operationID) }] : [])
+          handleActionComplete(true)
+        } finally {
+          moveMutationInFlight = false
+        }
+      })
     } catch (err) {
       console.error('Move to inbox failed:', err)
       toasts.error($_('toast.failedToMove'))
     }
   }
 
-  async function handleUndo() {
+  function associateSearchSnapshot(operationID: string, messageIds: string[]) {
+    if (!operationID) return
+    const snapshots: SearchMutationSnapshot[] = []
+    for (const messageID of messageIds) {
+      const snapshot = removedSearchSnapshots.get(messageID)
+      removedSearchSnapshots.delete(messageID)
+      if (snapshot) snapshots.push(snapshot)
+    }
+    if (snapshots.length > 0) {
+      undoSearchSnapshots.set(operationID, snapshots)
+    }
+  }
+
+  function handleUndoOperationCreated(event: CustomEvent<UndoOperationCreatedDetail>) {
+    associateSearchSnapshot(event.detail.operationId, event.detail.messageIds)
+  }
+
+  function handleUndoOperationCompleted(event: CustomEvent<string>) {
+    restoreSearchSnapshot(event.detail)
+  }
+
+  function restoreSearchSnapshot(operationID: string) {
+    const snapshots = undoSearchSnapshots.get(operationID) || []
+    undoSearchSnapshots.delete(operationID)
+    const eligible = snapshots.filter(snapshot => snapshot.source === searchSource && snapshot.query === searchQuery)
+    if (eligible.length === 0) return
+    let restoredCount = 0
+    if (searchSource === 'server') {
+      const restored = restoreSearchResults(serverSearchResults, eligible)
+      serverSearchRequestState.restore(eligible.map(snapshot => serverSearchResultIdentity(snapshot.result)))
+      serverSearchResults = restored.results
+      serverSearchCount += restored.restored
+      serverSearchTotalCount += restored.restored
+      restoredCount = restored.restored
+    } else {
+      const restored = restoreSearchResults(searchResults, eligible)
+      searchResults = restored.results
+      searchTotalCount += restored.restored
+      restoredCount = restored.restored
+    }
+  }
+
+  async function handleUndo(toastId: string, operationID: string) {
+    if (undoInFlight.has(operationID)) return
+    undoInFlight.add(operationID)
+    if (toastId) toasts.replace(toastId, { actions: [], duration: 20_000 })
     try {
-      const description = await Undo()
-      toasts.success($_('toast.undone', { values: { description } }))
+      const description = await UndoOperation(operationID)
+      publishUndoOperationCompleted(operationID)
+      const message = $_('toast.undone', { values: { description } })
+      toasts.replace(toastId, { message, type: 'success', actions: [], duration: 4000 })
     } catch (err) {
       console.error('Undo failed:', err)
-      toasts.error($_('toast.undoFailed'))
+      toasts.replace(toastId, { message: $_('toast.undoFailed'), type: 'error', actions: [], duration: 6000 })
+    } finally {
+      undoInFlight.delete(operationID)
     }
   }
 
   async function handleConfirmPermanentDelete() {
+    const messageIds = [...pendingDeleteIds]
     try {
-      await DeletePermanently(pendingDeleteIds)
-      toasts.success($_('toast.permanentlyDeleted'))
-      handleActionComplete(true)
-      clearChecked()
+      const execution = await runMessageMutation(messageIds, async () => {
+        await DeletePermanently(messageIds)
+        toasts.success($_('toast.permanentlyDeleted'))
+        handleActionComplete(true)
+        clearChecked()
+      })
+      if (!execution.started) return
     } catch (err) {
       console.error('Permanent delete failed:', err)
       toasts.error($_('toast.failedToDelete'))
@@ -1741,18 +2006,39 @@
       showDeleteConfirm = true
       return
     }
-    Trash(messageIds)
-      .then((movedToTrash) => {
-        const toastMsg = movedToTrash ? $_('toast.movedToTrash') : $_('toast.deletedFromFolder')
-        const actions = movedToTrash ? [{ label: $_('common.undo'), onClick: handleUndo }] : []
-        toasts.success(toastMsg, actions)
+    void runMessageMutation(messageIds, async () => {
+      moveMutationInFlight = true
+      try {
+        const result = await TrashWithUndo(messageIds)
+        if (result.coalesced) return
+        const toastMsg = result.movedToTrash ? $_('toast.movedToTrash') : $_('toast.deletedFromFolder')
+        const operationID = result.operationId
+        publishUndoOperationCreated(operationID, messageIds, 'trash')
+        let toastId = ''
+        const actions = operationID ? [{ label: $_('common.undo'), onClick: () => handleUndo(toastId, operationID) }] : []
+        toastId = toasts.success(toastMsg, actions)
         handleActionComplete(true)
         clearChecked()
-      })
-      .catch((err) => {
+      } finally {
+        moveMutationInFlight = false
+      }
+    }).catch((err) => {
         console.error('Delete failed:', err)
         toasts.error($_('toast.failedToDelete'))
       })
+  }
+
+  async function handleBulkArchive() {
+    const messageIds = [...selectedMessageIds]
+    moveMutationInFlight = true
+    try {
+      await onBulkArchive?.(messageIds)
+    } catch (err) {
+      // The owner callback retains its existing error/toast handling.
+      console.error('Bulk archive failed:', err)
+    } finally {
+      moveMutationInFlight = false
+    }
   }
 
   // Scroll to a specific index in the list
@@ -1794,26 +2080,31 @@
             oninput={handleSearchInput}
             onkeydown={handleSearchKeydown}
           />
-          {#if serverSearchMode}
-            <button
-              onclick={() => { serverSearchMode = false }}
-              class="px-1.5 py-0.5 text-[10px] font-medium bg-primary/20 text-primary rounded-full flex-shrink-0 hover:bg-primary/30 transition-colors"
-              title={$_('search.localSearch')}
+          {#if searchQuery.trim()}
+            <span
+              class="px-1.5 py-0.5 text-[10px] font-medium bg-primary/20 text-primary rounded-full flex-shrink-0"
+              aria-label={searchSource === 'server' ? $_('search.server') : $_('search.localSearch')}
             >
-              {$_('search.server')}
-            </button>
-          {/if}
-          {#if searchQuery || isSearching || isServerSearching}
-            <button
-              onclick={clearSearch}
-              class="p-0.5 hover:bg-muted-foreground/20 rounded"
-              title={$_('messageList.clearSearch')}
-            >
-              {#if isSearching || isServerSearching}
-                <Icon icon="mdi:loading" class="w-4 h-4 animate-spin text-muted-foreground" />
+              {#if searchSource === 'server'}
+                {#if isServerSearching}
+                  <Icon icon="mdi:loading" class="mr-1 inline h-3 w-3 animate-spin" />{$_('search.serverSearching')}
+                {:else}
+                  {$_('search.server')}
+                {/if}
               {:else}
-                <Icon icon="mdi:close" class="w-4 h-4 text-muted-foreground" />
+                {$_('search.localSearch')}
               {/if}
+            </span>
+          {/if}
+          {#if searchQuery.trim()}
+            <button
+              class="p-0.5 hover:bg-muted-foreground/20 rounded"
+              title="Refresh search"
+              aria-label="Refresh search"
+              onclick={refreshActiveSearch}
+              disabled={isSearching || isServerSearching}
+            >
+              <Icon icon="mdi:refresh" class="w-4 h-4 text-muted-foreground" />
             </button>
           {/if}
         </div>
@@ -1842,7 +2133,7 @@
       {/if}
     </div>
     <div class="flex items-center gap-1">
-      {#if syncing}
+      {#if !isSearchMode && syncing}
         <!-- While syncing, show spinning icon that cancels on click -->
         <button
           class="p-2 rounded-md hover:bg-muted transition-colors"
@@ -1854,7 +2145,7 @@
             class="w-5 h-5 text-muted-foreground animate-spin"
           />
         </button>
-      {:else}
+      {:else if !isSearchMode}
         <!-- Dropdown menu for sync options -->
         <DropdownMenu.Root>
           <DropdownMenu.Trigger
@@ -1901,6 +2192,7 @@
       <button
         class="p-2 rounded-md hover:bg-muted transition-colors {showSearch ? 'bg-muted' : ''}"
         title={showSearch ? $_('common.close') : $_('common.search')}
+        aria-label={showSearch ? $_('messageList.clearSearch') : $_('common.search')}
         onclick={toggleSearch}
       >
         <Icon icon={showSearch ? 'mdi:close' : 'mdi:magnify'} class="w-5 h-5 text-muted-foreground" />
@@ -2059,11 +2351,11 @@
         <Icon icon="mdi:check-circle-outline" class="h-4 w-4" /> {$_('common.done')}
       </button>
       {#if folderType === 'trash'}
-        <button class="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm hover:bg-muted" onclick={handleMoveToInbox}>
+        <button class="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm hover:bg-muted" onclick={handleMoveToInbox} disabled={moveMutationInFlight}>
           <Icon icon="mdi:inbox-arrow-down-outline" class="h-4 w-4" /> {$_('viewer.moveToInbox')}
         </button>
       {/if}
-      <button class="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" onclick={() => onBulkArchive?.(selectedMessageIds)}>
+      <button class="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" onclick={handleBulkArchive} disabled={moveMutationInFlight}>
         <Icon icon="mdi:archive-outline" class="h-4 w-4" /> {$_('viewer.archive')}
       </button>
       <button class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title={$_('common.close')} aria-label={$_('common.close')} onclick={clearSelection}>
@@ -2108,7 +2400,7 @@
     <div
       class={cn(
         'message-list-card',
-        !loading && !error && !isSearchMode && conversations.length === 0 &&
+        !loading && !visibleError && !isSearchMode && conversations.length === 0 &&
           'flex items-center justify-center'
       )}
       class:inbox-category-list={canUseInboxDisplay && conversations.length > 0 && inboxDisplayMode === 'categories'}
@@ -2118,13 +2410,13 @@
       <div class="flex items-center justify-center h-32">
         <Icon icon="mdi:loading" class="w-6 h-6 animate-spin text-muted-foreground" />
       </div>
-    {:else if error}
+    {:else if visibleError}
       <div class="flex flex-col items-center justify-center h-32 text-center px-4">
         <Icon icon="mdi:alert-circle-outline" class="w-8 h-8 text-destructive mb-2" />
-        <p class="text-sm text-destructive">{error}</p>
+        <p class="text-sm text-destructive">{visibleError}</p>
         <button
           class="mt-2 text-sm text-primary hover:underline"
-          onclick={() => isSearchMode ? performSearch() : loadConversations()}
+          onclick={() => isSearchMode ? refreshActiveSearch() : loadConversations()}
         >
           {$_('messageList.tryAgain')}
         </button>
@@ -2143,12 +2435,13 @@
             <span class="text-xs text-muted-foreground">{$_('search.serverSearching')}</span>
           {/if}
         </div>
-      {:else if serverSearchMode}
+      {:else if searchSource === 'server'}
         <!-- Server search results -->
         {#if serverSearchResults.length === 0}
           <div class="flex flex-col items-center justify-center h-full text-muted-foreground">
             <Icon icon="mdi:magnify" class="w-12 h-12 mb-2" />
-            <p>{$_('messageList.noResults', { values: { query: searchQuery } })}</p>
+            <p>No results found on server for "{searchQuery}"</p>
+            <button class="mt-2 text-sm text-primary hover:underline" onclick={switchToLocalSearch}>{$_('search.localSearch')}</button>
           </div>
         {:else}
           <!-- Server results header -->
@@ -2160,10 +2453,8 @@
                 {$_('search.serverResults', { values: { count: serverSearchCount, query: searchQuery } })}
               {/if}
             </span>
-            <button
-              class="text-xs text-primary hover:underline"
-              onclick={() => { serverSearchMode = false }}
-            >
+            <span class="text-xs font-medium bg-primary/20 text-primary rounded-full px-1.5 py-0.5">{$_('search.server')}</span>
+            <button class="text-xs text-primary hover:underline" onclick={switchToLocalSearch}>
               {$_('search.localSearch')}
             </button>
           </div>
@@ -2218,7 +2509,7 @@
           {#if isUnifiedView || (accountId && folderId)}
             <button
               class="mt-2 text-sm text-primary hover:underline"
-              onclick={() => { serverSearchMode = true; lastServerQuery = searchQuery.trim(); performServerSearch() }}
+              onclick={startServerSearch}
             >
               {$_('search.searchOnServer')}
             </button>
@@ -2231,7 +2522,7 @@
           {#if isUnifiedView || (accountId && folderId)}
             <button
               class="text-xs text-primary hover:underline"
-              onclick={() => { serverSearchMode = true; lastServerQuery = searchQuery.trim(); performServerSearch() }}
+              onclick={startServerSearch}
             >
               {$_('search.serverSearch')}
             </button>
@@ -2342,7 +2633,7 @@
               {#each visibleInboxConversations(group) as conv (conv.threadId + '-' + ((conv as any).accountId || accountId || ''))}
                 {@const convAccountId = (conv as any).accountId || accountId}
                 {@const convFolderId = (conv as any).folderId || folderId}
-                {@const conversationIndex = conversations.findIndex(item => item.threadId === conv.threadId && ((item as any).accountId || accountId) === convAccountId)}
+                {@const conversationIndex = activeList.findIndex(item => item.threadId === conv.threadId && ((item as any).accountId || accountId) === convAccountId)}
                 <ConversationRow
                   bind:this={rowRefs[conv.threadId]}
                   conversation={conv}
