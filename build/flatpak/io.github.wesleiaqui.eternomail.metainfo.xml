@@ -309,6 +309,17 @@
   </provides>
 
   <releases>
+    <release version="0.3.8" date="2026-09-10">
+      <description>
+        <ul>
+          <li>Improved Undo reliability for message moves and concurrent synchronization</li>
+          <li>Preserved search results and message selection across move and Undo actions</li>
+          <li>Improved unread-message handling by marking messages read when leaving the conversation</li>
+          <li>Redesigned the composer into a compact, detachable writing window</li>
+          <li>Improved message action reliability during rapid Archive, Trash, Spam and Move operations</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.7" date="2026-09-07">
       <description>
         <ul>
