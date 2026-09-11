@@ -3,6 +3,11 @@
 
 set -e
 
+if [ "$(id -u)" = 0 ]; then
+    echo "Run this build as the normal workspace owner, not root." >&2
+    exit 1
+fi
+
 cd "$(dirname "$0")/../.."
 
 echo "=== Eterno Mail Flatpak Docker Builder ==="
@@ -40,10 +45,15 @@ VERSION=$(git describe --tags --exact-match 2>/dev/null || echo "dev")
 
 # Run the build in Docker
 docker run --rm \
+    --user "$(stat -c %u .):$(stat -c %g .)" \
+    --env HOME=/tmp/build-home \
     -v "$(pwd):/workspace" \
     -w /workspace \
     aerion-flatpak-builder \
     bash -c "
+        test \"\$(id -u):\$(id -g)\" = \"\$(stat -c %u:%g /workspace)\" || exit 1
+        test \"\$(id -u)\" != 0 || exit 1
+        mkdir -p /tmp/build-home
         echo 'Installing frontend dependencies...'
         cd frontend && npm ci && cd ..
 

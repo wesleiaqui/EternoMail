@@ -30,8 +30,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Wails CLI
-RUN go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
-ENV PATH="/root/go/bin:${PATH}"
+RUN GOBIN=/usr/local/bin go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
 
 # Set working directory
 WORKDIR /build
@@ -41,3 +40,7 @@ ENV APPIMAGE_EXTRACT_AND_RUN=1
 
 # Build script
 CMD ["bash", "-c", "make appimage && cp build/bin/Aerion-*.AppImage /output/"]
+
+# Safe default; the launcher overrides this with the workspace owner.
+ENV HOME=/tmp
+USER 1000:1000

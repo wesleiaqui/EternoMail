@@ -27,8 +27,7 @@ RUN wget -qO- https://nodejs.org/dist/v20.11.0/node-v20.11.0-linux-x64.tar.xz | 
 ENV PATH="/usr/local/go/bin:/usr/local/node-v20.11.0-linux-x64/bin:${PATH}"
 
 # Install Wails CLI
-RUN go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
-ENV PATH="/root/go/bin:${PATH}"
+RUN GOBIN=/usr/local/bin go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
 
 # Add Flathub repository
 RUN flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
@@ -39,3 +38,7 @@ RUN flatpak install -y flathub \
     org.gnome.Sdk//47
 
 WORKDIR /workspace
+
+# Safe default; the launcher overrides this with the workspace owner.
+ENV HOME=/tmp
+USER 1000:1000

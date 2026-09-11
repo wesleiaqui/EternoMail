@@ -7,6 +7,11 @@
 
 set -e
 
+if [ "$(id -u)" = 0 ]; then
+    echo "Run this build as the normal workspace owner, not root." >&2
+    exit 1
+fi
+
 if [ -z "$1" ]; then
     echo "Usage: $0 <version-tag>"
     echo "Example: $0 v0.1.18"
@@ -24,6 +29,12 @@ echo "Version: $VERSION"
 echo "Repo: $REPO_DIR"
 echo ""
 
+# Install system dependencies in the image, without a workspace mount.
+docker build -t anclo-flatpak-test - <<'DOCKERFILE'
+FROM ubuntu:noble-20260113
+RUN apt-get update && apt-get install -y flatpak flatpak-builder wget git
+DOCKERFILE
+
 # Create a test script to run inside the container
 cat > /tmp/flatpak-build-test-inner.sh <<'INNERSCRIPT'
 #!/bin/bash
@@ -31,9 +42,9 @@ set -e
 
 VERSION="$1"
 
-echo "Installing dependencies..."
-apt-get update
-apt-get install -y flatpak flatpak-builder wget git
+test "$(id -u):$(id -g)" = "$(stat -c %u:%g /workspace)"
+test "$(id -u)" != 0
+mkdir -p "$HOME"
 
 echo ""
 echo "Adding Flathub repository..."
@@ -103,10 +114,12 @@ echo "Starting Docker container (ubuntu:24.04)..."
 echo ""
 
 docker run --rm -it --privileged \
+  --user "$(stat -c %u "$REPO_DIR"):$(stat -c %g "$REPO_DIR")" \
+  --env HOME=/tmp/build-home \
   -v "$REPO_DIR:/workspace" \
   -v /tmp/flatpak-build-test-inner.sh:/build-script.sh \
   -w /workspace \
-  ubuntu:noble-20260113 \
+  anclo-flatpak-test \
   /build-script.sh "$VERSION"
 
 echo ""
