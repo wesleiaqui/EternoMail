@@ -9,8 +9,13 @@ This directory contains files for building and distributing Eterno Mail as a Fla
 - `build-flatpak.sh` - Dev build script (uses `-dev.yml`)
 - `build-local.sh` - From-source local build script (uses flathub manifest)
 - `test-build.sh` - CI build test script (Docker container)
+- `manage-repository.sh` - Restores and consolidates the persistent update repository
+- `eternomail.flatpakrepo` - Remote descriptor published by the release workflow
 - `build-flatpak-docker.sh`, `Dockerfile` - Docker-based build
 - `flathub/` - Flathub submission files (from-source manifests + vendored deps)
+
+See [`../../docs/FLATPAK-REPOSITORY.md`](../../docs/FLATPAK-REPOSITORY.md) for
+the update-repository architecture, GitHub Pages setup and migration commands.
 
 ## Prerequisites
 

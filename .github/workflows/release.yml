@@ -4,6 +4,15 @@ on:
   push:
     tags: 'v*'
 
+# Tagged releases are serialized so each run restores the repository deployed by
+# the preceding run before publishing its own commits.
+concurrency:
+  group: ${{ github.repository }}-release-publication
+  cancel-in-progress: false
+
+env:
+  FLATPAK_REPOSITORY_URL: https://app.weslleys.com/flatpak/repo/
+
 jobs:
   build:
     strategy:
@@ -31,6 +40,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+
+      - name: Validate release version
+        if: matrix.os == 'ubuntu-22.04'
+        run: ./scripts/version.sh check "${{ github.ref_name }}"
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -196,9 +209,7 @@ jobs:
             arch: aarch64
     runs-on: ${{ matrix.os }}
     permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -227,7 +238,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
+          sudo apt-get install -y curl flatpak flatpak-builder ostree
 
       - name: Add Flathub repository
         run: flatpak remote-add --if-not-exists --user flathub https://flathub.org/repo/flathub.flatpakrepo
@@ -244,6 +255,12 @@ jobs:
         run: |
           rm -rf .flatpak-builder
 
+      # Keeping the old refs here makes the new per-architecture commit a child
+      # of the currently published commit instead of starting a disconnected repo.
+      - name: Restore published Flatpak repository
+        run: |
+          build/flatpak/manage-repository.sh restore repo "$FLATPAK_REPOSITORY_URL"
+
       - name: Build Flatpak (like Flathub would)
         run: |
           flatpak-builder --user --force-clean --repo=repo \
@@ -251,16 +268,124 @@ jobs:
             build-dir build/flatpak/flathub/io.github.wesleiaqui.eternomail.yml
 
           mkdir -p build/bin
-          flatpak build-bundle repo build/bin/Eterno-Mail-${{ github.ref_name }}-${{ matrix.arch }}.flatpak io.github.wesleiaqui.eternomail
-
-      - name: Upload Flatpak to release
-        run: |
-          gh release upload ${{ github.ref_name }} \
+          flatpak build-bundle \
+            --arch=${{ matrix.arch }} \
+            --repo-url="$FLATPAK_REPOSITORY_URL" \
+            --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
+            repo \
             build/bin/Eterno-Mail-${{ github.ref_name }}-${{ matrix.arch }}.flatpak \
+            io.github.wesleiaqui.eternomail \
+            master
+
+      # Both architectures are uploaded to the release only after both matrix
+      # builds have succeeded and their repositories have been consolidated.
+      - name: Upload Flatpak bundle artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: flatpak-bundle-${{ matrix.arch }}
+          path: build/bin/Eterno-Mail-${{ github.ref_name }}-${{ matrix.arch }}.flatpak
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload Flatpak repository artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: flatpak-repository-${{ matrix.arch }}
+          path: repo/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 1
+
+  deploy-flatpak-repository:
+    needs: build-flatpak
+    if: ${{ !contains(github.ref_name, '-build') && !contains(github.ref_name, '-test') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      # Preserve the existing project website and add the Flatpak repository
+      # below /flatpak instead of replacing the Pages content.
+      - name: Build existing Pages site
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./
+          destination: ./_site
+
+      - name: Install repository tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl flatpak ostree
+
+      - name: Download x86_64 Flatpak repository
+        uses: actions/download-artifact@v7
+        with:
+          name: flatpak-repository-x86_64
+          path: ${{ runner.temp }}/flatpak-repositories/x86_64
+
+      - name: Download aarch64 Flatpak repository
+        uses: actions/download-artifact@v7
+        with:
+          name: flatpak-repository-aarch64
+          path: ${{ runner.temp }}/flatpak-repositories/aarch64
+
+      - name: Download x86_64 Flatpak bundle
+        uses: actions/download-artifact@v7
+        with:
+          name: flatpak-bundle-x86_64
+          path: ${{ runner.temp }}/flatpak-bundles
+
+      - name: Download aarch64 Flatpak bundle
+        uses: actions/download-artifact@v7
+        with:
+          name: flatpak-bundle-aarch64
+          path: ${{ runner.temp }}/flatpak-bundles
+
+      - name: Consolidate Flatpak repository
+        run: |
+          mkdir -p _site/flatpak
+          build/flatpak/manage-repository.sh restore \
+            _site/flatpak/repo "$FLATPAK_REPOSITORY_URL"
+          build/flatpak/manage-repository.sh merge \
+            _site/flatpak/repo \
+            "${{ runner.temp }}/flatpak-repositories/x86_64" \
+            x86_64
+          build/flatpak/manage-repository.sh merge \
+            _site/flatpak/repo \
+            "${{ runner.temp }}/flatpak-repositories/aarch64" \
+            aarch64
+          build/flatpak/manage-repository.sh finalize _site/flatpak/repo
+          install -m 644 build/flatpak/eternomail.flatpakrepo _site/flatpak/
+
+      - name: Upload both Flatpak bundles to GitHub Release
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            "${{ runner.temp }}"/flatpak-bundles/Eterno-Mail-*.flatpak \
             --clobber
 
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ./_site
+
+      - name: Deploy Flatpak repository to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
   commit-manifest:
-    needs: build-flatpak
+    needs: deploy-flatpak-repository
     if: ${{ !contains(github.ref_name, '-build') && !contains(github.ref_name, '-test') }}
     runs-on: ubuntu-24.04
     permissions:
