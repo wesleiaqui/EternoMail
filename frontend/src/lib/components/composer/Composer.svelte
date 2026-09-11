@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy, getContext, setContext, untrack } from 'svelte'
+  import { onMount, onDestroy, getContext, setContext, untrack, tick } from 'svelte'
   import Icon from '@iconify/svelte'
   import type { Editor } from '@tiptap/core'
   import { createComposerEditor } from './composerEditor'
@@ -84,9 +84,12 @@
     onTitleChange?: (to: string, subject: string) => void
     /** Whether remote images were loaded in the viewer before reply/forward */
     imagesLoaded?: boolean
+    /** Compact visual treatment for the inline composer. */
+    variant?: 'default' | 'compact'
   }
 
-  let { accountId, initialMessage = null, draftId = null, messageId = null, onClose, onSent, api: propApi, isDetached = false, closeRequested = false, onCloseHandled, onTitleChange, imagesLoaded = false }: Props = $props()
+  let { accountId, initialMessage = null, draftId = null, messageId = null, onClose, onSent, api: propApi, isDetached = false, closeRequested = false, onCloseHandled, onTitleChange, imagesLoaded = false, variant = 'default' }: Props = $props()
+  const isCompact = $derived(!isDetached && variant === 'compact')
 
   // Get API from context, props, or create default main window API
   const contextApi = getContext<ComposerApi | undefined>(COMPOSER_API_KEY)
@@ -191,6 +194,7 @@
   // Component refs
   let toolbarRef = $state<{ focus: () => void } | null>(null)
   let toInputRef = $state<{ focus: () => void } | null>(null)
+  let showFormatting = $state(false)
 
   // Draft auto-save state
   let currentDraftId = $state<string | null>(null)
@@ -1533,7 +1537,12 @@
     // Alt+T to focus toolbar (hint mode)
     if (e.key === 't' && e.altKey) {
       e.preventDefault()
-      toolbarRef?.focus()
+      if (isCompact && !showFormatting) {
+        showFormatting = true
+        void tick().then(() => toolbarRef?.focus())
+      } else {
+        toolbarRef?.focus()
+      }
     }
     // Alt+A to attach files
     if (e.key === 'a' && e.altKey) {
@@ -1863,7 +1872,7 @@
 <svelte:window on:keydown={handleKeyDown} />
 
 <div
-  class="flex flex-col h-full bg-background relative"
+  class="flex flex-col h-full bg-background relative {isCompact ? 'composer-compact rounded-xl border border-border' : ''}"
   class:ring-2={isDraggingOver}
   class:ring-primary={isDraggingOver}
   class:ring-inset={isDraggingOver}
@@ -1874,21 +1883,27 @@
   aria-label={$_('aria.emailComposer')}
 >
   <!-- Header -->
-  <div class="flex items-center justify-between px-4 py-3 border-b border-border">
-    <div class="flex items-center gap-3">
-      <h2 class="text-lg font-semibold">
-        {#if getDisplayMode() === 'new'}
-          {$_('composer.newMessage')}
-        {:else if getDisplayMode() === 'reply'}
-          {$_('composer.reply')}
-        {:else if getDisplayMode() === 'reply-all'}
-          {$_('composer.replyAll')}
-        {:else if getDisplayMode() === 'forward'}
-          {$_('composer.forward')}
-        {/if}
-      </h2>
+  <div class="flex items-center justify-between gap-3 border-b border-border shrink-0 {isCompact ? 'px-6 h-[52px]' : 'px-4 py-3'}">
+    <div class="flex items-center gap-3 min-w-0 flex-1">
+      {#if isCompact}
+        <label for="composer-subject" class="sr-only">{$_('composer.subject')}</label>
+        <input id="composer-subject" bind:value={subject} type="text" placeholder={$_('composer.subject')} class="w-full min-w-0 bg-transparent text-lg font-medium placeholder:text-muted-foreground focus:outline-none" />
+      {/if}
+      {#if !isCompact}
+        <h2 class="text-lg font-semibold">
+          {#if getDisplayMode() === 'new'}
+            {$_('composer.newMessage')}
+          {:else if getDisplayMode() === 'reply'}
+            {$_('composer.reply')}
+          {:else if getDisplayMode() === 'reply-all'}
+            {$_('composer.replyAll')}
+          {:else if getDisplayMode() === 'forward'}
+            {$_('composer.forward')}
+          {/if}
+        </h2>
+      {/if}
       <!-- Draft status indicator -->
-      {#if draftStatusLabel}
+      {#if draftStatusLabel && !isCompact}
         <span class="text-xs text-muted-foreground flex items-center gap-1">
           <Icon icon={draftStatusIcon} class="w-3 h-3 {draftStatusColor} {saveStatus === 'saving' ? 'animate-spin' : ''}" />
           {draftStatusLabel}
@@ -1903,6 +1918,7 @@
           disabled={poppingOut || sending}
           class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           title={$_('composer.openInNewWindow')}
+          aria-label={$_('composer.openInNewWindow')}
         >
           {#if poppingOut}
             <Icon icon="mdi:loading" class="w-4 h-4 animate-spin" />
@@ -1914,11 +1930,18 @@
       <button
         onclick={handleClose}
         disabled={poppingOut}
-        class="px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors disabled:opacity-50"
+        class="{isCompact ? 'p-1.5' : 'px-3 py-1.5 text-sm'} text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors disabled:opacity-50"
+        title={$_('composer.close')}
+        aria-label={$_('composer.close')}
       >
-        {$_('composer.close')}
+        {#if isCompact}
+          <Icon icon="mdi:close" class="w-4 h-4" />
+        {:else}
+          {$_('composer.close')}
+        {/if}
       </button>
-      <button
+      {#if !isCompact}
+        <button
         onclick={handleSend}
         disabled={sending || poppingOut || toRecipients.length === 0}
         class="px-4 py-1.5 text-sm font-medium text-primary-foreground bg-primary hover:bg-primary/90 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
@@ -1933,14 +1956,16 @@
           <Icon icon="mdi:send" class="w-4 h-4" />
           {$_('composer.send')}
         {/if}
-      </button>
+        </button>
+      {/if}
     </div>
   </div>
 
   <!-- Compose form -->
   <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
     <!-- From -->
-    <div class="flex items-center gap-2 px-4 py-2 border-b border-border">
+    {#if !isCompact}
+      <div class="flex items-center gap-2 px-4 py-2 border-b border-border">
       <span class="text-sm text-muted-foreground w-16">{$_('composer.from')}:</span>
       <div class="flex-1">
         <Select.Root value={selectedIdentityId} onValueChange={handleIdentityChange}>
@@ -1983,16 +2008,18 @@
           </Select.Content>
         </Select.Root>
       </div>
-    </div>
+      </div>
+    {/if}
 
     <!-- To -->
-    <div class="flex items-start gap-2 px-4 py-2 border-b border-border">
-      <span class="text-sm text-muted-foreground w-16 pt-1">{$_('composer.to')}:</span>
+    <div class="flex items-start gap-2 px-4 py-2 border-b border-border {isCompact ? 'compact-recipient-row' : ''}">
+      <span class="text-sm text-muted-foreground {isCompact ? 'w-10' : 'w-16'} pt-1">{$_('composer.to')}:</span>
       <div class="flex-1">
         <RecipientInput
           bind:this={toInputRef}
           bind:recipients={toRecipients}
           placeholder={$_('composer.addRecipients')}
+          compact={isCompact}
         />
       </div>
       {#if !showCc || !showBcc}
@@ -2009,12 +2036,13 @@
 
     <!-- Cc -->
     {#if showCc}
-      <div class="flex items-start gap-2 px-4 py-2 border-b border-border">
-        <span class="text-sm text-muted-foreground w-16 pt-1">{$_('composer.cc')}:</span>
+      <div class="flex items-start gap-2 px-4 py-2 border-b border-border {isCompact ? 'compact-recipient-row' : ''}">
+        <span class="text-sm text-muted-foreground {isCompact ? 'w-10' : 'w-16'} pt-1">{$_('composer.cc')}:</span>
         <div class="flex-1">
           <RecipientInput
             bind:recipients={ccRecipients}
             placeholder={$_('composer.addCcRecipients')}
+            compact={isCompact}
           />
         </div>
       </div>
@@ -2022,19 +2050,21 @@
 
     <!-- Bcc -->
     {#if showBcc}
-      <div class="flex items-start gap-2 px-4 py-2 border-b border-border">
-        <span class="text-sm text-muted-foreground w-16 pt-1">{$_('composer.bcc')}:</span>
+      <div class="flex items-start gap-2 px-4 py-2 border-b border-border {isCompact ? 'compact-recipient-row' : ''}">
+        <span class="text-sm text-muted-foreground {isCompact ? 'w-10' : 'w-16'} pt-1">{$_('composer.bcc')}:</span>
         <div class="flex-1">
           <RecipientInput
             bind:recipients={bccRecipients}
             placeholder={$_('composer.addBccRecipients')}
+            compact={isCompact}
           />
         </div>
       </div>
     {/if}
 
     <!-- Subject -->
-    <div class="flex items-center gap-2 px-4 py-2 border-b border-border">
+    {#if !isCompact}
+      <div class="flex items-center gap-2 px-4 py-2 border-b border-border">
       <label for="composer-subject" class="text-sm text-muted-foreground w-16">{$_('composer.subject')}:</label>
       <input
         id="composer-subject"
@@ -2050,7 +2080,8 @@
           }
         }}
       />
-    </div>
+      </div>
+    {/if}
 
     <!-- Security toggles -->
     {#if showPGPSignOption || showPGPEncryptOption}
@@ -2114,13 +2145,17 @@
 
     <!-- Toolbar - extracted to separate component for performance -->
     <!-- Alt+T to focus toolbar, Tab skips it -->
-    <EditorToolbar
-      bind:this={toolbarRef}
-      {editor}
-      {isPlainTextMode}
-      onTogglePlainText={togglePlainTextMode}
-      onInsertImage={insertImage}
-    />
+    {#if !isCompact}
+      <div class={isCompact ? 'composer-formatting-panel' : ''}>
+        <EditorToolbar
+          bind:this={toolbarRef}
+          {editor}
+          {isPlainTextMode}
+          onTogglePlainText={togglePlainTextMode}
+          onInsertImage={insertImage}
+        />
+      </div>
+    {/if}
 
     <!-- Remote images blocked bar -->
     {#if composerImagesBlocked}
@@ -2137,7 +2172,7 @@
     {/if}
 
     <!-- Editor -->
-    <div class="flex-1 overflow-auto {forceLightComposer ? 'composer-body--light' : 'bg-white dark:bg-zinc-900'}">
+    <div class="flex-1 min-h-0 overflow-auto {forceLightComposer ? 'composer-body--light' : isCompact ? 'bg-background text-foreground' : 'bg-white dark:bg-zinc-900'} {isCompact ? 'composer-compact-editor' : ''}">
       <!-- Both surfaces stay mounted; we toggle visibility instead of using
            {#if}/{:else}. Unmounting the editor <div> orphaned the TipTap
            instance, so a later switch back to rich text wrote into a dead
@@ -2154,7 +2189,7 @@
     </div>
 
     <!-- Attachments List -->
-    <ComposerAttachmentList {attachments} onRemove={removeAttachment} />
+    <ComposerAttachmentList {attachments} onRemove={removeAttachment} compact={isCompact} />
 
     <!-- Missing S/MIME cert warning -->
     {#if encryptMessage && missingCertRecipients.length > 0}
@@ -2176,21 +2211,83 @@
       </div>
     {/if}
 
+    {#if isCompact && showFormatting}
+      <div class={isCompact ? 'composer-formatting-panel' : ''}>
+        <EditorToolbar
+          bind:this={toolbarRef}
+          {editor}
+          {isPlainTextMode}
+          onTogglePlainText={togglePlainTextMode}
+          onInsertImage={insertImage}
+        />
+      </div>
+    {/if}
+
     <!-- Footer -->
-    <div class="flex items-center gap-2 px-4 py-2 border-t border-border text-sm text-muted-foreground">
+    <div class="flex items-center gap-2 px-4 py-2 border-t border-border text-sm text-muted-foreground {isCompact ? 'compact-footer' : ''}">
       <button
         onclick={handleAttachFiles}
-        class="flex items-center gap-1 hover:text-foreground transition-colors"
+        class="{isCompact ? 'p-1.5 rounded-md' : 'flex items-center gap-1'} hover:text-foreground hover:bg-muted transition-colors"
+        title={$_('composer.attachFiles')}
+        aria-label={$_('composer.attachFiles')}
       >
         <Icon icon="mdi:attachment" class="w-4 h-4" />
-        {$_('composer.attachFiles')}
+        {#if !isCompact}{$_('composer.attachFiles')}{/if}
       </button>
-      {#if attachments.length > 0}
+      {#if isCompact}
+        <button
+          onclick={() => showFormatting = !showFormatting}
+          class="shrink-0 p-1.5 rounded-md hover:bg-muted hover:text-foreground transition-colors"
+          aria-expanded={showFormatting}
+          aria-label={$_('aria.textFormatting')}
+          title={$_('aria.textFormatting')}
+        >
+          <Icon icon="mdi:format-text" class="w-4 h-4" />
+        </button>
+      {/if}
+      {#if attachments.length > 0 && !isCompact}
         <span class="text-xs">
           {$_('composer.filesAttached', { values: { count: attachments.length } })}
         </span>
       {/if}
+      {#if isCompact && draftStatusLabel}
+        <span role="status" title={draftStatusLabel} aria-label={draftStatusLabel}>
+          <Icon icon={draftStatusIcon} class="w-3.5 h-3.5 {draftStatusColor} {saveStatus === 'saving' ? 'animate-spin' : ''}" />
+        </span>
+      {/if}
       <div class="flex-1"></div>
+      {#if isCompact}
+        <div class="max-w-[180px] min-w-0">
+          <Select.Root value={selectedIdentityId} onValueChange={handleIdentityChange}>
+            <Select.Trigger class="h-7 max-w-full px-1 border-0 bg-transparent shadow-none focus:ring-0 text-xs text-muted-foreground">
+              <Select.Value placeholder={$_('composer.selectIdentity')}>
+                {#if selectedIdentityId}
+                  {@const identity = identities.find(i => i.id === selectedIdentityId)}
+                  {#if identity}
+                    <span class="truncate" title={identity.email}>{identity.name || identity.email}</span>
+                  {/if}
+                {/if}
+              </Select.Value>
+            </Select.Trigger>
+            <Select.Content>
+              {#if allGroups.length > 0}
+                {#each allGroups as group (group.account?.id)}
+                  <Select.Group>
+                    <Select.GroupHeading class="px-2 py-1 text-xs font-medium text-muted-foreground">{group.account?.name || group.account?.email}</Select.GroupHeading>
+                    {#each group.identities || [] as identity (identity.id)}
+                      <Select.Item value={identity.id} label="{identity.name} <{identity.email}>" />
+                    {/each}
+                  </Select.Group>
+                {/each}
+              {:else}
+                {#each identities as identity (identity.id)}
+                  <Select.Item value={identity.id} label="{identity.name} <{identity.email}>" />
+                {/each}
+              {/if}
+            </Select.Content>
+          </Select.Root>
+        </div>
+      {/if}
       {#if showReadReceiptOption}
         <label class="flex items-center gap-1.5 text-xs cursor-pointer hover:text-foreground transition-colors">
           <input
@@ -2201,7 +2298,18 @@
           {$_('composer.requestReadReceipt')}
         </label>
       {/if}
-      <span class="text-xs">{$_('composer.ctrlEnterToSend')}</span>
+      {#if !isCompact}<span class="text-xs">{$_('composer.ctrlEnterToSend')}</span>{/if}
+      {#if isCompact}
+        <button
+          onclick={handleSend}
+          disabled={sending || poppingOut || toRecipients.length === 0}
+          class="w-9 h-9 shrink-0 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title={`${$_('composer.send')} — ${$_('composer.ctrlEnterToSend')}`}
+          aria-label={$_('composer.send')}
+        >
+          <Icon icon={sending || poppingOut ? 'mdi:loading' : 'mdi:send'} class="w-4 h-4 {sending || poppingOut ? 'animate-spin' : ''}" />
+        </button>
+      {/if}
     </div>
   </div>
 
@@ -2288,6 +2396,32 @@
   :global(.composer-editor p) {
     margin: 0;
     line-height: 1.25;
+  }
+
+  .composer-formatting-panel {
+    animation: formatting-slide-in 150ms ease-out;
+  }
+
+  .composer-compact-editor :global(.composer-editor),
+  .composer-compact-editor :global(.ProseMirror) {
+    min-height: 13rem;
+    padding: 1.5rem 1.75rem;
+  }
+
+  @keyframes formatting-slide-in {
+    from { opacity: 0; transform: translateY(0.25rem); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .compact-recipient-row { padding: 10px 24px; min-height: 46px; flex-shrink: 0; }
+  .compact-recipient-row > div { min-width: 0; }
+  .compact-recipient-row > span { flex-shrink: 0; width: auto; }
+  .compact-footer { min-height: 56px; padding: 8px 20px; flex-shrink: 0; flex-wrap: wrap; }
+  .composer-formatting-panel { flex-shrink: 0; max-height: 112px; overflow: auto; }
+  .composer-formatting-panel :global([role="toolbar"]) { flex-wrap: wrap; border-top: 1px solid hsl(var(--border)); border-bottom: 0; }
+  .composer-compact-editor :global(.ProseMirror p.is-editor-empty:first-child::before) { color: hsl(var(--muted-foreground)); }
+  @media (prefers-reduced-motion: reduce) {
+    .composer-formatting-panel { animation: none; }
   }
 
   :global(.ProseMirror p.is-editor-empty:first-child::before) {

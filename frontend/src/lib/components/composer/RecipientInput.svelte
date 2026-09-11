@@ -15,11 +15,13 @@
   interface Props {
     recipients: smtp.Address[]
     placeholder?: string
+    /** Tighter field treatment for the inline compact composer. */
+    compact?: boolean
     /** Optional: search contacts function override */
     searchContactsFn?: (query: string, limit: number) => Promise<contact.Contact[]>
   }
 
-  let { recipients = $bindable([]), placeholder = 'Add recipients...', searchContactsFn }: Props = $props()
+  let { recipients = $bindable([]), placeholder = 'Add recipients...', searchContactsFn, compact = false }: Props = $props()
 
   nextInstanceId += 1
   const instanceId = nextInstanceId
@@ -288,7 +290,7 @@
 </script>
 
 <div bind:this={containerElement} class="relative">
-  <div class="flex flex-wrap items-center gap-1">
+  <div class="flex flex-wrap items-center gap-1 {compact ? 'min-h-6' : ''}">
     <!-- Recipient chips -->
     {#each recipients as recipient, index (recipient.address + ':' + index)}
       <div
@@ -300,7 +302,7 @@
         ondragover={(e) => handleDragOver(e, index)}
         ondragleave={handleDragLeave}
         ondrop={(e) => handleDrop(e, index)}
-        class="flex items-center gap-1 px-2 py-0.5 bg-muted rounded-md text-sm transition-opacity cursor-grab {draggingIndex === index ? 'opacity-50' : ''} {dropTargetIndex === index ? 'border-l-2 border-primary -ml-0.5 pl-[7px]' : ''}"
+        class="flex items-center gap-1 px-2 py-0.5 bg-muted rounded-md text-sm transition-opacity cursor-grab {compact ? 'rounded-lg' : ''} {draggingIndex === index ? 'opacity-50' : ''} {dropTargetIndex === index ? 'border-l-2 border-primary -ml-0.5 pl-[7px]' : ''}"
       >
         <span>
           {#if recipient.name}
@@ -334,7 +336,7 @@
       ondrop={(e) => handleDrop(e, recipients.length)}
       type="email"
       {placeholder}
-      class="flex-1 min-w-[150px] bg-transparent text-sm focus:outline-none {dropTargetIndex === recipients.length ? 'border-l-2 border-primary' : ''}"
+      class="flex-1 min-w-[120px] bg-transparent text-sm focus:outline-none {dropTargetIndex === recipients.length ? 'border-l-2 border-primary' : ''}"
     />
   </div>
 

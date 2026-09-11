@@ -1837,6 +1837,19 @@
       />
     </main>
     </div>
+    {#if showComposer && composerAccountId}
+      <div class="compact-composer-host" style:--composer-left-clearance={getLayoutMode() === 'full' ? `${(sidebarCollapsed ? 56 : sidebarWidth) + 80}px` : '16px'}>
+        <Composer
+          accountId={composerAccountId}
+          initialMessage={composerInitialMessage}
+          draftId={composerDraftId}
+          imagesLoaded={composerImagesLoaded}
+          onClose={closeComposer}
+          onSent={closeComposer}
+          variant="compact"
+        />
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -1856,22 +1869,6 @@
 
 <!-- Per-extension settings dialog dispatcher (Settings → Extensions → Edit) -->
 <ExtensionSettingsDialog />
-
-<!-- Composer Modal -->
-{#if showComposer && composerAccountId}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-    <div class="{getLayoutMode() === 'narrow' ? 'w-full h-full bg-background overflow-hidden' : 'w-full max-w-3xl h-[80vh] bg-background rounded-lg shadow-xl overflow-hidden'}">
-      <Composer
-        accountId={composerAccountId}
-        initialMessage={composerInitialMessage}
-        draftId={composerDraftId}
-        imagesLoaded={composerImagesLoaded}
-        onClose={closeComposer}
-        onSent={closeComposer}
-      />
-    </div>
-  </div>
-{/if}
 
 <!-- Shutdown Overlay -->
 {#if isShuttingDown}
@@ -1935,3 +1932,29 @@
     </AlertDialog.Footer>
   </AlertDialog.Content>
 </AlertDialog.Root>
+
+<style>
+  .compact-composer-host {
+    position: absolute;
+    z-index: 40;
+    right: 20px;
+    bottom: 20px;
+    width: min(720px, calc(100% - var(--composer-left-clearance) - 20px));
+    height: min(540px, calc(100% - 40px));
+    min-width: 0;
+    overflow: hidden;
+    border-radius: 12px;
+    box-shadow: 0 8px 28px rgb(0 0 0 / 18%);
+  }
+  @media (min-width: 800px) and (max-width: 1199px) {
+    .compact-composer-host { width: min(600px, calc(100% - var(--composer-left-clearance) - 20px)); }
+  }
+  @media (max-width: 799px) {
+    .compact-composer-host {
+      right: 8px;
+      bottom: 8px;
+      width: calc(100% - 16px);
+      height: min(540px, calc(100% - 16px));
+    }
+  }
+</style>
