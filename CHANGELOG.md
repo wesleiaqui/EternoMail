@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Virtual folders can now sync their real member folders' headers and flags from the message-list refresh button. Sync All includes every folder by default, while retaining an explicit subscribed-folder preference; this lets selected Gmail labels populate without downloading message bodies or attachments. Fixed virtual-folder date filtering and ordering for stored Go timestamps and allowed messages with a missing subject to be listed and searched.
+
 - Added virtual folder search facets and editable criteria (P-006): select Include/Exclude mode for member folders, filter by read/unread, starred/unstarred, replied/unreplied, and date window (7 days, 30 days, 90 days, 1 year, or all time). Removed hardcoded unread-only filtering so virtual folders display all matching conversations consistently across lists and search.
 - Default sync period is now All Messages (0 days, P-028): routine sync is lightweight and headers-only, so the default sync window across OAuth, settings dialogs, and new accounts no longer truncates history to 180 days. Added database Migration 52 to upgrade existing accounts with legacy defaults to All Messages, and added visual spinning feedback on manual sync.
 - Added pinned folders: right-click any folder (or the unified inbox account row) and choose Pin to sidebar. Pinned folders appear in a Pinned section for one-click access, across accounts, and stay pinned after restart.

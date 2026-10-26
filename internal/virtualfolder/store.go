@@ -263,11 +263,11 @@ func (s *Store) UnreadCounts() (map[string]int, error) {
 	cutoff90d := time.Now().UTC().Add(-90 * 24 * time.Hour).Unix()
 	cutoff1y := time.Now().UTC().AddDate(-1, 0, 0).Unix()
 
-	rows, err := s.db.Query(`
+	rows, err := s.db.Query(fmt.Sprintf(`
 		WITH scoped_messages AS (
 			SELECT v.id AS virtual_folder_id, v.read_status, v.reply_status, v.star_status, v.date_window,
 				m.account_id, COALESCE(m.thread_id, m.id) AS conversation_id,
-				m.is_read, m.is_answered, m.is_starred, unixepoch(m.date) AS date_epoch
+				m.is_read, m.is_answered, m.is_starred, %s AS date_epoch
 			FROM virtual_folders v
 			CROSS JOIN folders f
 			INNER JOIN accounts a ON a.id = f.account_id AND a.enabled = 1
@@ -306,7 +306,7 @@ func (s *Store) UnreadCounts() (map[string]int, error) {
 		FROM virtual_folders v
 		LEFT JOIN virtual_folder_conversations c ON c.virtual_folder_id = v.id
 		GROUP BY v.id
-	`, cutoff7d, cutoff30d, cutoff90d, cutoff1y)
+	`, database.UnixEpochSQL("m.date")), cutoff7d, cutoff30d, cutoff90d, cutoff1y)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query virtual folder unread counts: %w", err)
 	}

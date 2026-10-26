@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/hkdb/aerion/internal/database"
 )
 
 // VirtualFolderCriteria holds the message-state and date criteria for one saved view.
@@ -176,14 +178,14 @@ func virtualFolderConversationCTE(folderIDs []string) (string, []any, error) {
 			WHERE m.folder_id IN (%s)
 		), virtual_folder_conversations AS (
 			SELECT account_id, conversation_id,
-				MIN(subject) AS subject,
+				COALESCE(MIN(subject), '') AS subject,
 				MAX(snippet) AS snippet,
 				MIN(from_name) AS from_name,
 				COUNT(*) AS message_count,
 				SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) AS unread_count,
 				MAX(CASE WHEN has_attachments = 1 THEN 1 ELSE 0 END) AS has_attachments,
 				MAX(CASE WHEN is_starred = 1 THEN 1 ELSE 0 END) AS is_starred,
-				MAX(unixepoch(date)) AS latest_date_epoch,
+				MAX(%s) AS latest_date_epoch,
 				GROUP_CONCAT(id) AS message_ids,
 				MAX(CASE WHEN smime_encrypted = 1 OR pgp_encrypted = 1 THEN 1 ELSE 0 END) AS is_encrypted,
 				MAX(inbox_category) AS inbox_category,
@@ -197,7 +199,7 @@ func virtualFolderConversationCTE(folderIDs []string) (string, []any, error) {
 			FROM scoped_messages
 			GROUP BY account_id, conversation_id
 		)
-	`, placeholders)
+	`, placeholders, database.UnixEpochSQL("date"))
 	args := make([]any, len(folderIDs))
 	for index, folderID := range folderIDs {
 		args[index] = folderID
@@ -207,7 +209,7 @@ func virtualFolderConversationCTE(folderIDs []string) (string, []any, error) {
 
 func virtualFolderMatchesCTE(ftsQuery string) (string, []any) {
 	return `, virtual_folder_matches AS (
-		SELECT sm.account_id, sm.conversation_id, MIN(sm.subject) AS subject,
+		SELECT sm.account_id, sm.conversation_id, COALESCE(MIN(sm.subject), '') AS subject,
 			MAX(sm.snippet) AS snippet, MIN(sm.from_name) AS from_name
 		FROM scoped_messages sm
 		INNER JOIN messages_fts ON messages_fts.rowid = sm.row_id

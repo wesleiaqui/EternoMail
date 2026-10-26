@@ -1458,6 +1458,10 @@ export function SyncUnifiedFolder(arg1) {
   return window['go']['app']['App']['SyncUnifiedFolder'](arg1);
 }
 
+export function SyncVirtualFolder(arg1) {
+  return window['go']['app']['App']['SyncVirtualFolder'](arg1);
+}
+
 export function TestCardDAVConnection(arg1, arg2, arg3) {
   return window['go']['app']['App']['TestCardDAVConnection'](arg1, arg2, arg3);
 }

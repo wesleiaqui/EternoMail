@@ -2,10 +2,56 @@ package app
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/hkdb/aerion/internal/message"
 	"github.com/hkdb/aerion/internal/virtualfolder"
 )
+
+// SyncVirtualFolder refreshes the real member folders' headers and flags. Full
+// message bodies and attachments remain on demand, as with ordinary SyncFolder.
+func (a *App) SyncVirtualFolder(virtualFolderID string) error {
+	vf, err := a.virtualFolderStore.Get(virtualFolderID)
+	if err != nil {
+		return fmt.Errorf("failed to get virtual folder: %w", err)
+	}
+	if vf == nil {
+		return fmt.Errorf("virtual folder not found: %s", virtualFolderID)
+	}
+	folderIDs, err := a.virtualFolderStore.QueryFolderIDs(vf)
+	if err != nil {
+		return fmt.Errorf("failed to resolve virtual folder members: %w", err)
+	}
+	var syncErrors []string
+	for _, folderID := range folderIDs {
+		if err := a.ctx.Err(); err != nil {
+			return err
+		}
+		member, err := a.folderStore.Get(folderID)
+		if err != nil {
+			syncErrors = append(syncErrors, fmt.Sprintf("%s: %v", folderID, err))
+			continue
+		}
+		if member == nil {
+			continue
+		}
+		acct, err := a.accountStore.Get(member.AccountID)
+		if err != nil {
+			syncErrors = append(syncErrors, fmt.Sprintf("%s: %v", folderID, err))
+			continue
+		}
+		if acct == nil || !acct.Enabled {
+			continue
+		}
+		if err := a.SyncFolder(member.AccountID, member.ID); err != nil {
+			syncErrors = append(syncErrors, fmt.Sprintf("%s: %v", member.Path, err))
+		}
+	}
+	if len(syncErrors) > 0 {
+		return fmt.Errorf("some virtual folder members failed to sync: %s", strings.Join(syncErrors, "; "))
+	}
+	return nil
+}
 
 // ============================================================================
 // Virtual Folder API - Exposed to frontend via Wails bindings

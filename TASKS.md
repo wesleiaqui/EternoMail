@@ -34,6 +34,7 @@ These tasks started in the primary checkout before `AGENTS.md` established workt
 
 | ID | Effort | Task | Owner / branch / worktree | Status |
 | --- | --- | --- | --- | --- |
+| P-037 | Medium | Diagnose and fix saved virtual folders showing no messages with selected folders, Any status filters, and All time. Reproduce the failing boundary before changing behavior; keep list/count/search criteria consistent. | GPT-6.1 Sol (medium) / `agent/P-037-virtual-folder-empty` / `/private/tmp/postilaatikko-p037-virtual-folder-empty` | In progress |
 | P-011 | Large | Critical E2EE Send Later: durable queue, pair clients with the Mac Studio helper, encrypt queued messages to the helper public key, and keep the private key and sending credentials on the helper. Relay stores ciphertext only; helper decrypts at delivery time. Include retry/recovery, cancellation, status, and missed due-time handling. Hosted decryption/sending is out of scope. | GPT-6.1-Sol (medium) / `agent/p011-e2ee-scheduled-send` / `/private/tmp/postilaatikko-p011` | In progress; checkpoint `7be5fe3` |
 | P-014 | Medium | Add local cross-account filters for routing incoming messages. | opencode (Qwen3.8-27B) / `feat/p014-cross-account-filters` / `../postilaatikko-p014` | Done (v0.3.13) |
 | P-012 | Easy | ICS event handoff (Easy): create an ICS event from structured date/time details and open it for review/import. | OpenCode / `agent/p012-ics-event-handoff` / worktree `../postilaatikko-p012` | Done (v0.3.13) |

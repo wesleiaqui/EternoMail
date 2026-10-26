@@ -18,7 +18,7 @@
   import { cn } from '$lib/utils'
   import { Button } from '$lib/components/ui/button'
   // @ts-ignore - wailsjs bindings
-  import { MoveToInboxWithUndo, GetConversations, GetConversationCount, SyncFolder, ForceSyncFolder, CancelFolderSync, SetMessageListSortOrder, GetUnifiedFolderConversations, GetUnifiedFolderCount, SearchConversations, SearchUnifiedFolder, GetSearchCount, GetSearchCountUnifiedFolder, SyncUnifiedFolder, EmptyUnifiedTrash, GetFTSIndexStatus, IsFTSIndexing, TrashWithUndo, DeletePermanently, EmptyTrash, UndoOperation, IMAPSearchFolder, IMAPSearchUnifiedInbox, FetchServerMessage, GetVirtualFolderConversations, GetVirtualFolderCount, SearchVirtualFolder, GetVirtualFolderSearchCount } from '../../../../wailsjs/go/app/App'
+  import { MoveToInboxWithUndo, GetConversations, GetConversationCount, SyncFolder, SyncVirtualFolder, ForceSyncFolder, CancelFolderSync, SetMessageListSortOrder, GetUnifiedFolderConversations, GetUnifiedFolderCount, SearchConversations, SearchUnifiedFolder, GetSearchCount, GetSearchCountUnifiedFolder, SyncUnifiedFolder, EmptyUnifiedTrash, GetFTSIndexStatus, IsFTSIndexing, TrashWithUndo, DeletePermanently, EmptyTrash, UndoOperation, IMAPSearchFolder, IMAPSearchUnifiedInbox, FetchServerMessage, GetVirtualFolderConversations, GetVirtualFolderCount, SearchVirtualFolder, GetVirtualFolderSearchCount } from '../../../../wailsjs/go/app/App'
   import { toasts } from '$lib/stores/toast'
   import { withShortcut, ariaKeyshortcuts, formatShortcut } from '$lib/keyboard/format'
   import ShortcutHint from '$lib/components/shortcuts/ShortcutHint.svelte'
@@ -733,7 +733,10 @@
   const isVirtualFolderView = $derived(folderType === 'virtual' && !!folderId)
 
   function virtualFolderContains(realFolderId: string): boolean {
-    return virtualFoldersStore.folders.find((item) => item.id === folderId)?.folderIds.includes(realFolderId) ?? false
+    const current = virtualFoldersStore.folders.find((item) => item.id === folderId)
+    if (!current) return false
+    const selected = current.folderIds.includes(realFolderId)
+    return current.folderMode === 'exclude' ? !selected : selected
   }
 
   const folderTypesByID = $derived.by(() => {
@@ -919,13 +922,10 @@
       return
     }
 
-    if (isVirtualFolderView) {
-      await loadConversations(Math.max(conversations.length, PAGE_SIZE))
-      return
-    }
+    if (!isUnifiedView && !isVirtualFolderView && (!accountId || !folderId)) return
 
-    if (!isUnifiedView && (!accountId || !folderId)) return
-
+    const syncingAccountId = accountId
+    const syncingFolderId = folderId
     manualSyncing = true
     listError = null
 
@@ -933,12 +933,15 @@
       const scrollTop = listContainerRef?.scrollTop ?? 0
       const totalLoaded = Math.max(conversations.length, PAGE_SIZE)
 
-      if (isUnifiedView) {
+      if (isVirtualFolderView) {
+        await SyncVirtualFolder(folderId!)
+      } else if (isUnifiedView) {
         await SyncUnifiedFolder(folderId!)
       } else {
         await SyncFolder(accountId!, folderId!)
       }
 
+      if (accountId !== syncingAccountId || folderId !== syncingFolderId) return
       offset = 0
       await loadConversations(totalLoaded)
 
@@ -949,7 +952,9 @@
       }
     } catch (err) {
       console.error('Failed to sync folder:', err)
-      listError = $_('viewer.failedToLoadMessages')
+      if (accountId === syncingAccountId && folderId === syncingFolderId) {
+        listError = $_('viewer.failedToLoadMessages')
+      }
     } finally {
       manualSyncing = false
     }
@@ -2180,6 +2185,18 @@
       {/if}
     </div>
     <div class="flex items-center gap-1">
+      {#if isVirtualFolderView && !isSearchMode}
+        <button
+          class="p-2 rounded-md hover:bg-muted transition-colors disabled:opacity-50"
+          title={withShortcut($_('messageList.syncFolder'), 'app.syncFolder')}
+          aria-label={$_('messageList.syncFolder')}
+          aria-keyshortcuts={ariaKeyshortcuts('app.syncFolder')}
+          disabled={manualSyncing || loading}
+          onclick={syncFolder}
+        >
+          <Icon icon="mdi:refresh" class="w-5 h-5 text-muted-foreground {manualSyncing ? 'animate-spin' : ''}" />
+        </button>
+      {/if}
       {#if !isVirtualFolderView && !isSearchMode && (syncing || manualSyncing)}
         <!-- While syncing, show spinning icon that cancels on click -->
         <button

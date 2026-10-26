@@ -751,6 +751,8 @@ export function SyncPendingDrafts(arg1:string):Promise<void>;
 
 export function SyncUnifiedFolder(arg1:string):Promise<void>;
 
+export function SyncVirtualFolder(arg1:string):Promise<void>;
+
 export function TestCardDAVConnection(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function TestConnection(arg1:account.AccountConfig):Promise<app.ConnectionTestResult>;

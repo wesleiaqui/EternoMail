@@ -240,7 +240,8 @@ func (a *App) ForceSyncFolder(accountID, folderID string) error {
 
 // SyncAccountComplete performs a comprehensive sync of an account:
 // 1. Syncs folder list from IMAP
-// 2. Syncs core folders' messages (Inbox, Drafts, Sent, Trash)
+// 2. Syncs headers and flags for every folder by default, or the explicitly
+// selected subscribed folders when folder management is enabled.
 func (a *App) SyncAccountComplete(accountID string) error {
 	log := logging.WithComponent("app.masterSync")
 	startedAt := time.Now()
@@ -322,38 +323,18 @@ func (a *App) SyncAccountComplete(accountID string) error {
 }
 
 // getSyncFolders returns the folders that should be automatically synced for an account.
-// Three-way logic:
-//   - SyncAllFolders=true → all folders
-//   - SyncFoldersEnabled=true → subscribed folders (respects IMAP subscriptions)
-//   - default → core only (Inbox, Drafts, Sent, Trash)
+// Every folder is included by default because routine sync downloads only
+// headers and flags. An explicit managed-folder preference still restricts the
+// scope to IMAP subscriptions unless SyncAllFolders is enabled.
 func (a *App) getSyncFolders(accountID string) ([]*folder.Folder, error) {
 	acct, err := a.accountStore.Get(accountID)
 	if err != nil {
 		return nil, err
 	}
-	if acct.SyncAllFolders {
-		return a.folderStore.List(accountID)
-	}
-	if acct.SyncFoldersEnabled {
+	if acct.SyncFoldersEnabled && !acct.SyncAllFolders {
 		return a.folderStore.ListSubscribed(accountID)
 	}
-	return a.getCoreOnlyFolders(accountID)
-}
-
-// getCoreOnlyFolders returns core folders (Inbox, Drafts, Sent, Trash) — the default sync behavior.
-func (a *App) getCoreOnlyFolders(accountID string) ([]*folder.Folder, error) {
-	coreTypes := []folder.Type{folder.TypeInbox, folder.TypeDrafts, folder.TypeSent, folder.TypeTrash}
-	var folders []*folder.Folder
-	for _, ft := range coreTypes {
-		f, err := a.folderStore.GetByType(accountID, ft)
-		if err != nil {
-			continue
-		}
-		if f != nil {
-			folders = append(folders, f)
-		}
-	}
-	return folders, nil
+	return a.folderStore.List(accountID)
 }
 
 // SyncAllComplete syncs all accounts completely, then syncs CardDAV sources.
