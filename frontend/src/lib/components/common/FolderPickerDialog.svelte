@@ -7,6 +7,7 @@
   import { GetFolderTree } from '../../../../wailsjs/go/app/App'
   import { _ } from '$lib/i18n'
   import { filterFolders, type FolderChoice } from '$lib/sidebar/folderSearch'
+  import { prioritizeSourceAccount } from './folderPickerOrder'
 
   interface PickerNode {
     folder: FolderChoice
@@ -65,19 +66,20 @@
     foldersLoading = true
     folderTrees = {}
     failedAccounts = []
-    const jobs = accounts.map(async item => ({ account: item, nodes: mapTree(await GetFolderTree(item.id), item) }))
+    const jobs = orderedAccounts.map(async item => ({ account: item, nodes: mapTree(await GetFolderTree(item.id), item) }))
     Promise.allSettled(jobs).then(results => {
       if (current !== generation || !open) return
       folderTrees = Object.fromEntries(results.flatMap(result => result.status === 'fulfilled' ? [[result.value.account.id, result.value.nodes]] : []))
-      failedAccounts = results.flatMap((result, index) => result.status === 'rejected' ? [accounts[index].name] : [])
+      failedAccounts = results.flatMap((result, index) => result.status === 'rejected' ? [orderedAccounts[index].name] : [])
       foldersLoading = false
     })
     const timer = setTimeout(() => { active = true; searchInput?.focus() }, 0)
     return () => clearTimeout(timer)
   })
 
-  const sourceAccount = $derived(accounts.find(item => item.id === initialAccountId))
-  const allFolders = $derived(accounts.flatMap(item => flatten(folderTrees[item.id] || [])))
+  const orderedAccounts = $derived(prioritizeSourceAccount(accounts, initialAccountId))
+  const sourceAccount = $derived(orderedAccounts.find(item => item.id === initialAccountId))
+  const allFolders = $derived(orderedAccounts.flatMap(item => flatten(folderTrees[item.id] || [])))
   const matchingFolders = $derived(filterFolders(allFolders.filter(item => item.id !== excludeFolderId && (selectedAccountId === 'all' || item.accountId === selectedAccountId)), searchQuery))
   const matchingIDs = $derived(new Set(matchingFolders.map(item => item.id)))
   const visibleRows = $derived(buildRows())
@@ -105,7 +107,7 @@
   function buildRows(): PickerRow[] {
     const rows: PickerRow[] = []
     const searching = searchQuery.trim().length > 0
-    for (const acc of accounts) {
+    for (const acc of orderedAccounts) {
       if (selectedAccountId !== 'all' && selectedAccountId !== acc.id) continue
       const accountRows: PickerRow[] = []
       appendRows(accountRows, folderTrees[acc.id] || [], acc, 0, searching)
@@ -164,7 +166,7 @@
         <Select.Trigger><Select.Value>{selectedAccountId === 'all' ? $_('search.allAccounts') : accounts.find(item => item.id === selectedAccountId)?.name}</Select.Value></Select.Trigger>
         <Select.Content>
           <Select.Item value="all" label={$_('search.allAccounts')} />
-          {#each accounts as item (item.id)}<Select.Item value={item.id} label={item.name || item.email} />{/each}
+          {#each orderedAccounts as item (item.id)}<Select.Item value={item.id} label={item.name || item.email} />{/each}
         </Select.Content>
       </Select.Root>
     {/if}
