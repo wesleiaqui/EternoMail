@@ -218,29 +218,83 @@ func removeStyleTags(html string) string {
 	return styleTagRe.ReplaceAllString(html, "")
 }
 
+// containsFoldASCII checks if s contains substr (which must be lowercase ASCII)
+// ignoring ASCII case, without allocating temporary strings.
+func containsFoldASCII(s, substr string) bool {
+	if len(substr) == 0 {
+		return true
+	}
+	if len(s) < len(substr) {
+		return false
+	}
+	limit := len(s) - len(substr)
+	sub0 := substr[0]
+	for i := 0; i <= limit; i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		if c == sub0 {
+			match := true
+			for j := 1; j < len(substr); j++ {
+				cj := s[i+j]
+				if cj >= 'A' && cj <= 'Z' {
+					cj += 'a' - 'A'
+				}
+				if cj != substr[j] {
+					match = false
+					break
+				}
+			}
+			if match {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // BlockRemoteImages replaces remote image sources with a placeholder SVG,
 // storing the original URL in a data-original-src attribute for later restoration.
 func BlockRemoteImages(html string) string {
+	// Performance optimization: Pre-check for presence of relevant tokens before running
+	// expensive regex passes. If none are present, return the original string immediately
+	// with 0 allocations.
+	hasImg := containsFoldASCII(html, "<img")
+	hasURL := containsFoldASCII(html, "url(")
+	hasBg := containsFoldASCII(html, "background")
+	if !hasImg && !hasURL && !hasBg {
+		return html
+	}
+
+	result := html
+
 	// Match img tags with http/https sources
-	result := imgRemoteRe.ReplaceAllStringFunc(html, func(match string) string {
-		// Extract the original src
-		srcMatch := imgSrcRe.FindStringSubmatch(match)
-		if len(srcMatch) < 2 {
-			return match
-		}
+	if hasImg {
+		result = imgRemoteRe.ReplaceAllStringFunc(result, func(match string) string {
+			// Extract the original src
+			srcMatch := imgSrcRe.FindStringSubmatch(match)
+			if len(srcMatch) < 2 {
+				return match
+			}
 
-		originalSrc := srcMatch[1]
+			originalSrc := srcMatch[1]
 
-		// Replace with a placeholder, storing original URL in data attribute
-		return imgSrcRe.ReplaceAllString(match, `src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23ddd' width='100' height='100'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%23666' font-size='12'%3EImage blocked%3C/text%3E%3C/svg%3E" data-original-src="`+escapeHTML(originalSrc)+`"`)
-	})
+			// Replace with a placeholder, storing original URL in data attribute
+			return imgSrcRe.ReplaceAllString(match, `src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23ddd' width='100' height='100'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%23666' font-size='12'%3EImage blocked%3C/text%3E%3C/svg%3E" data-original-src="`+escapeHTML(originalSrc)+`"`)
+		})
+	}
 
 	// Block remote URLs in CSS url() references (background-image, background, etc.)
 	// Handles all quote encodings: raw, decimal (&#39;/&#34;), hex (&#x27;/&#x22;), named (&apos;/&quot;)
-	result = cssURLRe.ReplaceAllString(result, `url()`)
+	if hasURL {
+		result = cssURLRe.ReplaceAllString(result, `url()`)
+	}
 
 	// Block HTML background attribute with remote URLs
-	result = bgAttrRe.ReplaceAllString(result, `background=""`)
+	if hasBg {
+		result = bgAttrRe.ReplaceAllString(result, `background=""`)
+	}
 
 	return result
 }

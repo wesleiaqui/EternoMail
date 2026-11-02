@@ -164,6 +164,14 @@ func BenchmarkBlockRemoteImages(b *testing.B) {
 	}
 }
 
+func BenchmarkBlockRemoteImages_NoRemote(b *testing.B) {
+	noRemoteHTML := `<html><body><p>Hello world, this is a plain message with no images or backgrounds.</p></body></html>`
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = BlockRemoteImages(noRemoteHTML)
+	}
+}
+
 func BenchmarkExtractPlainTextFromHTML(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
