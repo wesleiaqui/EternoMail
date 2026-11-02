@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Preserve the current virtual-folder rows and cursor when the background index refresh fails.
+
 ## Postilaatikko 2026.11.01.2
 
 - Warm a bounded first page of message bodies asynchronously when opening Inbox, Starred, pinned folders, or All Inboxes; headers render immediately, and other folders plus attachments stay on demand.

@@ -127,7 +127,7 @@ test('every MessageContextMenu message mutation uses the shared in-flight guard'
     'handleMoveTo',
     'handleCopyTo',
   ]) {
-    assert.match(extractFunction(menuSource, handler), /runMessageMutation\(messageIds,/)
+    assert.match(extractFunction(menuSource, handler), /runMessageMutation\(targetIds,/)
   }
 })
 
