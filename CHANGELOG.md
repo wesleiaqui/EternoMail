@@ -4,6 +4,7 @@
 
 - Keep Gmail replies in the original conversation by sending with Gmail's provider thread ID, including replies reopened from drafts.
 - Preserve complete `In-Reply-To` and `References` headers from the detached reply composer.
+- Open replies inline beneath conversation-style threads, keeping the chat history visible while composing.
 - Put the message's account first in the move destination picker for faster same-account moves.
 - Preserve the current virtual-folder rows and cursor when the background index refresh fails.
 
