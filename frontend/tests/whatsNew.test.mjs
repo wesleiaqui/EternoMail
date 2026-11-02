@@ -20,6 +20,10 @@ async function load(relative) {
 const { compareVersions, parseChangelog, sectionsSince, shouldShowAfterLaunch } = await load('../src/lib/utils/whatsNew.ts')
 
 const realChangelog = await readFile(new URL('../../CHANGELOG.md', import.meta.url), 'utf8')
+const releasedSections = parseChangelog(realChangelog)
+const latestVersion = releasedSections[0].version
+const previousVersion = releasedSections[1].version
+const olderVersion = releasedSections[2].version
 
 test('compareVersions orders calver and same-day patch releases numerically', () => {
   assert.equal(compareVersions('2026.10.29', '2026.10.29.1'), -1)
@@ -33,7 +37,7 @@ test('compareVersions orders calver and same-day patch releases numerically', ()
 test('the shipped CHANGELOG parses into the real released sections, skipping [Unreleased]', () => {
   const sections = parseChangelog(realChangelog)
   assert.ok(sections.length >= 5, `expected several released sections, got ${sections.length}`)
-  assert.equal(sections[0].version, '2026.10.30')
+  assert.equal(sections[0].version, latestVersion)
   assert.ok(sections.every(s => s.items.length > 0))
   assert.ok(sections.some(s => s.version === '2026.10.29.1'))
   assert.ok(sections.some(s => s.version === '0.3.21'))
@@ -42,25 +46,25 @@ test('the shipped CHANGELOG parses into the real released sections, skipping [Un
 
 test('an upgrade shows every section newer than the acknowledged version, newest first', () => {
   const sections = parseChangelog(realChangelog)
-  const shown = sectionsSince(sections, '2026.10.30', '2026.10.29')
-  assert.deepEqual(shown.map(s => s.version), ['2026.10.30', '2026.10.29.1'])
+  const shown = sectionsSince(sections, latestVersion, olderVersion)
+  assert.deepEqual(shown.map(s => s.version), [latestVersion, previousVersion])
 })
 
 test('the first run of the feature shows the current version only, never full history', () => {
   const sections = parseChangelog(realChangelog)
-  const shown = sectionsSince(sections, '2026.10.30', '')
-  assert.deepEqual(shown.map(s => s.version), ['2026.10.30'])
+  const shown = sectionsSince(sections, latestVersion, '')
+  assert.deepEqual(shown.map(s => s.version), [latestVersion])
 })
 
 test('an upgrade never shows sections from a future build', () => {
   const sections = parseChangelog(realChangelog)
-  const shown = sectionsSince(sections, '2026.10.29', '2026.10.28')
-  assert.ok(!shown.some(s => s.version === '2026.10.30'))
+  const shown = sectionsSince(sections, previousVersion, olderVersion)
+  assert.deepEqual(shown.map(s => s.version), [previousVersion])
 })
 
 test('the launch check fires on first run and upgrades, not on downgrades or same version', () => {
-  assert.equal(shouldShowAfterLaunch('2026.10.30', ''), true)
-  assert.equal(shouldShowAfterLaunch('2026.10.30', '2026.10.29.1'), true)
-  assert.equal(shouldShowAfterLaunch('2026.10.29', '2026.10.30'), false)
-  assert.equal(shouldShowAfterLaunch('2026.10.30', '2026.10.30'), false)
+  assert.equal(shouldShowAfterLaunch(latestVersion, ''), true)
+  assert.equal(shouldShowAfterLaunch(latestVersion, previousVersion), true)
+  assert.equal(shouldShowAfterLaunch(previousVersion, latestVersion), false)
+  assert.equal(shouldShowAfterLaunch(latestVersion, latestVersion), false)
 })
