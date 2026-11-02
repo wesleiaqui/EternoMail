@@ -57,3 +57,10 @@ In another terminal, run `scripts/profile-macos-processes.sh` to sample the app
 and WebKit process CPU/RSS once per second. This distinguishes growth in the Go
 heap from WebKit or other native process memory. Stop it with Ctrl-C after
 capturing idle baseline, reproducing the spike, and allowing the app to settle.
+
+If a WebKit process is the CPU hot spot, attach Instruments' **Time Profiler**
+to that WebKit WebContent PID from the sampler during the same reproduction.
+The Go CPU profile cannot attribute JavaScript or WebKit native stacks. For
+WebKit memory growth, use Instruments' **Allocations** on that process and
+compare it with the Go heap profile; the process sampler alone reports size,
+not allocation sources.
