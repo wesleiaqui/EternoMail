@@ -23,11 +23,11 @@ on-demand body fetch path. Unknown or non-positive sizes are still prefetched.
 
 ## Verification and limits
 
-Frontend ESLint passed and `git diff --check` passed. Svelte diagnostics on the
-`main` base report 12 existing errors and two existing accessibility warnings,
-including diagnostics addressed separately in PR #95. A Go build could not
-start because the sandbox could not create the Go module cache outside the
-writable worktree. No tests were run.
+Frontend ESLint, `git diff --check`, and `go build ./...` passed. The Go build
+used temporary build and module caches under `/tmp` after the default cache
+locations proved unwritable. `svelte-check` on the `main` base reports 12
+existing errors and two accessibility warnings, including diagnostics
+addressed separately in PR #95. No tests were run.
 
 Live macOS CPU and RSS measurements are unavailable in this environment:
 process inspection is denied. These changes bound known idle work and the size
