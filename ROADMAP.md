@@ -4,7 +4,18 @@ Planned, in flight, open questions, and parked items for this fork. Done items a
 
 ## Product direction
 
-The goal is a strong personal email client for people who use several accounts. Spark and Gmail remain interaction references; the accepted conversation/navigation design also borrows selected ideas from Spike, HEY, Shortwave, Unibox, MailMate and Superhuman. Keep the focus on one person's mail and workflows.
+The goal is a strong personal email client for one person using multiple Gmail accounts. Gmail-only is the current product direction; broader provider support is deferred. Spark and Gmail remain interaction references; the accepted conversation/navigation design also borrows selected ideas from Spike, HEY, Shortwave, Unibox, MailMate and Superhuman. Keep the focus on one person's mail and workflows.
+
+### Highest priority: Gmail-only transition (approved 2026-11-02)
+
+This decision supersedes earlier instructions to retain IMAP and takes priority over new feature work. Evolve the existing app through reviewable backend replacements, preserving the UI, composing, shortcuts, drafts, scheduling and local state. A full application rewrite is not planned; avoid a new generic provider framework for hypothetical future accounts.
+
+1. **Measure first.** Use PERF-002's profiling work (draft PR #96) to capture idle, refresh, search, navigation, large-message and multiple-reader workloads on macOS. Separate Go CPU/heap from WebKit CPU/RSS; record build, mailbox scale and before/after results. Set CPU, memory and latency acceptance budgets from this baseline. The reported spikes do not establish IMAP as their cause.
+2. **Complete the Gmail backend incrementally.** Make account-qualified Gmail IDs, labels, threads, server search and history canonical. Replace remaining IMAP folder/UID translation and fallback dependencies as each slice reaches parity. Cover initial metadata, incremental refresh and history-cursor recovery, lazy bodies/files, actions/undo, drafts/send, filters and notifications. Preserve bounded work, cancellation, quota handling, retry/backoff and account isolation. Reuse existing Gmail code and accepted UI/API contracts.
+3. **Migrate safely.** Preserve accounts/credentials, cached originals/files, drafts, saved views, queues and undo/selection references. Map existing IDs without duplicated mail or lost label membership. Require resumable migration, recovery checkpoints and live multi-account verification. Retain non-Gmail local data with an explicit export/recovery path before withdrawing access.
+4. **Retire IMAP after acceptance.** Remove sync, IDLE, folder/UID adapters and fallbacks after Gmail parity, migration/recovery and real macOS performance are verified. Provide bounded Gmail notification refresh before removing IDLE. Preserve Send Later reliability and the helper's trust boundary while replacing remaining mail transport with Gmail API. Keep existing workflows usable during the transition.
+
+See the [Gmail transition execution queue](TASKS.md#highest-priority-gmail-transition-approved-2026-11-02). New features follow this transition; security/data-loss fixes and recovery of existing delivery failures remain urgent. Preserve existing task claims and coordinate their integration.
 
 ### Accepted UI and agent-access direction (2026-10-26)
 
@@ -33,14 +44,14 @@ Parser checkpoint: PR #33 (`74ed7ff`) integrates plain-text extraction, then sta
 
 REL-001 restores the Send Later code already present in the remote v0.3.16 tag (`73ca27a`) onto current main in an isolated review branch. The tag and main had diverged; earlier statements that this code was never released were incomplete. Delivery/security/live-device gates remain open. The tagged message-focus shortcut change (`e30b37e`) touches Claude-owned EmailBody and is deferred until UX-008 integration; it must be reconciled before promoting a replacement release.
 
-### Current requested build (2026-10-27)
+### Historical requested build (2026-10-27; sequencing superseded above)
 
 Implement sidebar cards/rail shortcuts, then Gmail-first operations, global server search and API-backed virtual folders, automatic metadata refresh, and a GitHub-built DMG. GLOBAL-001 owns this delivery on an isolated review branch; it is not merged into main. Gmail views must work from server results without requiring a pre-populated IMAP cache. Preserve bounded header/history backfill and explicit body/file downloads. Existing notification-only IMAP IDLE may remain where there is no configured Gmail push service; reads/mutations prefer Gmail REST.
 
 ### Priorities
 
-1. **Scheduled send — critical.** Compose now, choose a delivery time, and have Postilaatikko send it reliably.
-2. **Gmail API integration — API-first for all Gmail operations.** User-approved incremental consent for missing scopes; global server search across all enabled accounts/all folders, plus automatic lightweight header/flag refresh on folder open and in background.  Add server-side Gmail search and Gmail-native capabilities for Gmail accounts, starting with spam actions and efficient mailbox updates; keep IMAP support for other providers.
+1. **Gmail-only transition and measured performance.** Profiling, incremental Gmail backend replacement, safe migration and IMAP retirement are the highest product and engineering priority; follow the acceptance gates above.
+2. **Scheduled send — critical.** Compose now, choose a delivery time, and have Postilaatikko send it reliably.
 3. **Calendar from email:** recognize date/time mentions and offer links that open or create events in installed calendar applications.
 4. **Reliable virtual folders and the accepted UI/API design:** first verify the empty-folder repair in the actual installed build, then implement D-002 backend contracts/query/extraction and agent access before dependent presentation. Add the navigation drawer, conversation/Traditional toggle, thread focus and nearby actions in small increments.
 5. **Fast everyday mail:** preserve Gmail-style keyboard bindings and quick reply snippets; add full templates, Finnish-layout support and configurable bindings.
@@ -58,13 +69,12 @@ Implement sidebar cards/rail shortcuts, then Gmail-first operations, global serv
 
 ### Recommended implementation order
 
-1. **Repair/release provenance:** UX-001 verifies which empty-folder fix is actually integrated and installed. Preserve main's virtual-folder deletion fix. P-037/P-038 identifiers collided on historical branches, so use descriptive title plus branch/commit.
-2. **Critical scheduled send continues in parallel under P-011:** finish helper/E2EE reliability, security and live-delivery gates. Existing local candidate work is not a shipped guarantee; preserve the helper/relay trust boundary.
-3. **Backend foundations:** UX-002/003 establish shared scope/query semantics, UX-004–007 implement conservative reply extraction, and UX-019/020 establish authenticated external operation contracts/transport. Reuse shipped Gmail search/spam and ICS behavior.
-4. **Presentation:** UX-008–018 add the conversation reader, Traditional toggle, on-demand navigation/cards, All Inboxes placement, pin shortcuts, Focus restoration, nearby actions and durable inline replies.
-5. **Agent clients and verification:** UX-021–024 and UX-037/038 expose structured reads, shared mail/draft actions and view/layout operations through API/CLI/MCP. UX-039 scheduling waits on P-011. UX-029 checks bindings and Finnish layouts; UX-035/036 measure resource use and verify the integrated app before a GitHub-built DMG.
-6. **Follow-on personal workflows:** Reply Later sessions, related searches, People grouping, attachment browsing and columns/bundles follow their dependencies. Reuse P-015/P-016/P-020/P-030–034 rather than create duplicate assignments.
-7. **Existing broader goals:** date/time recognition builds on ICS; contextual signatures, full templates, multiple windows and smart notifications retain their task-specific dependencies and priorities.
+1. **Baseline and dependency inventory (GMAIL-001):** integrate profiling, capture live macOS resource/latency evidence and inventory every Gmail operation still using IMAP or legacy mail transport, including notifications and scheduling.
+2. **Gmail model and reads (GMAIL-002):** provider IDs/labels/threads, metadata/history refresh and cursor recovery, search/saved views and lazy body/file loading.
+3. **Operation parity (GMAIL-003):** actions/undo, drafts/send, native filters and notification refresh. Reuse P-060 and existing Gmail work; preserve Send Later safety and helper trust boundaries.
+4. **Migration and measured release verification (GMAIL-004):** preserve account/reference/local state, test recovery and multiple Gmail accounts, and compare live macOS results with the baseline budgets. Plan migration alongside the model changes.
+5. **IMAP retirement (GMAIL-005):** remove replaced paths and non-Gmail setup only after parity, notification replacement, migration/recovery and performance acceptance.
+6. **Remaining roadmap:** resume scheduled-send enhancements, D-002 presentation/agent clients, calendar recognition, templates and notifications with their existing dependencies. Safety and delivery recovery fixes may proceed throughout.
 
 ## Guidance for agents
 
@@ -97,14 +107,14 @@ Use the [task board](TASKS.md) for current claims and integration status; the [D
 ### Large
 
 - **Sensitive work gets stronger review:** HTML/plain-text extraction fidelity, scope/target semantics, authorization and delivery/draft races start with Sol 6.1 High. See D-002 for escalation criteria; effort size and required reasoning capability are separate.
-- **Gmail API extensions.** Build on the existing Gmail server-side search/spam baseline while preserving IMAP support and distinguishing live-provider checks from compilation.
+- **Gmail API extensions.** Build on the existing Gmail server-side search/spam baseline toward complete Gmail API parity, distinguishing live-provider checks from compilation and retiring IMAP through the gates above.
 - **Scheduled send.** Durable E2EE queue plus the always-on Mac Studio helper, retries, cancellation, and delivery status. The helper is the trusted endpoint; a future paid hosted sender needs a separate, clearly disclosed trust model.
 - **Calendar links from email.** Create a standard ICS event from a structured time, then recognize dates and times in email and offer the event for review/import in the installed calendar app.
 - **Tabbed mail workspaces.** Open independent mail views in tabs, preserve each tab’s folder/search/thread state, and detach tabs to native windows; the primary workspace remains available (P-013/P-043).
 
 ## Must have
 
-- **Gmail API integration.** Server-side search and native spam actions have a v0.3.13 baseline. Extend provider-specific functionality as needed, preserving IMAP paths and least-required scopes; track actual Gmail authorization/provider verification separately. See the [Gmail API overview](https://developers.google.com/workspace/gmail/api/guides) and [scope guide](https://developers.google.com/workspace/gmail/api/auth/scopes).
+- **Gmail API integration.** Server-side search and native spam actions have a v0.3.13 baseline. Complete the Gmail-only transition above with least-required scopes; track actual Gmail authorization/provider verification separately. IMAP fallback is transitional and retires after parity and migration acceptance. See the [Gmail API overview](https://developers.google.com/workspace/gmail/api/guides) and [scope guide](https://developers.google.com/workspace/gmail/api/auth/scopes).
 - **Scheduled send (critical).** Compose now and send at a chosen time. Candidate P-011 work exists on local/integration branches and retains live/security release gates; it is not integrated into the surveyed origin/main. Keep the durable E2EE queue and always-on Mac Studio helper: paired devices encrypt to the helper, relays retain ciphertext, and the helper holds its private key/sending credentials locally. Recover interruptions without unsafe duplicate sends. A future paid hosted sender is a separate trust mode if the service decrypts mail to send it.
 - **Unified virtual folders (v0.3.10; criteria expanded in v0.3.15).** Saved sets of real folders across accounts, shown in the sidebar. Base folder-set behavior implemented in v0.3.10; criteria facets (include/exclude, read/unread, starred/unstarred, replied/unreplied, date windows) implemented in v0.3.15.
 - **Reliable saved views.** Repair and verify virtual-folder population on the actual mail device, then share filtering/count/search semantics with All Inboxes and saved searches. A released criteria feature does not establish that the later empty-folder repair shipped.

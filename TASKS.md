@@ -18,6 +18,19 @@
 - **Large:** provider integrations, durable scheduling, broad architecture, or platform services.
 - **Unclaimed / In progress / Review / Done:** task status. `Done` means integrated, not merely implemented in a separate branch.
 
+## Highest-priority Gmail transition (approved 2026-11-02)
+
+This queue takes precedence over new feature work. Existing safety fixes and release recovery remain urgent; preserve current claims and coordinate overlapping files. The roadmap change does not itself remove provider support or migrate stored mail.
+
+| Task | Effort | Scope / acceptance | Owner / branch / worktree | Status |
+| --- | --- | --- | --- | --- |
+| GMAIL-PLAN-001 | Easy | Make the Gmail-only transition the highest roadmap priority; specify profiling, incremental Gmail backend replacement, migration safeguards and IMAP retirement gates. | Codex / `codex/ROADMAP-gmail-only` / `/private/tmp/postilaatikko-roadmap-gmail` | Review; priorities, scope and gated execution queue updated. Reviewed roadmap consistency, task dependencies and Markdown table structure; `git diff --check` passes. No runtime changes. |
+| GMAIL-001 | Medium | Capture macOS Gmail CPU/Go heap/WebKit RSS and latency baseline using PERF-002 / PR #96; inventory Gmail IMAP/SMTP/fallback dependencies, including notifications/scheduling. Set measured acceptance budgets and split implementation into reviewable claims. | — | Unclaimed; highest implementation priority; depends on profiling support availability. |
+| GMAIL-002 | Large | Make account-qualified Gmail IDs/labels/threads canonical for reads, search and saved views; complete bounded metadata/history refresh, expired-cursor recovery, cancellation/backoff and lazy bodies/files. Verify Gmail works without an IMAP connection/cache; reuse current Gmail code and UI/API contracts. | — | Unclaimed; depends on GMAIL-001; split into PR-sized slices before implementation. |
+| GMAIL-003 | Large | Complete Gmail API actions/undo, drafts/send, native filters and notification refresh; reuse P-060 and existing work. Preserve incremental consent, delivery/security guarantees and helper trust boundary; verify no Gmail operation requires IMAP or legacy send transport. | — | Unclaimed; depends on GMAIL-002; split into PR-sized slices before implementation. |
+| GMAIL-004 | Large | Design migration alongside GMAIL-002; preserve accounts/credentials, originals/files, drafts, saved views, queues and undo references. Retain non-Gmail data with export/recovery access. Verify resumable migration/recovery, label identity, multiple Gmail accounts and live macOS performance against GMAIL-001 budgets. | — | Unclaimed; design depends on GMAIL-001; release acceptance depends on GMAIL-002/003. |
+| GMAIL-005 | Medium | Retire IMAP sync/IDLE/folder-UID adapters/fallbacks and non-Gmail setup after Gmail parity, notification replacement, migration/recovery and macOS performance acceptance. Preserve local data and document withdrawal of non-Gmail support. | — | Unclaimed; blocked on GMAIL-004 acceptance. |
+
 ## In progress in the current worktree
 
 These tasks started in the primary checkout before `AGENTS.md` established worktree isolation. Do not join that checkout; the coordinator owns these changes.
