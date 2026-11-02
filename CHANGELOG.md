@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Put the message's account first in the move destination picker for faster same-account moves.
 - Preserve the current virtual-folder rows and cursor when the background index refresh fails.
 
 ## Postilaatikko 2026.11.01.2
