@@ -3471,6 +3471,7 @@ export namespace smtp {
 	    attachments: Attachment[];
 	    in_reply_to?: string;
 	    references?: string[];
+	    gmail_thread_id?: string;
 	    request_read_receipt: boolean;
 	    sign_message: boolean;
 	    encrypt_message: boolean;
@@ -3495,6 +3496,7 @@ export namespace smtp {
 	        this.attachments = this.convertValues(source["attachments"], Attachment);
 	        this.in_reply_to = source["in_reply_to"];
 	        this.references = source["references"];
+	        this.gmail_thread_id = source["gmail_thread_id"];
 	        this.request_read_receipt = source["request_read_receipt"];
 	        this.sign_message = source["sign_message"];
 	        this.encrypt_message = source["encrypt_message"];

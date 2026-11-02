@@ -76,8 +76,9 @@ type ComposeMessage struct {
 	Attachments []Attachment `json:"attachments"`
 
 	// Headers
-	InReplyTo  string   `json:"in_reply_to,omitempty"` // Message-ID of the message being replied to
-	References []string `json:"references,omitempty"`  // Thread references
+	InReplyTo     string   `json:"in_reply_to,omitempty"`     // Message-ID of the message being replied to
+	References    []string `json:"references,omitempty"`      // Thread references
+	GmailThreadID string   `json:"gmail_thread_id,omitempty"` // Gmail conversation ID for API sends
 
 	// Options
 	RequestReadReceipt bool `json:"request_read_receipt"`

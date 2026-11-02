@@ -142,6 +142,7 @@
   // Track In-Reply-To and References for threading
   let inReplyTo = $state<string | undefined>(undefined)
   let references = $state<string[]>([])
+  let gmailThreadId = $state<string | undefined>(undefined)
 
   // Attachments
   let attachments = $state<ComposerAttachment[]>([])
@@ -742,6 +743,7 @@
       attachments: smtpAttachments,
       in_reply_to: inReplyTo,
       references: references,
+      gmail_thread_id: gmailThreadId,
       request_read_receipt: requestReadReceipt,
       sign_message: signMessage,
       encrypt_message: encryptMessage,
@@ -779,6 +781,7 @@
       pgpEncryptMessage,
       inReplyTo: inReplyTo || '',
       references,
+      gmailThreadId: gmailThreadId || '',
     })
   }
 
@@ -1514,6 +1517,7 @@
     // Set threading headers
     inReplyTo = initialMessage.in_reply_to
     references = initialMessage.references || []
+    gmailThreadId = initialMessage.gmail_thread_id
 
     // Restore attachments and inline images from draft/reply/forward
     // Go []byte is serialized as base64 string via JSON, but TS type says number[]
