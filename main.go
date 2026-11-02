@@ -129,6 +129,8 @@ func runMainMode(mailtoData *app.MailtoData, rawMailtoArg string) {
 		return
 	}
 	defer lock.Unlock()
+	stopProfiler := startLocalProfiler()
+	defer stopProfiler()
 
 	// Resolve window decoration before Wails init (Frameless is init-time only).
 	// The effective mode may differ from the saved preference on KDE/Wayland.
