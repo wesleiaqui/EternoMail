@@ -5,6 +5,10 @@ export interface SignatureRuleLike {
   enabled: boolean
   recipients: string[]
   messageTypes: SignatureMessageType[]
+  signatureHtml?: string
+  signatureText?: string
+  signaturePlacement?: string
+  signatureSeparator?: boolean
 }
 
 export type SignatureRecipient = string | { address?: string; email?: string }

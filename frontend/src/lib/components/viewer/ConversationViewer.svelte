@@ -8,9 +8,10 @@
   // @ts-ignore - wailsjs path
   import { EventsOn } from '../../../../wailsjs/runtime/runtime'
   // @ts-ignore - wailsjs path
-  import { message as messageModels, account } from '../../../../wailsjs/go/models'
+  import { message as messageModels, account, operations } from '../../../../wailsjs/go/models'
   import AttachmentList from './AttachmentList.svelte'
   import ConversationMessage from './ConversationMessage.svelte'
+  import InlineReply from './InlineReply.svelte'
   import { reactionLayout } from './reactionLayout'
   import { bubbleLayout, senderAddress } from './bubbleLayout'
   import { isConfiguredAccountEmail } from '$lib/stores/accounts.svelte'
@@ -122,6 +123,13 @@
 
   // State
   let conversation = $state<messageModels.Conversation | null>(null)
+  let inlineReplyTarget = $state<{
+    threadId: string
+    accountId: string
+    messageId: string
+    mode: 'reply' | 'reply-all'
+    imagesLoaded: boolean
+  } | null>(null)
   // Per-message EmailBody refs, used to pull each rendered body for printing.
   let emailBodyRefs = $state<Record<string, { getPrintableHtml(): Promise<string> }>>({})
   let loading = $state(false)
@@ -152,10 +160,10 @@
     if (messageIds.some((id) => !displayedIds.has(id))) {
       throw new Error('Message action target is no longer in the displayed conversation')
     }
-    return ResolveMailActionTarget({
+    return ResolveMailActionTarget(operations.Target.createFrom({
       kind: 'matched_messages',
       messages: messageIds.map((messageId) => ({ accountId: owningAccountId, messageId })),
-    })
+    }))
   }
 
   async function loadAccounts() {
@@ -1097,16 +1105,12 @@
   // Action button handlers
   function handleReply() {
     const messageId = getTargetMessageId()
-    if (messageId && onReply) {
-      onReply('reply', messageId, messagesWithImagesLoaded.has(messageId))
-    }
+    if (messageId) void openReply('reply', messageId, messagesWithImagesLoaded.has(messageId))
   }
 
   function handleReplyAll() {
     const messageId = getTargetMessageId()
-    if (messageId && onReply) {
-      onReply('reply-all', messageId, messagesWithImagesLoaded.has(messageId))
-    }
+    if (messageId) void openReply('reply-all', messageId, messagesWithImagesLoaded.has(messageId))
   }
 
   function handleForward() {
@@ -1114,6 +1118,36 @@
     if (messageId && onReply) {
       onReply('forward', messageId, messagesWithImagesLoaded.has(messageId))
     }
+  }
+
+  async function openReply(mode: 'reply' | 'reply-all' | 'forward', messageId: string, imagesLoaded = false) {
+    const targetImagesLoaded = imagesLoaded || messagesWithImagesLoaded.has(messageId)
+    if (mode === 'forward' || readerMode !== 'conversation' || inFocusMode) {
+      onReply?.(mode, messageId, targetImagesLoaded)
+      return
+    }
+    const sourceMessage = conversation?.messages?.find(message => message.id === messageId)
+    const sourceAccountId = sourceMessage?.accountId || accountId
+    if (!sourceAccountId) {
+      onReply?.(mode, messageId, targetImagesLoaded)
+      return
+    }
+    inlineReplyTarget = { threadId: threadId || '', accountId: sourceAccountId, messageId, mode, imagesLoaded: targetImagesLoaded }
+    await tick()
+    document.querySelector('[data-inline-reply]')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }
+
+  function handleInlineReplySent() {
+    const currentThreadId = threadId
+    const currentFolderId = folderId
+    inlineReplyTarget = null
+    onActionComplete?.(false)
+    if (currentThreadId && currentFolderId) void refreshConversation(currentThreadId, currentFolderId)
+  }
+
+  function fallbackInlineReply(target: NonNullable<typeof inlineReplyTarget>) {
+    inlineReplyTarget = null
+    onReply?.(target.mode, target.messageId, target.imagesLoaded)
   }
 
   function showUndoableSuccess(message: string, operationID: string) {
@@ -2052,7 +2086,7 @@
                 isStarred={msg.isStarred}
                 isRead={msg.isRead}
                 onActionComplete={handleContextMenuActionComplete}
-                {onReply}
+                onReply={openReply}
               >
                 <div
                   class="spark-message-card border rounded-lg overflow-hidden transition-all {readerMode === 'conversation' ? 'conversation-bubble ' + (bubble?.side === 'right' ? 'bubble-right' : 'bubble-left') : ''} {focusedMessageId === msg.id ? 'border-primary ring-2 ring-primary/20' : 'border-border'}"
@@ -2476,6 +2510,21 @@
                 </div>
               </MessageContextMenu>
             {/each}
+          </div>
+        {/if}
+        {#if inlineReplyTarget && inlineReplyTarget.threadId === (threadId || '')}
+          <div data-inline-reply>
+            {#key `${inlineReplyTarget.threadId}:${inlineReplyTarget.messageId}:${inlineReplyTarget.mode}`}
+              <InlineReply
+                accountId={inlineReplyTarget.accountId}
+                messageId={inlineReplyTarget.messageId}
+                mode={inlineReplyTarget.mode}
+                imagesLoaded={inlineReplyTarget.imagesLoaded}
+                onClose={() => (inlineReplyTarget = null)}
+                onSent={handleInlineReplySent}
+                onFallback={() => { if (inlineReplyTarget) fallbackInlineReply(inlineReplyTarget) }}
+              />
+            {/key}
           </div>
         {/if}
       </div>

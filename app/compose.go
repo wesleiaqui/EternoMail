@@ -434,7 +434,14 @@ func (ops *composeOps) sendMessage(ctx context.Context, accountID string, msg sm
 			}
 			return tokens.AccessToken, nil
 		})
-		if _, err := client.Send(ctx, rawMsg, msg.AllRecipients()...); err != nil {
+		threadID := msg.GmailThreadID
+		if threadID == "" && msg.InReplyTo != "" {
+			threadID, err = client.ThreadIDForRFCMessageID(ctx, msg.InReplyTo)
+			if err != nil {
+				return nil, fmt.Errorf("could not resolve Gmail conversation for reply; message was not sent: %w", err)
+			}
+		}
+		if _, err := client.SendInThread(ctx, threadID, rawMsg, msg.AllRecipients()...); err != nil {
 			return nil, fmt.Errorf("Gmail send failed (do not resend until delivery is checked): %w", err)
 		}
 	} else {
@@ -885,16 +892,33 @@ func (a *App) PrepareReply(messageID, mode string) (*smtp.ComposeMessage, error)
 	}
 
 	return &smtp.ComposeMessage{
-		From:        from,
-		To:          to,
-		Cc:          cc,
-		Subject:     subject,
-		HTMLBody:    htmlBody,
-		TextBody:    textBody,
-		InReplyTo:   ensureAngleBrackets(msg.MessageID),
-		References:  refs,
-		Attachments: attachments,
+		From:          from,
+		To:            to,
+		Cc:            cc,
+		Subject:       subject,
+		HTMLBody:      htmlBody,
+		TextBody:      textBody,
+		InReplyTo:     ensureAngleBrackets(msg.MessageID),
+		References:    refs,
+		GmailThreadID: gmailThreadIDFromMessage(msg),
+		Attachments:   attachments,
 	}, nil
+}
+
+func gmailThreadIDFromMessage(msg *message.Message) string {
+	if msg == nil || msg.AccountID == "" {
+		return ""
+	}
+	prefix := "gmail:" + msg.AccountID + ":"
+	if !strings.HasPrefix(msg.ThreadID, prefix) {
+		return ""
+	}
+	return strings.TrimPrefix(msg.ThreadID, prefix)
+}
+
+func marshalReferences(references []string) string {
+	encoded, _ := json.Marshal(references)
+	return string(encoded)
 }
 
 // quotedHTMLReferencesCID reports whether the quoted HTML actually references

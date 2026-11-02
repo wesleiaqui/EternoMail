@@ -595,6 +595,23 @@ func (s *Store) NeedsBodyFetch(accountID, messageID string) (bool, error) {
 	return needsFetch, nil
 }
 
+// GetMessageSize returns the server-reported message size without loading any
+// cached body columns. Background prefetch uses this to leave unusually large
+// messages for on-demand loading.
+func (s *Store) GetMessageSize(accountID, messageID string) (int, error) {
+	if accountID == "" || messageID == "" {
+		return 0, nil
+	}
+	var size int
+	err := s.db.QueryRow(`
+		SELECT size FROM messages WHERE account_id = ? AND id = ?
+	`, accountID, messageID).Scan(&size)
+	if err != nil {
+		return 0, fmt.Errorf("get message size: %w", err)
+	}
+	return size, nil
+}
+
 // GetByUID returns a message by folder ID and UID
 func (s *Store) GetByUID(folderID string, uid uint32) (*Message, error) {
 	query := `

@@ -142,6 +142,7 @@
   // Track In-Reply-To and References for threading
   let inReplyTo = $state<string | undefined>(undefined)
   let references = $state<string[]>([])
+  let gmailThreadId = $state<string | undefined>(undefined)
 
   // Attachments
   let attachments = $state<ComposerAttachment[]>([])
@@ -742,6 +743,7 @@
       attachments: smtpAttachments,
       in_reply_to: inReplyTo,
       references: references,
+      gmail_thread_id: gmailThreadId,
       request_read_receipt: requestReadReceipt,
       sign_message: signMessage,
       encrypt_message: encryptMessage,
@@ -779,6 +781,7 @@
       pgpEncryptMessage,
       inReplyTo: inReplyTo || '',
       references,
+      gmailThreadId: gmailThreadId || '',
     })
   }
 
@@ -1290,8 +1293,9 @@
   }
 
   function syncContextualSignature() {
+    const activeEditor = editor
     const identity = identities.find(item => item.id === selectedIdentityId)
-    if (!identity || (!editor && !isPlainTextMode)) return
+    if (!identity || (!activeEditor && !isPlainTextMode)) return
     const { ruleId } = currentSignatureProfile(identity)
     const choiceKey = signatureChoiceKey(identity, ruleId)
     if (choiceKey === lastAppliedSignatureKey) return
@@ -1315,7 +1319,8 @@
       return
     }
 
-    const content = editor.getHTML()
+    if (!activeEditor) return
+    const content = activeEditor.getHTML()
     if (!hasSignatureMarker(content) && lastAutoSignatureText) {
       // A missing marker means the user removed the generated signature.
       lastAppliedSignatureKey = choiceKey
@@ -1328,7 +1333,7 @@
         lastAppliedSignatureKey = choiceKey
         return
       }
-      editor.commands.setContent(removeSignatureFromContent(content))
+      activeEditor.commands.setContent(removeSignatureFromContent(content))
     }
     appendSignatureForIdentity(identity)
   }
@@ -1512,6 +1517,7 @@
     // Set threading headers
     inReplyTo = initialMessage.in_reply_to
     references = initialMessage.references || []
+    gmailThreadId = initialMessage.gmail_thread_id
 
     // Restore attachments and inline images from draft/reply/forward
     // Go []byte is serialized as base64 string via JSON, but TS type says number[]

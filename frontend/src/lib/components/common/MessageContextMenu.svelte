@@ -25,7 +25,7 @@
     UndoOperation,
   } from '../../../../wailsjs/go/app/App'
   // @ts-ignore - wailsjs path
-  import { account } from '../../../../wailsjs/go/models'
+  import { account, operations } from '../../../../wailsjs/go/models'
   import { toasts } from '$lib/stores/toast'
   import { ConfirmDialog } from '$lib/components/ui/confirm-dialog'
   import FolderPickerDialog from './FolderPickerDialog.svelte'
@@ -102,10 +102,10 @@
     if (!messageIds.length) return []
     if (!accountId) throw new Error('Cannot validate a message action without its account')
     const messages = messageIds.map((messageId) => ({ accountId, messageId }))
-    return ResolveMailActionTarget({
+    return ResolveMailActionTarget(operations.Target.createFrom({
       kind: messages.length === 1 ? 'message' : 'matched_messages',
       messages,
-    })
+    }))
   }
 
   // Load accounts when context menu opens (used by FolderPickerDialog's dropdown)

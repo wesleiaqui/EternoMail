@@ -450,9 +450,11 @@ func TestFilterRoutesIncomingMessageAcrossAccounts(t *testing.T) {
 
 	// The cross-account move APPENDs to the destination first, then routes the
 	// source through the Trash pipeline, so the local row ends up in account A's
-	// trash folder.
+	// trash folder. The local move is optimistic, so observing that folder
+	// alone does not mean the background source-side COPY has run. Wait for
+	// both before checking the remote ordering or tearing down the fixture.
 	waitFor(t, 10*time.Second, func() bool {
-		return f.messageFolderID(t) == "a-trash"
+		return f.messageFolderID(t) == "a-trash" && f.ops.indexOf("copy:") >= 0
 	})
 
 	appendIdx := f.ops.indexOf("append:")

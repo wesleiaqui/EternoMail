@@ -12,6 +12,7 @@ import (
 
 const maxQueuedFolderBodyPrefetch = 128
 const maxFolderPageBodyPrefetch = 50
+const maxAutomaticBodyPrefetchSize = 5 * 1024 * 1024
 
 type folderBodyPrefetchQueue struct {
 	accountID string
@@ -289,7 +290,12 @@ func (a *App) runFolderBodyPrefetch(key string, queue *folderBodyPrefetchQueue) 
 				log.Warn().Err(getErr).Str("folder", queue.folderID).Msg("Could not check cached message body")
 			}
 			if getErr == nil && needsFetch {
-				if _, fetchErr := a.syncEngine.FetchMessageBody(queue.ctx, queue.accountID, messageID); fetchErr != nil && queue.ctx.Err() == nil {
+				size, sizeErr := a.messageStore.GetMessageSize(queue.accountID, messageID)
+				if sizeErr != nil {
+					log.Warn().Err(sizeErr).Str("folder", queue.folderID).Msg("Could not check message size for automatic body prefetch")
+				} else if size > maxAutomaticBodyPrefetchSize {
+					log.Debug().Int("size", size).Str("folder", queue.folderID).Msg("Skipping large message during automatic body prefetch; body remains available on demand")
+				} else if _, fetchErr := a.syncEngine.FetchMessageBody(queue.ctx, queue.accountID, messageID); fetchErr != nil && queue.ctx.Err() == nil {
 					log.Warn().Err(fetchErr).Str("folder", queue.folderID).Msg("Automatic body prefetch failed; message remains fetchable on demand")
 				}
 			}
