@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -986,14 +987,24 @@ func (c *ComposerApp) buildReplyMessage(msg *message.Message, mode string) *smtp
 		textBody = fmt.Sprintf("\n\n%s\n%s", citation, quoteText(quotedText))
 	}
 
+	var references []string
+	if msg.References != "" {
+		_ = json.Unmarshal([]byte(msg.References), &references)
+	}
+	if msg.MessageID != "" {
+		references = append(references, ensureAngleBrackets(msg.MessageID))
+	}
+
 	return &smtp.ComposeMessage{
-		From:      from,
-		To:        to,
-		Cc:        cc,
-		Subject:   subject,
-		HTMLBody:  htmlBody,
-		TextBody:  textBody,
-		InReplyTo: msg.MessageID,
+		From:          from,
+		To:            to,
+		Cc:            cc,
+		Subject:       subject,
+		HTMLBody:      htmlBody,
+		TextBody:      textBody,
+		InReplyTo:     ensureAngleBrackets(msg.MessageID),
+		References:    references,
+		GmailThreadID: gmailThreadIDFromMessage(msg),
 	}
 }
 

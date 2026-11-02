@@ -300,6 +300,9 @@ func (ops *draftOps) saveDraftToDB(accountID string, localDraft *draft.Draft, ms
 		localDraft.BodyHTML = enc.bodyHTML
 		localDraft.BodyText = enc.bodyText
 		localDraft.InReplyToID = msg.InReplyTo
+		if references, err := json.Marshal(msg.References); err == nil {
+			localDraft.ReferencesList = string(references)
+		}
 		localDraft.IdentityID = ops.resolveIdentityID(accountID, msg)
 		localDraft.SignMessage = msg.SignMessage
 		localDraft.Encrypted = enc.encrypted
@@ -336,6 +339,7 @@ func (ops *draftOps) saveDraftToDB(accountID string, localDraft *draft.Draft, ms
 		BodyHTML:         enc.bodyHTML,
 		BodyText:         enc.bodyText,
 		InReplyToID:      msg.InReplyTo,
+		ReferencesList:   marshalReferences(msg.References),
 		IdentityID:       ops.resolveIdentityID(accountID, msg),
 		SignMessage:      msg.SignMessage,
 		Encrypted:        enc.encrypted,
@@ -720,6 +724,10 @@ func (ops *draftOps) toComposeMessage(d *draft.Draft) *smtp.ComposeMessage {
 		}
 	}
 
+	var references []string
+	if d.ReferencesList != "" {
+		_ = json.Unmarshal([]byte(d.ReferencesList), &references)
+	}
 	return &smtp.ComposeMessage{
 		From:              smtp.Address{Address: identityEmail},
 		IdentityID:        d.IdentityID,
@@ -731,6 +739,7 @@ func (ops *draftOps) toComposeMessage(d *draft.Draft) *smtp.ComposeMessage {
 		TextBody:          bodyText,
 		Attachments:       attachments,
 		InReplyTo:         d.InReplyToID,
+		References:        references,
 		SignMessage:       d.SignMessage,
 		EncryptMessage:    encryptMessage,
 		PGPSignMessage:    d.PGPSignMessage,

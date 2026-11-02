@@ -116,20 +116,52 @@ func (c *Client) ThreadMetadata(ctx context.Context, id string, headers ...strin
 // Non-idempotent operations deliberately do not retry transport/5xx failures.
 // An error may mean Gmail accepted the request; callers must not fall back to SMTP/IMAP.
 func (c *Client) Send(ctx context.Context, raw []byte, recipients ...string) (string, error) {
+	return c.SendInThread(ctx, "", raw, recipients...)
+}
+
+// SendInThread sends a message and, when threadID is set, adds it to that
+// Gmail conversation. Gmail still requires matching RFC threading headers in
+// the raw message; callers prepare those before invoking this method.
+func (c *Client) SendInThread(ctx context.Context, threadID string, raw []byte, recipients ...string) (string, error) {
 	prepared, err := WithEnvelopeRecipients(raw, recipients)
 	if err != nil {
 		return "", err
 	}
-	return c.writeRaw(ctx, "/messages/send", prepared, nil)
+	return c.writeRawInThread(ctx, "/messages/send", prepared, nil, threadID)
 }
+
+// ThreadIDForRFCMessageID resolves the provider thread that contains an RFC
+// Message-ID. It is used when a reply draft no longer carries the provider ID.
+func (c *Client) ThreadIDForRFCMessageID(ctx context.Context, rfcMessageID string) (string, error) {
+	messageID, err := c.FindByRFCMessageID(ctx, rfcMessageID)
+	if err != nil {
+		return "", fmt.Errorf("find Gmail parent message: %w", err)
+	}
+	messages, err := c.Metadata(ctx, []string{messageID})
+	if err != nil {
+		return "", fmt.Errorf("load Gmail parent metadata: %w", err)
+	}
+	if len(messages) != 1 || messages[0].ThreadID == "" {
+		return "", fmt.Errorf("Gmail parent message has no conversation ID")
+	}
+	return messages[0].ThreadID, nil
+}
+
 func (c *Client) Insert(ctx context.Context, raw []byte, labels []string) (string, error) {
 	return c.writeRaw(ctx, "/messages", raw, labels)
 }
 func (c *Client) writeRaw(ctx context.Context, path string, raw []byte, labels []string) (string, error) {
+	return c.writeRawInThread(ctx, path, raw, labels, "")
+}
+
+func (c *Client) writeRawInThread(ctx context.Context, path string, raw []byte, labels []string, threadID string) (string, error) {
 	var r struct {
 		ID string `json:"id"`
 	}
 	body := map[string]any{"raw": base64.RawURLEncoding.EncodeToString(raw)}
+	if threadID != "" {
+		body["threadId"] = threadID
+	}
 	if labels != nil {
 		body["labelIds"] = labels
 	}
