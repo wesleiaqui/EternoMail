@@ -136,34 +136,34 @@
       large: 'pl-11 pr-6 py-3 gap-5',
     },
     avatar: {
-      micro: 'w-8 h-8 text-xs',
-      compact: 'w-10 h-10 text-sm',
-      standard: 'w-10 h-10 text-sm',
-      large: 'w-14 h-14 text-lg',
+      micro: 'w-6 h-6 text-[10px]',
+      compact: 'w-7 h-7 text-xs',
+      standard: 'w-8 h-8 text-xs',
+      large: 'w-10 h-10 text-sm',
     },
     senderText: {
-      micro: 'text-xs',
-      compact: 'text-sm',
-      standard: 'text-sm',
-      large: 'text-base',
+      micro: 'text-[10px]',
+      compact: 'text-xs',
+      standard: 'text-xs',
+      large: 'text-sm',
     },
     subjectText: {
-      micro: 'text-[10px] leading-4',
-      compact: 'text-xs leading-4',
-      standard: 'text-xs leading-4',
-      large: 'text-sm leading-5',
+      micro: 'text-xs leading-4',
+      compact: 'text-sm leading-5',
+      standard: 'text-sm leading-5',
+      large: 'text-base leading-5',
     },
     previewText: {
       micro: 'text-[10px] leading-4',
-      compact: 'text-xs leading-4',
+      compact: 'text-[11px] leading-4',
       standard: 'text-xs leading-4',
       large: 'text-sm leading-5',
     },
     dateText: {
       micro: 'text-[10px]',
-      compact: 'text-xs',
-      standard: 'text-sm',
-      large: 'text-base',
+      compact: 'text-[11px]',
+      standard: 'text-xs',
+      large: 'text-sm',
     },
     icon: {
       micro: 'w-3 h-3',
@@ -219,9 +219,9 @@
     },
   }
 
-  // Pixel sizes matching densityClasses.avatar (w-8/10/12/14) so the photo
+  // Pixel sizes matching densityClasses.avatar so the photo
   // avatar keeps the exact footprint of the colored circle it replaces.
-  const AVATAR_PX = { micro: 32, compact: 40, standard: 48, large: 56 } as const
+  const AVATAR_PX = { micro: 24, compact: 28, standard: 32, large: 40 } as const
 
   // Get display name for participants
   function getParticipantNames(): string {
@@ -656,77 +656,71 @@
       </div>
     {/if}
 
-    <!-- Content -->
+    <!-- Subject and time lead the row; sender and compact status metadata sit
+         on one secondary line so folder labels don't compete for headline space. -->
     <div class="flex-1 min-w-0">
-      <div class="flex items-center gap-2 mb-0.5">
-        <!-- Participant Names (with highlighting if in search mode) -->
+      <div class="flex items-baseline gap-2">
+        <!-- Subject (with highlighting if in search mode) -->
+        {#if highlightedSubject}
+          <p
+            class="min-w-0 flex-1 truncate {densityClasses.subjectText[density]} {hasUnread ? 'font-semibold text-foreground' : 'font-medium text-foreground/90'}"
+          >
+            <!-- eslint-disable-next-line svelte/no-at-html-tags -- highlightMatches only inserts <mark> around already-escaped text -->
+            {@html highlightedSubject}
+          </p>
+        {:else}
+          <p
+            class="min-w-0 flex-1 truncate {densityClasses.subjectText[density]} {hasUnread ? 'font-semibold text-foreground' : 'font-medium text-foreground/90'}"
+          >
+            {conversation.subject || $_('viewer.noSubject')}
+          </p>
+        {/if}
+
+        <!-- Time remains easy to scan at the far edge of the headline. -->
+        <span class="{densityClasses.dateText[density]} text-muted-foreground flex-shrink-0">
+          {formatRelativeDate(new Date(conversation.latestDate))}
+        </span>
+      </div>
+
+      <div class="flex min-w-0 items-center gap-2">
+        <!-- Sender is secondary to the subject. -->
         {#if highlightedFromName}
-          <span class="{densityClasses.senderText[density]} truncate {hasUnread ? 'font-semibold text-foreground' : 'text-foreground'}">
+          <span class="min-w-0 flex-1 truncate {densityClasses.senderText[density]} {hasUnread ? 'font-medium text-foreground/80' : 'text-muted-foreground'}">
             <!-- eslint-disable-next-line svelte/no-at-html-tags -- highlightMatches only inserts <mark> around already-escaped text -->
             {@html highlightedFromName}
           </span>
         {:else}
-          <span class="{densityClasses.senderText[density]} truncate {hasUnread ? 'font-semibold text-foreground' : 'text-foreground'}">
+          <span class="min-w-0 flex-1 truncate {densityClasses.senderText[density]} {hasUnread ? 'font-medium text-foreground/80' : 'text-muted-foreground'}">
             {getParticipantNames()}
           </span>
         {/if}
 
-        <!-- Message Count Badge -->
-        {#if conversation.messageCount > 1}
-          <span
-            class="flex-shrink-0 {densityClasses.badge[density]} rounded-full bg-muted text-muted-foreground"
-          >
-            {conversation.messageCount}
-          </span>
-        {/if}
-
-        <!-- Folder badge (shown for unified inbox, virtual folders and All
-             Inboxes where each conversation can live in a different folder) -->
-        {#if folderName}
-          <span
-            class="flex-shrink-0 {densityClasses.badge[density]} rounded bg-muted/50 text-muted-foreground flex items-center gap-1"
-            title={$_('messageList.foundIn', { values: { folder: folderName } })}
-          >
-            <Icon icon="mdi:folder-outline" class="w-3 h-3" />
-            {folderName}
-          </span>
-        {/if}
-
-        <!-- Indicators -->
-        <div class="flex items-center gap-1 flex-shrink-0">
+        <!-- One compact status line keeps attachment and location information
+             available without spending a full label-sized column on the folder. -->
+        <div class="flex flex-shrink-0 items-center gap-1.5 text-muted-foreground">
+          {#if conversation.messageCount > 1}
+            <span class="rounded-full bg-muted px-1.5 text-[10px] leading-4 tabular-nums" title={$_('undoHistory.messages', { values: { count: conversation.messageCount } })}>
+              {conversation.messageCount}
+            </span>
+          {/if}
+          {#if conversation.hasAttachments}
+            <span title={$_('viewer.attachments')} aria-label={$_('viewer.attachments')}>
+              <Icon icon="mdi:paperclip" class="{densityClasses.icon[density]} text-foreground/70" />
+            </span>
+          {/if}
           {#if isNonLocal}
             <span title={$_('search.notSyncedLocally')}>
               <Icon icon="mdi:cloud-outline" class="{densityClasses.icon[density]} text-muted-foreground" />
             </span>
           {/if}
-          {#if conversation.hasAttachments}
-            <Icon icon="mdi:paperclip" class="{densityClasses.icon[density]} text-muted-foreground" />
+          {#if folderName}
+            <span title={$_('messageList.foundIn', { values: { folder: folderName } })} aria-label={$_('messageList.foundIn', { values: { folder: folderName } })}>
+              <Icon icon="mdi:folder-outline" class="{densityClasses.icon[density]} opacity-60" />
+            </span>
           {/if}
+          <ReplyLaterButton {accountId} conversationId={conversation.threadId} />
         </div>
-
-        <ReplyLaterButton {accountId} conversationId={conversation.threadId} />
-
-        <!-- Date -->
-        <span class="{densityClasses.dateText[density]} text-muted-foreground flex-shrink-0 ml-auto">
-          {formatRelativeDate(new Date(conversation.latestDate))}
-        </span>
       </div>
-
-      <!-- Subject (with highlighting if in search mode) -->
-      {#if highlightedSubject}
-        <p
-          class="truncate {densityClasses.subjectText[density]} {hasUnread ? 'font-semibold text-foreground' : 'text-muted-foreground'}"
-        >
-          <!-- eslint-disable-next-line svelte/no-at-html-tags -- highlightMatches only inserts <mark> around already-escaped text -->
-          {@html highlightedSubject}
-        </p>
-      {:else}
-        <p
-          class="truncate {densityClasses.subjectText[density]} {hasUnread ? 'font-semibold text-foreground' : 'text-muted-foreground'}"
-        >
-          {conversation.subject || $_('viewer.noSubject')}
-        </p>
-      {/if}
 
       <!-- Snippet (with highlighting if in search mode) -->
       {#if highlightedSnippet}
