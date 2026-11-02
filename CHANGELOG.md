@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Open replies inline beneath conversation-style threads, keeping the chat history visible while composing.
 - Put the message's account first in the move destination picker for faster same-account moves.
 - Preserve the current virtual-folder rows and cursor when the background index refresh fails.
 
