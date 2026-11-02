@@ -1290,8 +1290,9 @@
   }
 
   function syncContextualSignature() {
+    const activeEditor = editor
     const identity = identities.find(item => item.id === selectedIdentityId)
-    if (!identity || (!editor && !isPlainTextMode)) return
+    if (!identity || (!activeEditor && !isPlainTextMode)) return
     const { ruleId } = currentSignatureProfile(identity)
     const choiceKey = signatureChoiceKey(identity, ruleId)
     if (choiceKey === lastAppliedSignatureKey) return
@@ -1315,7 +1316,8 @@
       return
     }
 
-    const content = editor.getHTML()
+    if (!activeEditor) return
+    const content = activeEditor.getHTML()
     if (!hasSignatureMarker(content) && lastAutoSignatureText) {
       // A missing marker means the user removed the generated signature.
       lastAppliedSignatureKey = choiceKey
@@ -1328,7 +1330,7 @@
         lastAppliedSignatureKey = choiceKey
         return
       }
-      editor.commands.setContent(removeSignatureFromContent(content))
+      activeEditor.commands.setContent(removeSignatureFromContent(content))
     }
     appendSignatureForIdentity(identity)
   }

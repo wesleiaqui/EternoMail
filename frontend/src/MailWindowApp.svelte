@@ -258,6 +258,7 @@
 <ToastContainer />
 <VirtualFolderDialog bind:open={showVirtualFolderDialog} virtualFolder={null} accounts={accountStore.accounts}
   initialSearchQuery={pendingSearchQuery} initialFolderId={pendingSearchFolderId}
+  onRefreshFolders={loadNavigation}
   onSave={async value => { await virtualFoldersStore.save(value as virtualfolder.VirtualFolder); await loadNavigation() }} />
 <style>
   .mail-list { width: var(--list-width); flex-shrink: 0; }

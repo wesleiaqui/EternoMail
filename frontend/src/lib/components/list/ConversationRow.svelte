@@ -14,7 +14,7 @@
   import { formatRelativeDate } from '$lib/utils/date'
   import { _ } from '$lib/i18n'
   // @ts-ignore - wailsjs path
-  import { message, folder } from '../../../../wailsjs/go/models'
+  import { message, folder, operations } from '../../../../wailsjs/go/models'
   // @ts-ignore - wailsjs path
   import { OpenReaderWindow, MarkAsRead, MarkAsUnread, RemoveFromInboxWithUndo, ResolveMailActionTarget, UndoOperation } from '../../../../wailsjs/go/app/App'
   import ReplyLaterButton from '$lib/components/common/ReplyLaterButton.svelte'
@@ -322,10 +322,10 @@
   async function resolveOwnMessageTarget(): Promise<string[]> {
     const owningAccountId = conversation.accountId || accountId
     if (!owningAccountId) throw new Error('Cannot validate a message action without its account')
-    return ResolveMailActionTarget({
+    return ResolveMailActionTarget(operations.Target.createFrom({
       kind: 'matched_messages',
       messages: ownMessageIds.map((messageId) => ({ accountId: owningAccountId, messageId })),
-    })
+    }))
   }
 
   // Determine star/read state from this conversation

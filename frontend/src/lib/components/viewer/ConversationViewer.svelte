@@ -8,7 +8,7 @@
   // @ts-ignore - wailsjs path
   import { EventsOn } from '../../../../wailsjs/runtime/runtime'
   // @ts-ignore - wailsjs path
-  import { message as messageModels, account } from '../../../../wailsjs/go/models'
+  import { message as messageModels, account, operations } from '../../../../wailsjs/go/models'
   import AttachmentList from './AttachmentList.svelte'
   import ConversationMessage from './ConversationMessage.svelte'
   import { reactionLayout } from './reactionLayout'
@@ -152,10 +152,10 @@
     if (messageIds.some((id) => !displayedIds.has(id))) {
       throw new Error('Message action target is no longer in the displayed conversation')
     }
-    return ResolveMailActionTarget({
+    return ResolveMailActionTarget(operations.Target.createFrom({
       kind: 'matched_messages',
       messages: messageIds.map((messageId) => ({ accountId: owningAccountId, messageId })),
-    })
+    }))
   }
 
   async function loadAccounts() {

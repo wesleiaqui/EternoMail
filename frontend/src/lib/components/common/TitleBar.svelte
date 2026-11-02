@@ -38,7 +38,7 @@
 
 <header class="h-10 flex items-center justify-between bg-muted/50 border-b border-border select-none shrink-0">
   <!-- Drag region - left side with app title -->
-  <div class="flex-1 flex items-center gap-2 px-3 h-full" style="--wails-draggable: drag" ondblclick={handleTitlebarDoubleClick}>
+  <div class="flex-1 flex items-center gap-2 px-3 h-full" style="--wails-draggable: drag" role="button" tabindex="0" aria-label={isMaximized ? $_('aria.restoreWindow') : $_('aria.maximizeWindow')} ondblclick={handleTitlebarDoubleClick} onkeydown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void toggleMaximize() } }}>
     <img src={logo} alt="" class="w-5 h-5 rounded object-contain" />
     <span class="text-sm font-medium text-foreground">Postilaatikko</span>
   </div>

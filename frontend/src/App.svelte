@@ -69,7 +69,7 @@
   // @ts-ignore - wailsjs path
   import { PrepareReply, GetPendingMailto, GetDraftForEdit, DeleteDraft, ClearDraftHistory, SendMessageWithDraftGuard, CancelPendingSend, CompletePendingSend, ListPendingSends, MarkAsRead, MarkAsUnread, Star, Unstar, ArchiveWithUndo, MarkAsSpamWithUndo, MarkAsNotSpamWithUndo, ResolveMailActionTarget, UndoOperation, UndoLatestWithResult, GetTermsAccepted, SetTermsAccepted, RefreshWindowConstraints, AcceptCertificate, GetStartHiddenActive, CloseWindow, QuitApp, OpenComposerWindow, OpenReaderWindow, GetOpenReaderInTabPreference, GetSystemTheme, NotifyStartupComplete, GetOAuthBuildStatus, GetOAuthWarningDisabled, SetOAuthWarningDisabled, GetLastSeenVersion, SetLastSeenVersion, GetAppInfo, GetWindowDecorationStatus } from '../wailsjs/go/app/App.js'
   // @ts-ignore - wailsjs path
-  import { smtp, folder, certificate } from '../wailsjs/go/models'
+  import { smtp, folder, certificate, operations } from '../wailsjs/go/models'
   // @ts-ignore - wailsjs runtime
   import { WindowShow, EventsOn } from '../wailsjs/runtime/runtime'
   import { _ } from '$lib/i18n'
@@ -2027,7 +2027,7 @@
   async function resolveActionTarget(target: ActionTarget): Promise<string[]> {
     // The backend validates account ownership and resolves whole-thread targets
     // to message IDs. Existing mutations then retain their undo and sync paths.
-    return ResolveMailActionTarget(target)
+    return ResolveMailActionTarget(operations.Target.createFrom(target))
   }
 
   const listActionExecutor: MessageActionExecutor = {
