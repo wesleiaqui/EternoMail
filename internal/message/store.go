@@ -8,6 +8,7 @@ import (
 	"html"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -3190,6 +3191,56 @@ func prepareFTSQuery(query string) string {
 	return strings.Join(processedWords, " ")
 }
 
+// highlightRegexCache caches compiled search highlight regular expressions by query string.
+// Caching avoids recompiling identical regex patterns across hundreds of fields (Subject,
+// Snippet, FromName) and rows during search result hydration.
+var (
+	highlightMu    sync.RWMutex
+	highlightCache = make(map[string]*regexp.Regexp)
+)
+
+const maxHighlightCacheEntries = 128
+
+// getHighlightRegex returns a compiled regex matching any term from the search query.
+// It caches compiled regexes in a thread-safe bounded map to eliminate repeated regex compilation.
+func getHighlightRegex(query string) *regexp.Regexp {
+	highlightMu.RLock()
+	re, ok := highlightCache[query]
+	highlightMu.RUnlock()
+	if ok {
+		return re
+	}
+
+	// Get individual search terms
+	terms := strings.Fields(strings.ToLower(query))
+	if len(terms) == 0 {
+		return nil
+	}
+
+	// Build a regex pattern that matches any of the search terms
+	var patterns []string
+	for _, term := range terms {
+		patterns = append(patterns, regexp.QuoteMeta(term))
+	}
+
+	// Create a case-insensitive pattern
+	pattern := "(?i)(" + strings.Join(patterns, "|") + ")"
+	compiled, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil
+	}
+
+	highlightMu.Lock()
+	if len(highlightCache) >= maxHighlightCacheEntries {
+		// Clear cache to prevent unbounded growth when the limit is exceeded.
+		highlightCache = make(map[string]*regexp.Regexp)
+	}
+	highlightCache[query] = compiled
+	highlightMu.Unlock()
+
+	return compiled
+}
+
 // highlightMatches wraps matching terms in <mark> tags for highlighting
 // The text is HTML-escaped to prevent XSS
 func highlightMatches(text, query string) string {
@@ -3200,25 +3251,8 @@ func highlightMatches(text, query string) string {
 	// First, escape the text to prevent XSS
 	escapedText := html.EscapeString(text)
 
-	// Get individual search terms
-	terms := strings.Fields(strings.ToLower(query))
-	if len(terms) == 0 {
-		return escapedText
-	}
-
-	// Build a regex pattern that matches any of the search terms
-	// Use word boundaries for better matching
-	var patterns []string
-	for _, term := range terms {
-		// Escape regex special characters in the term
-		escaped := regexp.QuoteMeta(term)
-		patterns = append(patterns, escaped)
-	}
-
-	// Create a case-insensitive pattern
-	pattern := "(?i)(" + strings.Join(patterns, "|") + ")"
-	re, err := regexp.Compile(pattern)
-	if err != nil {
+	re := getHighlightRegex(query)
+	if re == nil {
 		return escapedText
 	}
 
