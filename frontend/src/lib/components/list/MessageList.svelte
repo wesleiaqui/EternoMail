@@ -2490,6 +2490,7 @@
         <button
           class="p-2 rounded-md hover:bg-muted transition-colors"
           title={syncProgress ? `${$_('sidebar.syncing')} ${syncProgress.phase}: ${syncProgress.percentage}% - ${$_('sidebar.clickToCancel')}` : `${$_('sidebar.syncing')} ${$_('sidebar.clickToCancel')}`}
+          aria-label={syncProgress ? `${$_('sidebar.syncing')} ${syncProgress.phase}: ${syncProgress.percentage}% - ${$_('sidebar.clickToCancel')}` : `${$_('sidebar.syncing')} ${$_('sidebar.clickToCancel')}`}
           onclick={cancelFolderSync}
         >
           <Icon
@@ -2502,6 +2503,8 @@
         <DropdownMenu.Root>
           <DropdownMenu.Trigger
             class="p-2 rounded-md hover:bg-muted transition-colors disabled:opacity-50"
+            title={$_('messageList.syncFolder')}
+            aria-label={$_('messageList.syncFolder')}
             disabled={loading}
           >
             <Icon
@@ -2556,6 +2559,7 @@
         <DropdownMenu.Trigger
           class="p-2 rounded-md hover:bg-muted transition-colors {filterMode ? 'bg-muted' : ''}"
           title={$_('messageList.filter')}
+          aria-label={filterMode ? `${$_('messageList.filter')}: ${filterLabel}` : $_('messageList.filter')}
         >
           <Icon
             icon={filterMode ? 'mdi:filter' : 'mdi:filter-outline'}
@@ -2594,6 +2598,7 @@
       <button
         class="p-2 rounded-md hover:bg-muted transition-colors"
         title={getMessageListSortOrder() === 'newest' ? $_('messageList.showingNewest') : $_('messageList.showingOldest')}
+        aria-label={getMessageListSortOrder() === 'newest' ? $_('messageList.showingNewest') : $_('messageList.showingOldest')}
         onclick={toggleSortOrder}
       >
         <Icon
