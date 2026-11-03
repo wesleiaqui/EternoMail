@@ -10,6 +10,7 @@ import { mount } from 'svelte'
 import { IsReady } from '../wailsjs/go/app/App'
 // @ts-ignore - wailsjs path
 import { EventsOn } from '../wailsjs/runtime/runtime'
+import { insertClipboardTextAtFocus } from './lib/nativePaste'
 
 // Linear bootstrap. Each step waits for the previous to complete; no
 // concurrent retries woven between them. The inline splash markup in
@@ -19,6 +20,7 @@ import { EventsOn } from '../wailsjs/runtime/runtime'
 // native frame before the settings IPC calls complete.
 async function bootstrap(): Promise<void> {
   await waitForRuntime()
+  EventsOn('native:paste-text', (text: string) => insertClipboardTextAtFocus(text))
   await initI18n()
   await waitForBackendReady()
   mount(App, { target: document.getElementById('app')! })

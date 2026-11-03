@@ -17,7 +17,10 @@ test('copy from a selected sandboxed email body uses the native clipboard bridge
 test('native Edit shortcuts are registered and target the focused sandboxed frame', () => {
   assert.match(nativeMenu, /menu\.Text\("Cut", keys\.CmdOrCtrl\("x"\)/)
   assert.match(nativeMenu, /menu\.Text\("Copy", keys\.CmdOrCtrl\("c"\)/)
-  assert.match(nativeMenu, /menu\.Text\("Paste", keys\.CmdOrCtrl\("v"\)/)
+  // Keep Cmd+V native to WebKit so composer editors receive a real paste
+  // event (including rich content and images); the menu item remains a
+  // click-only text fallback.
+  assert.match(nativeMenu, /menu\.Text\("Paste", nil, func\(\*menu\.CallbackData\) \{ application\.RunEditMenuCommand\("paste"\) \}\)/)
   assert.match(nativeMenu, /menu\.Text\("Select All", keys\.CmdOrCtrl\("a"\)/)
   assert.match(editCommand, /active\.contentWindow\.postMessage\(\{ type: 'native-edit-command', command:/)
   assert.ok(editCommand.includes(`document.execCommand('"+command+"')`))

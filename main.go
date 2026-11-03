@@ -154,7 +154,10 @@ func runMainMode(mailtoData *app.MailtoData, rawMailtoArg string) {
 		menu.Separator(),
 		menu.Text("Cut", keys.CmdOrCtrl("x"), func(*menu.CallbackData) { application.RunEditMenuCommand("cut") }),
 		menu.Text("Copy", keys.CmdOrCtrl("c"), func(*menu.CallbackData) { application.RunEditMenuCommand("copy") }),
-		menu.Text("Paste", keys.CmdOrCtrl("v"), func(*menu.CallbackData) { application.RunEditMenuCommand("paste") }),
+		// Leave the keyboard shortcut to WebKit so editors receive the real
+		// native paste event (including rich text/images). The menu item itself
+		// still has a clipboard-text fallback for click-based use.
+		menu.Text("Paste", nil, func(*menu.CallbackData) { application.RunEditMenuCommand("paste") }),
 		menu.Separator(),
 		menu.Text("Select All", keys.CmdOrCtrl("a"), func(*menu.CallbackData) { application.RunEditMenuCommand("selectAll") }),
 	)
