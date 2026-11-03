@@ -66,7 +66,13 @@ func Open(path string) (*DB, error) {
 	// the same configuration (busy_timeout, WAL, etc.), preventing SQLITE_BUSY
 	// errors when a pooled connection lacks busy_timeout.
 	uri := url.URL{Scheme: "file", Path: path}
-	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(30000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)&_pragma=cache_size(-64000)", uri.String())
+	// Begin write-capable transactions in IMMEDIATE mode. With deferred
+	// transactions, concurrent draft-history commits can each read a snapshot;
+	// when one later tries to upgrade that stale snapshot to a writer, SQLite
+	// returns SQLITE_BUSY_SNAPSHOT (517) immediately, bypassing busy_timeout.
+	// IMMEDIATE obtains the write reservation before transaction reads so the
+	// timeout can serialize competing writers cleanly.
+	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(30000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)&_pragma=cache_size(-64000)&_txlock=immediate", uri.String())
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)

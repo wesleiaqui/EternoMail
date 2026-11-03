@@ -627,7 +627,9 @@ func (ops *draftOps) syncToIMAP(ctx context.Context, localDraft *draft.Draft, ms
 	// to know about UIDs the local DB never recorded.
 	if ctx.Err() != nil {
 		log.Debug().Str("draftID", localDraft.ID).Uint32("uid", uint32(uid)).Msg("Draft cancelled during APPEND, cleaning up orphan")
-		if _, selErr := conn.SelectMailbox(ctx, draftsFolder.Path); selErr == nil {
+		cleanupCtx, cancelCleanup := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancelCleanup()
+		if _, selErr := conn.SelectMailbox(cleanupCtx, draftsFolder.Path); selErr == nil {
 			if delErr := conn.DeleteMessageByUID(uid); delErr != nil {
 				log.Warn().Err(delErr).Uint32("uid", uint32(uid)).Msg("Failed to clean up orphan after cancel-during-APPEND")
 			}
@@ -636,7 +638,9 @@ func (ops *draftOps) syncToIMAP(ctx context.Context, localDraft *draft.Draft, ms
 	}
 	if d, _ := ops.draftStore.Get(localDraft.ID); d == nil {
 		log.Debug().Str("draftID", localDraft.ID).Uint32("uid", uint32(uid)).Msg("Draft deleted during APPEND, cleaning up orphan")
-		if _, selErr := conn.SelectMailbox(ctx, draftsFolder.Path); selErr == nil {
+		cleanupCtx, cancelCleanup := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancelCleanup()
+		if _, selErr := conn.SelectMailbox(cleanupCtx, draftsFolder.Path); selErr == nil {
 			if delErr := conn.DeleteMessageByUID(uid); delErr != nil {
 				log.Warn().Err(delErr).Uint32("uid", uint32(uid)).Msg("Failed to clean up orphan after delete-during-APPEND")
 			}
