@@ -1201,7 +1201,6 @@
       await runMessageMutation(messageIds, async () => {
         moveMutationInFlight = true
         try {
-          pendingReadOnLeave.cancel(messageIds)
           const result = await ArchiveWithUndo(messageIds)
           if (result.coalesced) return
           publishUndoOperationCreated(result.operationId, messageIds, 'archive')
