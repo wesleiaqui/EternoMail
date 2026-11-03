@@ -14,7 +14,7 @@
 
 - Capture Go CPU and heap profiles plus app/WebKit process CPU/RSS on macOS for idle, sync, search, navigation, large-message and multiple-reader workloads.
 - Record app build, OS, account/mailbox scale, exact user actions, profile window and observed latency. Repeat each workload against the same account/build before and after changes.
-- Use PERF-002 / PR #96's opt-in loopback pprof endpoint and process sampler when integrated. Use Instruments Time Profiler/Allocations when WebKit dominates.
+- Use the integrated PERF-002 / PR #96 opt-in loopback pprof endpoint and process sampler. Use Instruments Time Profiler/Allocations when WebKit dominates.
 - Inventory each Gmail operation's present transport, fallback and source files. Include initial sync, incremental history, search, list/read, body/attachment, actions/undo, drafts, send, filters, notifications, account setup, shared mailbox support and scheduled-send helper.
 - Set resource and latency acceptance budgets from observed baselines; do not assume IMAP or any single subsystem caused the reported spike.
 - Split implementation into independently claimable and reviewable tasks before starting behavior changes.
