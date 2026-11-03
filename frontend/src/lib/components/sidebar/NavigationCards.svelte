@@ -74,7 +74,8 @@
                 <button type="button" class="sidebar-primary-link min-w-0 flex-1 {selectedFolderId === entry.folderId || (entry.kind === 'system' && selectedFolderId === entry.folderType) || (entry.kind === 'inboxes' && selectedFolderId === 'inbox') ? 'sidebar-primary-link-selected' : ''}" onclick={() => onSelect(entry)} title={entry.path || entry.name} aria-label={entry.name}>
                   <Icon icon={entry.folderType === 'replyLater' ? 'mdi:clock-outline' : entry.kind === 'virtual' ? 'mdi:folder-multiple-outline' : entry.kind === 'inboxes' ? 'mdi:inbox-multiple-outline' : 'mdi:folder-outline'} class="h-5 w-5 shrink-0" />
                   <span class="navigation-entry-label min-w-0 flex-1 whitespace-normal break-words leading-tight line-clamp-2">{entry.name}</span>
-                  {#if entry.count !== undefined}<span class="ml-auto shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">{entry.count}</span>{/if}
+                  {@const badgeCount = entry.count ?? (entry.unreadCount ? entry.unreadCount : entry.totalCount)}
+                  {#if badgeCount !== undefined && badgeCount > 0}<span class="ml-auto shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground" title={entry.unreadCount ? `${entry.unreadCount} unread / ${entry.totalCount || 0} messages` : `${badgeCount} messages`}>{badgeCount}</span>{/if}
                 </button>
                 {#if !editing}
                   <button type="button" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded hover:bg-muted focus-visible:opacity-100 {isQuick(id) ? 'text-amber-500' : 'text-muted-foreground/60 opacity-0 group-hover:opacity-100'}"

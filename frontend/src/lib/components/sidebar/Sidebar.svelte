@@ -232,11 +232,11 @@
   $effect(() => {
     void getUIStateVersion()
     const entries: NavigationEntry[] = [
-      { id: 'inboxes', kind: 'inboxes', name: $_('navigation.allInboxes') },
+      { id: 'inboxes', kind: 'inboxes', name: $_('navigation.allInboxes'), ...folderCounts(item => item.type === 'inbox') },
       { id: 'replyLater', kind: 'system', folderType: 'replyLater', name: $_('replyLater.title'), count: replyLaterQueue.ready ? replyLaterQueue.count : undefined },
-      ...[...primaryFolders, ...secondaryFolders].map(item => ({ id: item.type, kind: 'system' as const, name: $_(item.label), folderType: item.type })),
-      ...sidebarPins.list.map(pin => ({ id: `folder:${pin.accountId}:${pin.folderId}`, kind: 'folder' as const, accountId: pin.accountId, folderId: pin.folderId, name: pin.name, path: pin.path })),
-      ...virtualFoldersStore.folders.map(item => ({ id: `virtual:${item.id}`, kind: 'virtual' as const, folderId: item.id, name: item.name })),
+      ...[...primaryFolders, ...secondaryFolders].map(item => ({ id: item.type, kind: 'system' as const, name: $_(item.label), folderType: item.type, ...folderCounts(folder => folder.type === item.type) })),
+      ...sidebarPins.list.map(pin => ({ id: `folder:${pin.accountId}:${pin.folderId}`, kind: 'folder' as const, accountId: pin.accountId, folderId: pin.folderId, name: pin.name, path: pin.path, ...countsForFolder(pin.accountId, pin.folderId) })),
+      ...virtualFoldersStore.folders.map(item => ({ id: `virtual:${item.id}`, kind: 'virtual' as const, folderId: item.id, name: item.name, unreadCount: virtualFoldersStore.unreadCounts[item.id] || 0 })),
     ]
     navigationCards.sync(entries)
   })
@@ -250,6 +250,37 @@
       return
     }
     selectPinnedFolder({ accountId: entry.accountId!, folderId: entry.folderId!, name: entry.name, path: entry.path || entry.name })
+  }
+
+  function folderCounts(match: (item: folder.Folder) => boolean): { totalCount: number; unreadCount: number } {
+    let totalCount = 0
+    let unreadCount = 0
+    const visit = (trees: folder.FolderTree[]) => {
+      for (const tree of trees) {
+        if (tree.folder && match(tree.folder)) {
+          totalCount += tree.folder.totalCount || 0
+          unreadCount += tree.folder.unreadCount || 0
+        }
+        if (tree.children) visit(tree.children)
+      }
+    }
+    for (const acc of accountStore.accounts) visit(acc.folders || [])
+    return { totalCount, unreadCount }
+  }
+
+  function countsForFolder(accountId: string | undefined, folderId: string | undefined) {
+    const account = accountStore.accounts.find(item => item.account.id === accountId)
+    if (!account || !folderId) return { totalCount: 0, unreadCount: 0 }
+    const visit = (trees: folder.FolderTree[]): folder.Folder | null => {
+      for (const tree of trees) {
+        if (tree.folder?.id === folderId) return tree.folder
+        const child = visit(tree.children || [])
+        if (child) return child
+      }
+      return null
+    }
+    const item = visit(account.folders || [])
+    return { totalCount: item?.totalCount || 0, unreadCount: item?.unreadCount || 0 }
   }
 
   // Opens a pinned folder. Its type comes from the loaded folder tree so special

@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - Load Reply Later conversations directly from the durable queue instead of scanning every mailbox folder.
+- Show unread message counts beside sidebar destinations, with total counts when nothing is unread.
 
 ## Postilaatikko 2026.11.03
 
