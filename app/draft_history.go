@@ -92,8 +92,32 @@ func (a *App) PutDraftAttachmentBlob(name, mime, contentBase64 string) (string, 
 	return putDraftAttachmentBlob(a.draftHistoryStore(), name, mime, contentBase64)
 }
 
-func (a *App) GetDraftAttachmentBlob(hash string) (*drafthistory.Blob, error) {
-	return a.draftHistoryStore().GetBlob(hash)
+// DraftAttachmentBlob is the composer-facing representation of a stored draft attachment.
+// Content remains base64 text over Wails RPC to avoid large JSON number arrays.
+type DraftAttachmentBlob struct {
+	Hash    string `json:"hash"`
+	Name    string `json:"name"`
+	Mime    string `json:"mime"`
+	Size    int64  `json:"size"`
+	Content string `json:"content"`
+}
+
+func getDraftAttachmentBlob(store *drafthistory.Store, hash string) (*DraftAttachmentBlob, error) {
+	blob, err := store.GetBlob(hash)
+	if err != nil {
+		return nil, err
+	}
+	return &DraftAttachmentBlob{
+		Hash:    blob.Hash,
+		Name:    blob.Name,
+		Mime:    blob.Mime,
+		Size:    blob.Size,
+		Content: base64.StdEncoding.EncodeToString(blob.Content),
+	}, nil
+}
+
+func (a *App) GetDraftAttachmentBlob(hash string) (*DraftAttachmentBlob, error) {
+	return getDraftAttachmentBlob(a.draftHistoryStore(), hash)
 }
 
 // DraftHistoryCommitBlobs is DraftHistoryCommit plus attachment membership.
@@ -105,8 +129,8 @@ func (c *ComposerApp) PutDraftAttachmentBlob(name, mime, contentBase64 string) (
 	return putDraftAttachmentBlob(c.draftHistoryStore(), name, mime, contentBase64)
 }
 
-func (c *ComposerApp) GetDraftAttachmentBlob(hash string) (*drafthistory.Blob, error) {
-	return c.draftHistoryStore().GetBlob(hash)
+func (c *ComposerApp) GetDraftAttachmentBlob(hash string) (*DraftAttachmentBlob, error) {
+	return getDraftAttachmentBlob(c.draftHistoryStore(), hash)
 }
 
 func (c *ComposerApp) DraftHistoryCommitBlobs(draftKey, parentID, label, payload string, blobHashes []string) (string, error) {

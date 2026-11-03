@@ -30,7 +30,7 @@ export interface ComposerApi {
   moveDraftHistory: (oldKey: string, newKey: string) => Promise<void>
   draftHistoryCommitBlobs: (draftKey: string, parentId: string, label: string, payload: string, blobHashes: string[]) => Promise<string>
   putDraftAttachmentBlob: (name: string, mime: string, contentBase64: string) => Promise<string>
-  getDraftAttachmentBlob: (hash: string) => Promise<{ hash: string; name: string; mime: string; size: number; content: string }>
+  getDraftAttachmentBlob: (hash: string) => Promise<app.DraftAttachmentBlob>
   getSendLaterSetup: (accountId: string) => Promise<SendLaterSetup>
   initializeSendLaterClient: () => Promise<string>
   saveSendLaterConfig: (config: SendLaterConfig) => Promise<void>

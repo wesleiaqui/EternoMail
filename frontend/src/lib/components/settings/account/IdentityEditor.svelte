@@ -52,6 +52,22 @@
     signaturePlacement: 'above' | 'below'
     signatureSeparator: boolean
   }
+  const supportedSignatureMessageTypes = new Set<SignatureRule['messageTypes'][number]>([
+    'new', 'reply', 'reply-all', 'forward',
+  ])
+
+  function normalizeSignatureRules(rules: account.SignatureRule[] | null | undefined): SignatureRule[] {
+    return (rules || []).map(rule => ({
+      ...structuredClone(rule),
+      signatureHtml: rule.signatureHtml || '',
+      signatureText: rule.signatureText || '',
+      signaturePlacement: rule.signaturePlacement === 'below' ? 'below' : 'above',
+      signatureSeparator: !!rule.signatureSeparator,
+      messageTypes: rule.messageTypes.filter((type): type is SignatureRule['messageTypes'][number] =>
+        supportedSignatureMessageTypes.has(type as SignatureRule['messageTypes'][number])),
+    }))
+  }
+
   let signatureRules = $state<SignatureRule[]>([])
 
   let saving = $state(false)
@@ -72,7 +88,7 @@
         signatureForForward = identity.signatureForForward ?? true
         signaturePlacement = (identity.signaturePlacement as 'above' | 'below') || 'above'
         signatureSeparator = identity.signatureSeparator ?? false
-        signatureRules = structuredClone(identity.signatureRules || [])
+        signatureRules = normalizeSignatureRules(identity.signatureRules)
       } else {
         // New identity - reset to defaults
         email = ''

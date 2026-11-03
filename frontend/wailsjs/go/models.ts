@@ -425,6 +425,26 @@ export namespace app {
 	        this.data = source["data"];
 	    }
 	}
+	export class DraftAttachmentBlob {
+	    hash: string;
+	    name: string;
+	    mime: string;
+	    size: number;
+	    content: string;
+
+	    static createFrom(source: any = {}) {
+	        return new DraftAttachmentBlob(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.hash = source["hash"];
+	        this.name = source["name"];
+	        this.mime = source["mime"];
+	        this.size = source["size"];
+	        this.content = source["content"];
+	    }
+	}
 	export class ConnectionTestResult {
 	    success: boolean;
 	    error?: string;

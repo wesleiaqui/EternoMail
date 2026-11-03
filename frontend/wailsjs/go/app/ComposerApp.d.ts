@@ -45,7 +45,7 @@ export function GetDarkComposerBody():Promise<boolean>;
 
 export function GetDraft():Promise<smtp.ComposeMessage>;
 
-export function GetDraftAttachmentBlob(arg1:string):Promise<drafthistory.Blob>;
+export function GetDraftAttachmentBlob(arg1:string):Promise<app.DraftAttachmentBlob>;
 
 export function GetIdentities(arg1:string):Promise<Array<account.Identity>>;
 
