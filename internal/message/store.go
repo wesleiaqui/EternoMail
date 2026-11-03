@@ -158,6 +158,52 @@ func (s *Store) ListConversationsByFolderIDs(folderIDs []string, offset, limit i
 	return s.listConversationsByFolderIDs(folderIDs, offset, limit, sortOrder, filter, false)
 }
 
+// ListReplyLaterConversations starts from the small durable queue and looks up
+// only its indexed conversations. Filtering the full messages table by queue
+// membership made this virtual inbox progressively slower as mailboxes grew.
+func (s *Store) ListReplyLaterConversations(offset, limit int, sortOrder, filter string) ([]*Conversation, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	orderClause := "ORDER BY latest_date DESC"
+	if sortOrder == "oldest" {
+		orderClause = "ORDER BY latest_date ASC"
+	}
+	query := `
+		SELECT
+			COALESCE(m.thread_id, m.id) as conv_thread_id,
+			MIN(m.subject) as subject,
+			MAX(m.snippet) as snippet,
+			COUNT(*) as message_count,
+			SUM(CASE WHEN m.is_read = 0 THEN 1 ELSE 0 END) as unread_count,
+			MAX(CASE WHEN m.has_attachments = 1 THEN 1 ELSE 0 END) as has_attachments,
+			MAX(CASE WHEN m.is_starred = 1 THEN 1 ELSE 0 END) as is_starred,
+			MAX(m.date) as latest_date,
+			GROUP_CONCAT(m.id) as message_ids,
+			MAX(CASE WHEN m.smime_encrypted = 1 OR m.pgp_encrypted = 1 THEN 1 ELSE 0 END) as is_encrypted,
+			MAX(m.inbox_category) as inbox_category,
+			a.id as account_id,
+			a.name as account_name,
+			a.color as account_color,
+			f.id as folder_id,
+			json_group_array(DISTINCT json_object('name', m.from_name, 'email', m.from_email)) as participants_json
+		FROM reply_later_queue rl
+		INNER JOIN messages m ON m.account_id = rl.account_id
+			AND (m.thread_id = rl.conversation_id OR (m.thread_id IS NULL AND m.id = rl.conversation_id))
+		INNER JOIN folders f ON m.folder_id = f.id
+		INNER JOIN accounts a ON f.account_id = a.id AND a.enabled = 1
+		GROUP BY COALESCE(m.thread_id, m.id), a.id` + filterHavingClause(filter, "m.") + `
+		` + orderClause + `
+		LIMIT ? OFFSET ?
+	`
+	rows, err := s.db.QueryContext(ctx, query, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query Reply Later conversations: %w", err)
+	}
+	defer rows.Close()
+	return scanConversations(rows)
+}
+
 // ListVirtualArchivedConversations lists Gmail-style archived messages from
 // All Mail, excluding copies that are still present in the account's Inbox.
 func (s *Store) ListVirtualArchivedConversations(allMailFolderIDs []string, offset, limit int, sortOrder, filter string) ([]*Conversation, error) {
@@ -227,6 +273,10 @@ func (s *Store) listConversationsByFolderIDs(folderIDs []string, offset, limit i
 	}
 	defer rows.Close()
 
+	return scanConversations(rows)
+}
+
+func scanConversations(rows *sql.Rows) ([]*Conversation, error) {
 	var conversations []*Conversation
 	for rows.Next() {
 		c := &Conversation{}
@@ -254,7 +304,7 @@ func (s *Store) listConversationsByFolderIDs(folderIDs []string, offset, limit i
 			&participantsJSON,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan unified inbox conversation: %w", err)
+			return nil, fmt.Errorf("failed to scan conversation: %w", err)
 		}
 
 		if snippet.Valid {
@@ -275,13 +325,35 @@ func (s *Store) listConversationsByFolderIDs(folderIDs []string, offset, limit i
 
 		conversations = append(conversations, c)
 	}
-
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate conversations: %w", err)
+	}
 	return conversations, nil
 }
 
 // CountConversationsUnifiedInbox returns the total count of conversations across all inbox folders
 func (s *Store) CountConversationsByFolderIDs(folderIDs []string, filter string) (int, error) {
 	return s.countConversationsByFolderIDs(folderIDs, filter, false)
+}
+
+// CountReplyLaterConversations mirrors the queue-driven Reply Later list and
+// applies optional conversation filters to indexed queue entries.
+func (s *Store) CountReplyLaterConversations(filter string) (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	query := `
+		SELECT COUNT(DISTINCT COALESCE(m.thread_id, m.id) || '-' || a.id)
+		FROM reply_later_queue rl
+		INNER JOIN messages m ON m.account_id = rl.account_id
+			AND (m.thread_id = rl.conversation_id OR (m.thread_id IS NULL AND m.id = rl.conversation_id))
+		INNER JOIN folders f ON m.folder_id = f.id
+		INNER JOIN accounts a ON f.account_id = a.id AND a.enabled = 1
+		WHERE 1 = 1` + filterWhereClause(filter, "m.")
+	var count int
+	if err := s.db.QueryRowContext(ctx, query).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to count Reply Later conversations: %w", err)
+	}
+	return count, nil
 }
 
 func (s *Store) CountVirtualArchivedConversations(allMailFolderIDs []string, filter string) (int, error) {
