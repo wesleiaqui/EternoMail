@@ -9,12 +9,14 @@ package contact
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/mail"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/hkdb/aerion/internal/logging"
@@ -119,11 +121,123 @@ func (s *Store) Search(query string, limit int) ([]*Contact, error) {
 		}
 	}
 
-	merged := MergeResults(unified, vcardContacts, s.searchMacOSContacts(query, limit))
+	mailContacts, err := s.searchMessageParticipants(query, limit)
+	if err != nil {
+		s.log.Warn().Err(err).Msg("Failed to search message participants")
+		mailContacts = []*Contact{}
+	}
+	merged := MergeResults(unified, vcardContacts, s.searchMacOSContacts(query, limit), mailContacts)
 	if len(merged) > limit {
 		merged = merged[:limit]
 	}
 	return merged, nil
+}
+
+// searchMessageParticipants finds recipient suggestions in already-synced message
+// headers. It reads only envelope fields, never bodies or attachments. FTS narrows
+// the search to a bounded set of candidate messages before their address lists are
+// decoded in Go.
+func (s *Store) searchMessageParticipants(query string, limit int) ([]*Contact, error) {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if len([]rune(query)) < 2 {
+		return nil, nil
+	}
+
+	// FTS tokenizes email punctuation, so use the leading word as an indexed
+	// candidate prefix and apply the complete query to decoded address/name values.
+	var token strings.Builder
+	for _, char := range query {
+		if !unicode.IsLetter(char) && !unicode.IsDigit(char) {
+			break
+		}
+		token.WriteRune(char)
+	}
+	if token.Len() < 2 {
+		return nil, nil
+	}
+	ftsQuery := `from_email : "` + token.String() + `"* OR from_name : "` + token.String() + `"* OR to_list : "` + token.String() + `"* OR cc_list : "` + token.String() + `"*`
+
+	const candidateLimit = 200
+	rows, err := s.db.Query(`
+		SELECT m.from_name, m.from_email, m.to_list, m.cc_list, m.date
+		FROM messages_fts
+		JOIN messages m ON m.rowid = messages_fts.rowid
+		WHERE messages_fts MATCH ? AND COALESCE(m.is_deleted, 0) = 0
+		ORDER BY m.date DESC
+		LIMIT ?
+	`, ftsQuery, candidateLimit)
+	if err != nil {
+		return nil, fmt.Errorf("search message headers for recipients: %w", err)
+	}
+	defer rows.Close()
+
+	byEmail := make(map[string]*Contact)
+	for rows.Next() {
+		var fromName, fromEmail, toList, ccList sql.NullString
+		var date sql.NullTime
+		if err := rows.Scan(&fromName, &fromEmail, &toList, &ccList, &date); err != nil {
+			return nil, fmt.Errorf("scan recipient header: %w", err)
+		}
+		addresses := []headerAddress{{Name: fromName.String, Email: fromEmail.String}}
+		addresses = append(addresses, decodeHeaderAddresses(toList.String)...)
+		addresses = append(addresses, decodeHeaderAddresses(ccList.String)...)
+		for _, address := range addresses {
+			emailAddress := strings.TrimSpace(address.Email)
+			parsed, err := mail.ParseAddress(emailAddress)
+			if err != nil || parsed.Address == "" {
+				continue
+			}
+			emailAddress = strings.ToLower(parsed.Address)
+			if !strings.Contains(emailAddress, query) && !strings.Contains(strings.ToLower(address.Name), query) {
+				continue
+			}
+			contact, exists := byEmail[emailAddress]
+			if !exists {
+				contact = &Contact{Email: emailAddress, DisplayName: strings.TrimSpace(address.Name), Source: "mail"}
+				byEmail[emailAddress] = contact
+			}
+			if date.Valid && date.Time.After(contact.LastUsed) {
+				contact.LastUsed = date.Time
+			}
+			if contact.DisplayName == "" && strings.TrimSpace(address.Name) != "" {
+				contact.DisplayName = strings.TrimSpace(address.Name)
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate recipient headers: %w", err)
+	}
+
+	contacts := make([]*Contact, 0, len(byEmail))
+	for _, contact := range byEmail {
+		contacts = append(contacts, contact)
+	}
+	sort.Slice(contacts, func(i, j int) bool {
+		if !contacts[i].LastUsed.Equal(contacts[j].LastUsed) {
+			return contacts[i].LastUsed.After(contacts[j].LastUsed)
+		}
+		return contacts[i].Email < contacts[j].Email
+	})
+	if len(contacts) > limit {
+		contacts = contacts[:limit]
+	}
+	return contacts, nil
+}
+
+type headerAddress struct {
+	Name  string `json:"name"`
+	Email string `json:"address"`
+}
+
+func decodeHeaderAddresses(raw string) []headerAddress {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var addresses []headerAddress
+	if err := json.Unmarshal([]byte(raw), &addresses); err != nil {
+		return nil
+	}
+	return addresses
 }
 
 // searchUnified queries the unified contact_records + contact_emails tables.
