@@ -122,6 +122,7 @@ export const CORE_SHORTCUTS: ShortcutDef[] = [
   { id: 'app.syncFolder', icon: 'mdi:refresh', label: 'shortcuts.action.syncFolder', group: 'general', combos: ['Mod+Shift+s'], panes: MAIL, inline: app('s') },
   { id: 'app.nextRail', label: 'shortcuts.action.nextRail', group: 'general', combos: ['Ctrl+Tab'], inline: app('tab') },
   { id: 'app.prevRail', label: 'shortcuts.action.prevRail', group: 'general', combos: ['Ctrl+`'], inline: app('`') },
+  { id: 'app.closeTab', label: 'shortcuts.action.closeTab', group: 'general', combos: ['Mod+w'], panes: MAIL, inline: app('w') },
   { id: 'app.quit', label: 'shortcuts.action.quit', group: 'general', combos: ['Mod+q'], inline: app('q') },
 
   // Pane and folder navigation (Alt chords work from any pane)

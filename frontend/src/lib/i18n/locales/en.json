@@ -1330,6 +1330,7 @@
       "syncFolder": "Sync current folder (again to cancel)",
       "nextRail": "Next view on the rail",
       "prevRail": "Previous view on the rail",
+      "closeTab": "Close active tab",
       "quit": "Quit",
       "paneNext": "Focus next pane",
       "panePrev": "Focus previous pane",
