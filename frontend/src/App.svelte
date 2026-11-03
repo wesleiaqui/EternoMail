@@ -1268,7 +1268,29 @@
 
   // Global keyboard shortcut handler
   function handleGlobalKeyDown(e: KeyboardEvent) {
-    if (activeMailWorkspace !== 'primary') return
+    // Secondary workspaces only own tab-level shortcuts. Keep other mail
+    // actions on the primary workspace, while allowing workspace navigation
+    // and the standard close-tab shortcut from every secondary tab.
+    if (activeMailWorkspace !== 'primary') {
+      if (document.querySelector('[role="menu"]') || isDialogGuardActive() || showComposer) return
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && getActiveExtension() === 'mail') {
+        if (e.key.toLowerCase() === 'tab' && mailWorkspaceTabs.length > 0) {
+          e.preventDefault()
+          const order = ['primary', ...mailWorkspaceTabs.map(tab => tab.id)]
+          const currentIndex = Math.max(0, order.indexOf(activeMailWorkspace))
+          const step = e.shiftKey ? -1 : 1
+          switchMailWorkspace(order[(currentIndex + step + order.length) % order.length])
+          return
+        }
+        if (e.key.toLowerCase() === 'w' && !e.shiftKey) {
+          e.preventDefault()
+          closeWorkspaceTab(activeMailWorkspace)
+          return
+        }
+      }
+      return
+    }
+
     // Track Left Alt press
     if (e.code === 'AltLeft') {
       leftAltHeld = true
@@ -2401,7 +2423,7 @@
     </div>
     {#if getActiveExtension() === 'mail'}
       {#each mailWorkspaceTabs as tab (tab.id)}
-        <div class="flex-1 min-w-0 min-h-0 overflow-hidden" style:display={activeMailWorkspace === tab.id ? 'flex' : 'none'}>
+        <div class="flex w-full flex-1 min-w-0 min-h-0 overflow-hidden" style:display={activeMailWorkspace === tab.id ? 'flex' : 'none'}>
           <MailWindowApp config={tab.scope} embedded readerTab={tab.kind === 'reader'} onCloseTab={() => closeWorkspaceTab(tab.id)} active={activeMailWorkspace === tab.id} onScopeChange={scope => updateWorkspaceScope(tab.id, scope)} onNewTab={openWorkspaceTab} onOpenInTab={openReaderScope} />
         </div>
       {/each}

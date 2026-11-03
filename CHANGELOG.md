@@ -7,6 +7,7 @@
 - Load Reply Later conversations directly from the durable queue instead of scanning every mailbox folder.
 - Show unread message counts beside sidebar destinations, with total counts when nothing is unread.
 - Open double-clicked conversations in reader-only tabs; keep folder browsing in workspace tabs and detach reader tabs into reader windows.
+- Cycle between mail workspace tabs with Ctrl+Tab / Ctrl+Shift+Tab, close secondary tabs with Cmd/Ctrl+W, and expand reader-only tabs to the available width.
 - Continue editing a draft directly from its message in conversation view.
 - Suggest message participants while composing, using indexed headers only; keep explicit address-book authorization separate.
 - Skip remote-image sanitization work for messages without remote image URLs, while retaining existing blocking behavior.
