@@ -81,6 +81,30 @@ func TestSanitizeWithRemoteImageBlocking_AllowsData(t *testing.T) {
 	}
 }
 
+func TestSanitizeWithRemoteImageBlocking_MultipleAndMixed(t *testing.T) {
+	input := `<div class="bg" style="background-color: #fff;"><p>Here is my educational background.</p><img class="logo" src="https://example.com/logo.png" alt="Logo" /><img src="cid:sig" /><body background = "https://example.com/bg.jpg"></div>`
+	result := BlockRemoteImages(input)
+
+	if !strings.Contains(result, `data-original-src="https://example.com/logo.png"`) {
+		t.Fatalf("expected logo.png to be blocked with data-original-src, got: %s", result)
+	}
+	if !strings.Contains(result, `class="logo"`) || !strings.Contains(result, `alt="Logo"`) {
+		t.Fatalf("expected attributes before and after src preserved, got: %s", result)
+	}
+	if !strings.Contains(result, `src="cid:sig"`) {
+		t.Fatalf("expected cid:sig preserved, got: %s", result)
+	}
+	if !strings.Contains(result, `background=""`) {
+		t.Fatalf("expected background attribute cleared, got: %s", result)
+	}
+	if !strings.Contains(result, `educational background`) {
+		t.Fatalf("expected text content preserved, got: %s", result)
+	}
+	if !strings.Contains(result, `background-color: #fff;`) {
+		t.Fatalf("expected CSS background-color preserved, got: %s", result)
+	}
+}
+
 func TestSanitizeForEvent_RemovesCSSAndPreservesFormatting(t *testing.T) {
 	s := NewSanitizer()
 	input := `<style>body { visibility: hidden }</style><p style="position:fixed;inset:0;z-index:9999;opacity:0;pointer-events:auto;transform:scale(2);width:100vw;height:100vh"><strong>bold</strong><em>italic</em></p><ul><li>item</li></ul>`
@@ -169,6 +193,14 @@ func BenchmarkBlockRemoteImages_NoRemote(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		_ = BlockRemoteImages(noRemoteHTML)
+	}
+}
+
+func BenchmarkBlockRemoteImages_CIDOnly(b *testing.B) {
+	cidHTML := `<html><body><p>Hello</p><img src="cid:image001.png@01D8E7C5" alt="Logo" /><p>Best regards</p></body></html>`
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = BlockRemoteImages(cidHTML)
 	}
 }
 

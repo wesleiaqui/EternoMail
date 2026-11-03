@@ -218,18 +218,21 @@ func removeStyleTags(html string) string {
 	return styleTagRe.ReplaceAllString(html, "")
 }
 
-// containsFoldASCII checks if s contains substr (which must be lowercase ASCII)
-// ignoring ASCII case, without allocating temporary strings.
-func containsFoldASCII(s, substr string) bool {
+// indexFoldASCII finds the first occurrence of substr (which must be lowercase ASCII)
+// in s at or after fromIndex, ignoring ASCII case, without allocating temporary strings.
+func indexFoldASCII(s, substr string, fromIndex int) int {
 	if len(substr) == 0 {
-		return true
+		return fromIndex
 	}
-	if len(s) < len(substr) {
-		return false
+	if fromIndex < 0 {
+		fromIndex = 0
 	}
 	limit := len(s) - len(substr)
+	if fromIndex > limit {
+		return -1
+	}
 	sub0 := substr[0]
-	for i := 0; i <= limit; i++ {
+	for i := fromIndex; i <= limit; i++ {
 		c := s[i]
 		if c >= 'A' && c <= 'Z' {
 			c += 'a' - 'A'
@@ -247,22 +250,56 @@ func containsFoldASCII(s, substr string) bool {
 				}
 			}
 			if match {
-				return true
+				return i
 			}
 		}
 	}
-	return false
+	return -1
 }
+
+// containsFoldASCII checks if s contains substr (which must be lowercase ASCII)
+// ignoring ASCII case, without allocating temporary strings.
+func containsFoldASCII(s, substr string) bool {
+	return indexFoldASCII(s, substr, 0) != -1
+}
+
+// hasBackgroundAttr checks if s contains a background attribute assignment (background\s*=)
+// without allocating strings, avoiding expensive regex scans on CSS "background:" or plain text.
+func hasBackgroundAttr(s string) bool {
+	idx := 0
+	for {
+		pos := indexFoldASCII(s, "background", idx)
+		if pos == -1 {
+			return false
+		}
+		offset := pos + len("background")
+		for offset < len(s) && (s[offset] == ' ' || s[offset] == '\t' || s[offset] == '\r' || s[offset] == '\n') {
+			offset++
+		}
+		if offset < len(s) && s[offset] == '=' {
+			return true
+		}
+		idx = offset
+	}
+}
+
+const imagePlaceholderPrefix = `src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23ddd' width='100' height='100'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%23666' font-size='12'%3EImage blocked%3C/text%3E%3C/svg%3E" data-original-src="`
 
 // BlockRemoteImages replaces remote image sources with a placeholder SVG,
 // storing the original URL in a data-original-src attribute for later restoration.
 func BlockRemoteImages(html string) string {
+	// Performance optimization: Remote images only match http:// or https:// schemes.
+	// If neither scheme is present in the HTML, return immediately with 0 allocations.
+	if !containsFoldASCII(html, "http://") && !containsFoldASCII(html, "https://") {
+		return html
+	}
+
 	// Performance optimization: Pre-check for presence of relevant tokens before running
 	// expensive regex passes. If none are present, return the original string immediately
 	// with 0 allocations.
 	hasImg := containsFoldASCII(html, "<img")
 	hasURL := containsFoldASCII(html, "url(")
-	hasBg := containsFoldASCII(html, "background")
+	hasBg := hasBackgroundAttr(html)
 	if !hasImg && !hasURL && !hasBg {
 		return html
 	}
@@ -272,16 +309,16 @@ func BlockRemoteImages(html string) string {
 	// Match img tags with http/https sources
 	if hasImg {
 		result = imgRemoteRe.ReplaceAllStringFunc(result, func(match string) string {
-			// Extract the original src
-			srcMatch := imgSrcRe.FindStringSubmatch(match)
-			if len(srcMatch) < 2 {
+			// Extract src indices and replace directly, avoiding a second regex pass
+			loc := imgSrcRe.FindStringSubmatchIndex(match)
+			if len(loc) < 4 {
 				return match
 			}
 
-			originalSrc := srcMatch[1]
+			originalSrc := match[loc[2]:loc[3]]
 
-			// Replace with a placeholder, storing original URL in data attribute
-			return imgSrcRe.ReplaceAllString(match, `src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23ddd' width='100' height='100'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%23666' font-size='12'%3EImage blocked%3C/text%3E%3C/svg%3E" data-original-src="`+escapeHTML(originalSrc)+`"`)
+			// Replace with placeholder using direct slice concatenation instead of regex ReplaceAllString
+			return match[:loc[0]] + imagePlaceholderPrefix + escapeHTML(originalSrc) + `"` + match[loc[1]:]
 		})
 	}
 
