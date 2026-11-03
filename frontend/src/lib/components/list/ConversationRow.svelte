@@ -12,6 +12,7 @@
 <script lang="ts">
   import Icon from '@iconify/svelte'
   import { formatRelativeDate } from '$lib/utils/date'
+  import { decodeHtmlEntities } from '$lib/utils/decodeHtmlEntities'
   import { _ } from '$lib/i18n'
   // @ts-ignore - wailsjs path
   import { message, folder, operations } from '../../../../wailsjs/go/models'
@@ -730,7 +731,7 @@
         </p>
       {:else if conversation.snippet}
         <p class="truncate {densityClasses.previewText[density]} text-muted-foreground">
-          {conversation.snippet}
+          {decodeHtmlEntities(conversation.snippet)}
         </p>
       {:else if conversation.isEncrypted}
         <p class="truncate {densityClasses.previewText[density]} text-muted-foreground italic">
