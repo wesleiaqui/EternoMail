@@ -172,6 +172,34 @@ export namespace account {
 	        this.starredFolderPath = source["starredFolderPath"];
 	    }
 	}
+	export class SignatureRule {
+	    id: string;
+	    name: string;
+	    enabled: boolean;
+	    recipients: string[];
+	    messageTypes: string[];
+	    signatureHtml?: string;
+	    signatureText?: string;
+	    signaturePlacement: string;
+	    signatureSeparator: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new SignatureRule(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.enabled = source["enabled"];
+	        this.recipients = source["recipients"];
+	        this.messageTypes = source["messageTypes"];
+	        this.signatureHtml = source["signatureHtml"];
+	        this.signatureText = source["signatureText"];
+	        this.signaturePlacement = source["signaturePlacement"];
+	        this.signatureSeparator = source["signatureSeparator"];
+	    }
+	}
 	export class Identity {
 	    id: string;
 	    accountId: string;
@@ -180,7 +208,7 @@ export namespace account {
 	    isDefault: boolean;
 	    signatureHtml?: string;
 	    signatureText?: string;
-	    signatureRules?: any[];
+	    signatureRules?: SignatureRule[];
 	    signatureEnabled: boolean;
 	    signatureForNew: boolean;
 	    signatureForReply: boolean;
@@ -206,7 +234,7 @@ export namespace account {
 	        this.isDefault = source["isDefault"];
 	        this.signatureHtml = source["signatureHtml"];
 	        this.signatureText = source["signatureText"];
-	        this.signatureRules = source["signatureRules"];
+	        this.signatureRules = this.convertValues(source["signatureRules"], SignatureRule);
 	        this.signatureEnabled = source["signatureEnabled"];
 	        this.signatureForNew = source["signatureForNew"];
 	        this.signatureForReply = source["signatureForReply"];
@@ -241,7 +269,7 @@ export namespace account {
 	    name: string;
 	    signatureHtml?: string;
 	    signatureText?: string;
-	    signatureRules?: any[];
+	    signatureRules?: SignatureRule[];
 	    signatureEnabled: boolean;
 	    signatureForNew: boolean;
 	    signatureForReply: boolean;
@@ -259,7 +287,7 @@ export namespace account {
 	        this.name = source["name"];
 	        this.signatureHtml = source["signatureHtml"];
 	        this.signatureText = source["signatureText"];
-	        this.signatureRules = source["signatureRules"];
+	        this.signatureRules = this.convertValues(source["signatureRules"], SignatureRule);
 	        this.signatureEnabled = source["signatureEnabled"];
 	        this.signatureForNew = source["signatureForNew"];
 	        this.signatureForReply = source["signatureForReply"];
@@ -267,6 +295,24 @@ export namespace account {
 	        this.signaturePlacement = source["signaturePlacement"];
 	        this.signatureSeparator = source["signatureSeparator"];
 	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }
@@ -523,6 +569,26 @@ export namespace app {
 	        this.enabled = source["enabled"];
 	    }
 	}
+	export class FolderContentPolicy {
+	    accountId: string;
+	    folderId: string;
+	    bodyPrefetch: boolean;
+	    explicit: boolean;
+	    source: string;
+
+	    static createFrom(source: any = {}) {
+	        return new FolderContentPolicy(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.accountId = source["accountId"];
+	        this.folderId = source["folderId"];
+	        this.bodyPrefetch = source["bodyPrefetch"];
+	        this.explicit = source["explicit"];
+	        this.source = source["source"];
+	    }
+	}
 	export class GmailAPIStatusInfo {
 	    applicable: boolean;
 	    state: string;
@@ -593,43 +659,6 @@ export namespace app {
 	        this.conversations = this.convertValues(source["conversations"], message.Conversation);
 	        this.cursor = source["cursor"];
 	        this.issues = this.convertValues(source["issues"], MailSearchIssue);
-	    }
-
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class VirtualFolderCachedView {
-	    virtualFolderId: string;
-	    conversations: message.Conversation[];
-	    // Go type: time
-	    refreshedAt: any;
-	    hasCache: boolean;
-
-	    static createFrom(source: any = {}) {
-	        return new VirtualFolderCachedView(source);
-	    }
-
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.virtualFolderId = source["virtualFolderId"];
-	        this.conversations = this.convertValues(source["conversations"], message.Conversation);
-	        this.refreshedAt = this.convertValues(source["refreshedAt"], null);
-	        this.hasCache = source["hasCache"];
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -879,12 +908,39 @@ export namespace app {
 		    return a;
 		}
 	}
+	export class PendingSend {
+	    id: string;
+	    accountId: string;
+	    draftId: string;
+	    payload: string;
+	    dispatchAt: string;
+	    state: string;
+	    createdAt: string;
+
+	    static createFrom(source: any = {}) {
+	        return new PendingSend(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.accountId = source["accountId"];
+	        this.draftId = source["draftId"];
+	        this.payload = source["payload"];
+	        this.dispatchAt = source["dispatchAt"];
+	        this.state = source["state"];
+	        this.createdAt = source["createdAt"];
+	    }
+	}
 	export class ReaderConfig {
 	    mailWindow: boolean;
 	    folderName: string;
 	    accountId: string;
 	    folderId: string;
 	    threadId: string;
+	    threadAccountId: string;
+	    threadFolderId: string;
+	    searchQuery: string;
 	    folderType: string;
 
 	    static createFrom(source: any = {}) {
@@ -898,7 +954,24 @@ export namespace app {
 	        this.accountId = source["accountId"];
 	        this.folderId = source["folderId"];
 	        this.threadId = source["threadId"];
+	        this.threadAccountId = source["threadAccountId"];
+	        this.threadFolderId = source["threadFolderId"];
+	        this.searchQuery = source["searchQuery"];
 	        this.folderType = source["folderType"];
+	    }
+	}
+	export class ReplyLaterChangeResult {
+	    changed: boolean;
+	    operationId: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ReplyLaterChangeResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.changed = source["changed"];
+	        this.operationId = source["operationId"];
 	    }
 	}
 	export class SMIMEViewResult {
@@ -1043,6 +1116,48 @@ export namespace app {
 	        this.coalesced = source["coalesced"];
 	    }
 	}
+	export class UndoHistoryEntry {
+	    operationId: string;
+	    action: string;
+	    description: string;
+	    // Go type: time
+	    createdAt: any;
+	    // Go type: time
+	    expiresAt: any;
+	    messageCount: number;
+
+	    static createFrom(source: any = {}) {
+	        return new UndoHistoryEntry(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.operationId = source["operationId"];
+	        this.action = source["action"];
+	        this.description = source["description"];
+	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.expiresAt = this.convertValues(source["expiresAt"], null);
+	        this.messageCount = source["messageCount"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class UndoLatestResult {
 	    operationId: string;
 	    description: string;
@@ -1057,29 +1172,6 @@ export namespace app {
 	        this.description = source["description"];
 	    }
 	}
-	export class UndoHistoryEntry {
-	    operationId: string;
-	    action: string;
-	    description: string;
-	    createdAt: string;
-	    expiresAt: string;
-	    messageCount: number;
-
-	    static createFrom(source: any = {}) {
-	        return new UndoHistoryEntry(source);
-	    }
-
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.operationId = source["operationId"];
-	        this.action = source["action"];
-	        this.description = source["description"];
-	        this.createdAt = source["createdAt"];
-	        this.expiresAt = source["expiresAt"];
-	        this.messageCount = source["messageCount"];
-	    }
-
-	}
 	export class UndoableActionResult {
 	    operationId: string;
 	    coalesced: boolean;
@@ -1093,6 +1185,43 @@ export namespace app {
 	        this.operationId = source["operationId"];
 	        this.coalesced = source["coalesced"];
 	    }
+	}
+	export class VirtualFolderCachedView {
+	    virtualFolderId: string;
+	    conversations: message.Conversation[];
+	    // Go type: time
+	    refreshedAt: any;
+	    hasCache: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new VirtualFolderCachedView(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.virtualFolderId = source["virtualFolderId"];
+	        this.conversations = this.convertValues(source["conversations"], message.Conversation);
+	        this.refreshedAt = this.convertValues(source["refreshedAt"], null);
+	        this.hasCache = source["hasCache"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class VirtualFolderOnlineCount {
 	    sessionId: string;
@@ -2207,6 +2336,87 @@ export namespace draft {
 
 }
 
+export namespace drafthistory {
+
+	export class Blob {
+	    hash: string;
+	    name: string;
+	    mime: string;
+	    size: number;
+	    content: number[];
+
+	    static createFrom(source: any = {}) {
+	        return new Blob(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.hash = source["hash"];
+	        this.name = source["name"];
+	        this.mime = source["mime"];
+	        this.size = source["size"];
+	        this.content = source["content"];
+	    }
+	}
+	export class Node {
+	    nodeId: string;
+	    draftKey: string;
+	    parentId: string;
+	    preferredChildId: string;
+	    label: string;
+	    stateHash: string;
+	    createdAt: string;
+
+	    static createFrom(source: any = {}) {
+	        return new Node(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.nodeId = source["nodeId"];
+	        this.draftKey = source["draftKey"];
+	        this.parentId = source["parentId"];
+	        this.preferredChildId = source["preferredChildId"];
+	        this.label = source["label"];
+	        this.stateHash = source["stateHash"];
+	        this.createdAt = source["createdAt"];
+	    }
+	}
+	export class Tree {
+	    nodes: Node[];
+	    currentNodeId: string;
+
+	    static createFrom(source: any = {}) {
+	        return new Tree(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.nodes = this.convertValues(source["nodes"], Node);
+	        this.currentNodeId = source["currentNodeId"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
 export namespace folder {
 
 	export class Folder {
@@ -2314,6 +2524,59 @@ export namespace imap {
 	        if ('string' === typeof source) source = JSON.parse(source);
 
 	    }
+	}
+
+}
+
+export namespace macoscontacts {
+
+	export class Person {
+	    id: string;
+	    name: string;
+	    emails: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new Person(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.emails = source["emails"];
+	    }
+	}
+	export class Result {
+	    people: Person[];
+	    truncated: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new Result(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.people = this.convertValues(source["people"], Person);
+	        this.truncated = source["truncated"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }
@@ -2748,6 +3011,73 @@ export namespace message {
 
 }
 
+export namespace operations {
+
+	export class MessageRef {
+	    accountId: string;
+	    messageId: string;
+
+	    static createFrom(source: any = {}) {
+	        return new MessageRef(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.accountId = source["accountId"];
+	        this.messageId = source["messageId"];
+	    }
+	}
+	export class ThreadRef {
+	    accountId: string;
+	    threadId: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ThreadRef(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.accountId = source["accountId"];
+	        this.threadId = source["threadId"];
+	    }
+	}
+	export class Target {
+	    kind: string;
+	    messages?: MessageRef[];
+	    thread?: ThreadRef;
+
+	    static createFrom(source: any = {}) {
+	        return new Target(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.messages = this.convertValues(source["messages"], MessageRef);
+	        this.thread = this.convertValues(source["thread"], ThreadRef);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
 export namespace pgp {
 
 	export class Key {
@@ -3096,6 +3426,27 @@ export namespace replycontent {
 		}
 	}
 
+
+}
+
+export namespace replylater {
+
+	export class Ref {
+	    accountId: string;
+	    conversationId: string;
+	    indexed: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new Ref(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.accountId = source["accountId"];
+	        this.conversationId = source["conversationId"];
+	        this.indexed = source["indexed"];
+	    }
+	}
 
 }
 
@@ -4012,7 +4363,6 @@ export namespace views {
 
 }
 
-
 export namespace virtualfolder {
 
 	export class VirtualFolder {
@@ -4068,64 +4418,6 @@ export namespace virtualfolder {
 		    }
 		    return a;
 		}
-	}
-
-}
-
-export namespace operations {
-
-	export class MessageRef {
-	    accountId: string;
-	    messageId: string;
-
-	    static createFrom(source: any = {}) {
-	        return new MessageRef(source);
-	    }
-
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.accountId = source["accountId"];
-	        this.messageId = source["messageId"];
-	    }
-	}
-
-	export class ThreadRef {
-	    accountId: string;
-	    threadId: string;
-
-	    static createFrom(source: any = {}) {
-	        return new ThreadRef(source);
-	    }
-
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.accountId = source["accountId"];
-	        this.threadId = source["threadId"];
-	    }
-	}
-
-	export class Target {
-	    kind: string;
-	    messages?: MessageRef[];
-	    thread?: ThreadRef;
-
-	    static createFrom(source: any = {}) {
-	        return new Target(source);
-	    }
-
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.kind = source["kind"];
-	        this.messages = this.convertValues(source["messages"], MessageRef);
-	        this.thread = this.convertValues(source["thread"], ThreadRef);
-	    }
-
-	    convertValues(a: any, classs: any, asMap: boolean = false): any {
-	        if (!a) return a;
-	        if (a.slice && a.map) return (a as any[]).map(elem => this.convertValues(elem, classs));
-	        if (typeof a === "object") return new classs(a);
-	        return a;
-	    }
 	}
 
 }

@@ -14,12 +14,36 @@ export function CheckRecipientPGPKeys(arg1) {
   return window['go']['app']['ComposerApp']['CheckRecipientPGPKeys'](arg1);
 }
 
+export function ClearDraftHistory(arg1) {
+  return window['go']['app']['ComposerApp']['ClearDraftHistory'](arg1);
+}
+
 export function CloseWindow() {
   return window['go']['app']['ComposerApp']['CloseWindow']();
 }
 
 export function DeleteDraft(arg1) {
   return window['go']['app']['ComposerApp']['DeleteDraft'](arg1);
+}
+
+export function DraftHistoryCheckout(arg1, arg2) {
+  return window['go']['app']['ComposerApp']['DraftHistoryCheckout'](arg1, arg2);
+}
+
+export function DraftHistoryCommit(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['ComposerApp']['DraftHistoryCommit'](arg1, arg2, arg3, arg4);
+}
+
+export function DraftHistoryCommitBlobs(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['ComposerApp']['DraftHistoryCommitBlobs'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function DraftHistoryState(arg1) {
+  return window['go']['app']['ComposerApp']['DraftHistoryState'](arg1);
+}
+
+export function DraftHistoryTree(arg1) {
+  return window['go']['app']['ComposerApp']['DraftHistoryTree'](arg1);
 }
 
 export function GetAccount(arg1) {
@@ -40,6 +64,10 @@ export function GetDarkComposerBody() {
 
 export function GetDraft() {
   return window['go']['app']['ComposerApp']['GetDraft']();
+}
+
+export function GetDraftAttachmentBlob(arg1) {
+  return window['go']['app']['ComposerApp']['GetDraftAttachmentBlob'](arg1);
 }
 
 export function GetIdentities(arg1) {
@@ -146,6 +174,10 @@ export function LookupWKD(arg1) {
   return window['go']['app']['ComposerApp']['LookupWKD'](arg1);
 }
 
+export function MoveDraftHistory(arg1, arg2) {
+  return window['go']['app']['ComposerApp']['MoveDraftHistory'](arg1, arg2);
+}
+
 export function NotifyStartupComplete() {
   return window['go']['app']['ComposerApp']['NotifyStartupComplete']();
 }
@@ -166,6 +198,14 @@ export function PrepareReply() {
   return window['go']['app']['ComposerApp']['PrepareReply']();
 }
 
+export function PutDraftAttachmentBlob(arg1, arg2, arg3) {
+  return window['go']['app']['ComposerApp']['PutDraftAttachmentBlob'](arg1, arg2, arg3);
+}
+
+export function QueuePendingSend(arg1, arg2, arg3) {
+  return window['go']['app']['ComposerApp']['QueuePendingSend'](arg1, arg2, arg3);
+}
+
 export function ReadFileAsAttachment(arg1) {
   return window['go']['app']['ComposerApp']['ReadFileAsAttachment'](arg1);
 }
@@ -176,10 +216,6 @@ export function RefreshWindowConstraints() {
 
 export function RescheduleMessage(arg1, arg2) {
   return window['go']['app']['ComposerApp']['RescheduleMessage'](arg1, arg2);
-}
-
-export function QueuePendingSend(arg1, arg2, arg3) {
-  return window['go']['app']['ComposerApp']['QueuePendingSend'](arg1, arg2, arg3);
 }
 
 export function SaveDraft(arg1, arg2, arg3) {
@@ -216,40 +252,4 @@ export function Startup(arg1) {
 
 export function UpdateScheduledMessage(arg1, arg2) {
   return window['go']['app']['ComposerApp']['UpdateScheduledMessage'](arg1, arg2);
-}
-
-export function DraftHistoryCommit(arg1, arg2, arg3, arg4) {
-  return window['go']['app']['ComposerApp']['DraftHistoryCommit'](arg1, arg2, arg3, arg4);
-}
-
-export function DraftHistoryTree(arg1) {
-  return window['go']['app']['ComposerApp']['DraftHistoryTree'](arg1);
-}
-
-export function DraftHistoryState(arg1) {
-  return window['go']['app']['ComposerApp']['DraftHistoryState'](arg1);
-}
-
-export function DraftHistoryCheckout(arg1, arg2) {
-  return window['go']['app']['ComposerApp']['DraftHistoryCheckout'](arg1, arg2);
-}
-
-export function ClearDraftHistory(arg1) {
-  return window['go']['app']['ComposerApp']['ClearDraftHistory'](arg1);
-}
-
-export function MoveDraftHistory(arg1, arg2) {
-  return window['go']['app']['ComposerApp']['MoveDraftHistory'](arg1, arg2);
-}
-
-export function PutDraftAttachmentBlob(arg1, arg2, arg3) {
-  return window['go']['app']['ComposerApp']['PutDraftAttachmentBlob'](arg1, arg2, arg3);
-}
-
-export function GetDraftAttachmentBlob(arg1) {
-  return window['go']['app']['ComposerApp']['GetDraftAttachmentBlob'](arg1);
-}
-
-export function DraftHistoryCommitBlobs(arg1, arg2, arg3, arg4, arg5) {
-  return window['go']['app']['ComposerApp']['DraftHistoryCommitBlobs'](arg1, arg2, arg3, arg4, arg5);
 }
