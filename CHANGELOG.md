@@ -5,6 +5,7 @@
 - Load Reply Later conversations directly from the durable queue instead of scanning every mailbox folder.
 - Show unread message counts beside sidebar destinations, with total counts when nothing is unread.
 - Open double-clicked conversations in reader-only tabs; keep folder browsing in workspace tabs and detach reader tabs into reader windows.
+- Continue editing a draft directly from its message in conversation view.
 
 ## Postilaatikko 2026.11.03
 

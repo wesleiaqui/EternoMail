@@ -1672,9 +1672,6 @@
   // Computed: is this the Trash folder?
   const isTrashFolder = $derived(folderType === 'trash')
 
-  // Computed: is this the Drafts folder?
-  const isDraftsFolder = $derived(folderType === 'drafts')
-
   // Computed: is this the Spam folder?
   const isSpamFolder = $derived(folderType === 'spam')
 
@@ -2103,12 +2100,17 @@
                   }}
                 >
                 {#if readerMode === 'conversation'}
-                  <button type="button" class="bubble-heading flex w-full items-center justify-between gap-3 px-4 pt-2 pb-1 text-xs text-muted-foreground text-left"
-                    aria-expanded={expandedHeaders.has(msg.id)} title={$_('viewer.messageDetails')} onkeydown={(event) => event.stopPropagation()}
-                    onclick={() => toggleHeader(msg.id)}>
-                    <span class="truncate font-medium text-foreground">{bubble?.showSender ? (msg.fromName || msg.fromEmail) : ''}</span>
-                    <span class="whitespace-nowrap">{formatDate(msg.date)} <span aria-hidden="true">⌄</span></span>
-                  </button>
+                  <div class="bubble-heading flex items-center gap-2 px-4 pt-2 pb-1 text-xs text-muted-foreground">
+                    <button type="button" class="flex min-w-0 flex-1 items-center justify-between gap-3 text-left" aria-expanded={expandedHeaders.has(msg.id)} title={$_('viewer.messageDetails')} onkeydown={(event) => event.stopPropagation()} onclick={() => toggleHeader(msg.id)}>
+                      <span class="truncate font-medium text-foreground">{bubble?.showSender ? (msg.fromName || msg.fromEmail) : ''}</span>
+                      <span class="whitespace-nowrap">{formatDate(msg.date)} <span aria-hidden="true">⌄</span></span>
+                    </button>
+                    {#if msg.isDraft}
+                      <button type="button" class="inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 text-primary hover:bg-muted" title={$_('viewer.editDraft')} aria-label={$_('viewer.editDraft')} onkeydown={(event) => event.stopPropagation()} onclick={(event) => { event.stopPropagation(); onEditDraft?.(msg.id) }}>
+                        <Icon icon="mdi:pencil" class="h-3.5 w-3.5" />{$_('viewer.editDraft')}
+                      </button>
+                    {/if}
+                  </div>
                 {/if}
                 {#if readerMode === 'traditional' || expandedHeaders.has(msg.id)}
                 <!-- Full message details remain available on request. -->
@@ -2235,7 +2237,7 @@
                       <span class="text-sm text-muted-foreground">
                         {formatDate(msg.date)}
                       </span>
-                      {#if isDraftsFolder}
+                      {#if msg.isDraft}
                         <button
                           class="p-1 rounded hover:bg-muted transition-colors"
                           title={$_('viewer.editDraft')}
