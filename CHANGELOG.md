@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Continue editing a draft directly from its message in conversation view.
+
 ## Postilaatikko 2026.11.03
 
 - Keep Gmail replies in the original conversation by sending with Gmail's provider thread ID, including replies reopened from drafts.
