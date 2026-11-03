@@ -19,7 +19,7 @@
   import { GetAccounts, GetFolders, GetFolderTree, GetMessage, OpenMailWindow, OpenComposerWindow, MarkAsRead, MarkAsUnread, Star, Unstar, MarkAsSpamWithUndo, MarkAsNotSpamWithUndo, ArchiveWithUndo, UndoOperation } from '../wailsjs/go/app/App'
   import { EventsEmit, WindowSetTitle } from '../wailsjs/runtime/runtime'
 
-  let { config, embedded = false, active = true, onScopeChange, onNewTab, onOpenInTab }: { config: MailScope; embedded?: boolean; active?: boolean; onScopeChange?: (scope: MailScope) => void; onNewTab?: () => void; onOpenInTab?: (scope: MailScope) => void } = $props()
+  let { config, embedded = false, readerTab = false, onCloseTab, active = true, onScopeChange, onNewTab, onOpenInTab }: { config: MailScope; embedded?: boolean; readerTab?: boolean; onCloseTab?: () => void; active?: boolean; onScopeChange?: (scope: MailScope) => void; onNewTab?: () => void; onOpenInTab?: (scope: MailScope) => void } = $props()
   // A process per window gives each component/store its own search, checked
   // rows, scroll memory and reader mode. Primary UI state is never persisted.
   let windowState = $state(createMailWindowState(untrack(() => config)))
@@ -33,7 +33,7 @@
   let showVirtualFolderDialog = $state(false)
   let pendingSearchQuery = $state('')
   let pendingSearchFolderId = $state<string | null>(null)
-  let list: MessageList | undefined
+  let list = $state<MessageList | undefined>(undefined)
   let viewer = $state<ConversationViewer | undefined>(undefined)
   const scopeKey = (scope: MailScope) => JSON.stringify([scope.accountId, scope.folderId])
   const currentKey = $derived(scopeKey(windowState.scope))
@@ -42,7 +42,7 @@
     ...accountStore.accounts.map(item => ({ id: item.account.id, name: item.account.name || item.account.email, items: scopes.filter(scope => scope.accountId === item.account.id) })),
   ].map(group => ({ ...group, items: group.items.filter(scope => !folderSearch.trim() || `${label(scope)} ${group.name}`.toLocaleLowerCase().includes(folderSearch.trim().toLocaleLowerCase())) })).filter(group => group.items.length))
 
-  $effect(() => { if (embedded) folderBrowserOpen = true })
+  $effect(() => { if (embedded && !readerTab) folderBrowserOpen = true })
 
   function label(scope: MailScope) {
     if (scope.threadId && scope.threadSubject) return scope.threadSubject
@@ -163,7 +163,16 @@
       }))
     }
   }
-  function closeReader() { readerOnly = false; windowState = { ...windowState, thread: null }; onScopeChange?.({ ...windowState.scope, threadId: undefined, threadAccountId: undefined, threadFolderId: undefined, searchQuery: list?.getSearchQuery() || '' }); setFocusedPane('messageList') }
+  function closeReader() {
+    if (readerTab) {
+      onCloseTab?.()
+      return
+    }
+    readerOnly = false
+    windowState = { ...windowState, thread: null }
+    onScopeChange?.({ ...windowState.scope, threadId: undefined, threadAccountId: undefined, threadFolderId: undefined, searchQuery: list?.getSearchQuery() || '' })
+    setFocusedPane('messageList')
+  }
   function keydown(event: KeyboardEvent) {
     if (!active || isInputElement(event.target) || isDialogGuardActive() || event.defaultPrevented) return
     if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'n') { event.preventDefault(); if (embedded) onNewTab?.(); else void newWindow(); return }
@@ -185,8 +194,8 @@
     if (KEY.LIST_TOGGLE_CHECK(event)) { event.preventDefault(); list?.toggleCheck() }
   }
   onMount(() => {
-    setFocusedPane('messageList')
-    void loadNavigation()
+    setFocusedPane(readerTab ? 'viewer' : 'messageList')
+    if (!readerTab) void loadNavigation()
     if (config.searchQuery) requestAnimationFrame(() => list?.setSearchQuery(config.searchQuery || ''))
   })
   $effect(() => { if (!embedded) WindowSetTitle(`${label(windowState.scope)} — Postilaatikko`) })
@@ -200,8 +209,9 @@
   })
 </script>
 
-<svelte:window onkeydown={keydown} onfocus={() => { if (active) { refresh(); void loadNavigation() } }} />
+<svelte:window onkeydown={keydown} onfocus={() => { if (active) { refresh(); if (!readerTab) void loadNavigation() } }} />
 <div class="mail-window {embedded ? 'h-full' : 'h-screen'} flex flex-col overflow-hidden bg-background text-foreground">
+  {#if !readerTab}
   <header class="flex items-center gap-2 border-b border-border p-2">
     {#if embedded}
       <button type="button" class="rounded p-2 hover:bg-muted" aria-label={$_('mailWindow.folder')} aria-expanded={folderBrowserOpen} title={$_('mailWindow.folder')} onclick={() => folderBrowserOpen = !folderBrowserOpen}><Icon icon="mdi:folder-open-outline" width="20" /></button>
@@ -215,9 +225,10 @@
     <label class="width-control text-xs">{$_('mailWindow.listWidth')}<input type="range" min="280" max="600" step="10" bind:value={listWidth} /></label>
     {#if windowState.thread}<button class="rounded p-2 hover:bg-muted" onclick={() => readerOnly = !readerOnly} aria-pressed={readerOnly} title={$_('mailWindow.focus')} aria-label={$_('mailWindow.focus')}><Icon icon="mdi:arrow-expand" width="20" /></button>{/if}
   </header>
+  {/if}
   {#if navigationError}<div role="alert" class="p-2 text-sm">{navigationError}<button class="underline ml-2" onclick={loadNavigation}>{$_('common.retry')}</button></div>{/if}
   <div class="flex flex-1 min-h-0 overflow-hidden">
-  {#if embedded && folderBrowserOpen}
+  {#if embedded && !readerTab && folderBrowserOpen}
     <aside class="w-64 shrink-0 min-h-0 overflow-y-auto border-r border-border bg-muted/20 p-2" aria-label={$_('mailWindow.folder')}>
       <input type="search" bind:value={folderSearch} class="mb-2 h-9 w-full rounded border border-border bg-background px-2 text-sm" aria-label={$_('common.search')} placeholder={$_('common.search')} />
       {#if loading}<p class="p-2 text-sm text-muted-foreground">{$_('common.loading')}</p>{/if}
@@ -234,20 +245,22 @@
     </aside>
   {/if}
   <main class:reader-only={readerOnly} class:has-thread={!!windowState.thread} class="flex flex-1 min-w-0 min-h-0 overflow-hidden" style={`--list-width: ${listWidth}px`}>
+    {#if !readerTab}
     <section class="mail-list min-h-0 overflow-hidden border-r border-border" role="presentation" onclick={() => setFocusedPane('messageList')}>
       <MessageList bind:this={list} accountId={windowState.scope.accountId} folderId={windowState.scope.folderId} folderName={label(windowState.scope)} folderType={windowState.scope.folderType}
-        isFocused={getFocusedPane() === 'messageList'} onConversationSelect={select} onOpenInTab={(accountId, folderId, threadId, folderType, subject) => onOpenInTab?.({ ...windowState.scope, threadId, threadAccountId: accountId, threadFolderId: folderId, folderType, threadSubject: subject })} onReply={reply}
+        isFocused={active && getFocusedPane() === 'messageList'} onConversationSelect={select} onOpenInTab={(accountId, folderId, threadId, folderType, subject) => onOpenInTab?.({ ...windowState.scope, threadId, threadAccountId: accountId, threadFolderId: folderId, folderType, threadSubject: subject })} onReply={reply}
         onSearchQueryChange={searchQuery => onScopeChange?.({ ...windowState.scope, searchQuery })}
         onRowActionComplete={auto => { if (auto) windowState = { ...windowState, thread: null } }}
         onBulkMarkRead={ids => void run(() => MarkAsRead(ids))} onBulkAction={bulkAction} enableCommandPalette={false} />
     </section>
+    {/if}
     <section class="mail-reader flex-1 min-w-0 min-h-0" role="presentation" onclick={() => setFocusedPane('viewer')}>
       {#if windowState.thread}
         {@const thread = windowState.thread}
         <ConversationViewer bind:this={viewer} threadId={thread.threadId} folderId={thread.folderId} accountId={thread.accountId} folderType={windowState.scope.folderType}
-          isFocused={getFocusedPane() === 'viewer'} showBackButton onBack={closeReader} onReply={reply}
+          isViewerVisible={active} isFocused={active && getFocusedPane() === 'viewer'} showBackButton onBack={closeReader} onReply={reply}
           onEditDraft={draftId => run(() => OpenComposerWindow(thread.accountId, 'new', '', draftId, ''))}
-          onToggleThreadFocus={() => readerOnly = !readerOnly} inFocusMode={readerOnly}
+          onToggleThreadFocus={readerTab ? undefined : () => readerOnly = !readerOnly} inFocusMode={readerOnly}
           onActionComplete={() => list?.handleActionComplete(true)}
           onComposeToAddress={address => run(() => OpenComposerWindow(thread.accountId, 'new', '', '', `mailto:${encodeURIComponent(address)}`))} />
       {:else}<div class="h-full flex items-center justify-center text-muted-foreground text-sm">{$_('mailWindow.selectMessage')}</div>{/if}
