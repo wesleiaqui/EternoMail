@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
   import SearchOperators from './SearchOperators.svelte'
+  import { decodeHtmlEntities } from '$lib/utils/decodeHtmlEntities'
   import * as Dialog from '$lib/components/ui/dialog'
   import { SearchMail, CancelMailSearch, ReauthorizeAccount } from '../../../../wailsjs/go/app/App'
   import { accountStore } from '$lib/stores/accounts.svelte'
@@ -31,15 +32,6 @@
       const position = start + prefix.length + value.length
       input?.setSelectionRange(position, position)
     })
-  }
-  function displaySnippet(value: string | undefined): string {
-    if (!value || !value.includes('&')) return value || ''
-    // Search snippets are plain text from mail providers, but some providers
-    // leave HTML entities escaped. Decode into an inert textarea so entities
-    // display normally without ever interpreting message content as HTML.
-    const decoder = document.createElement('textarea')
-    decoder.innerHTML = value
-    return decoder.value
   }
   async function search(more = false) {
     const current = ++generation
@@ -80,7 +72,7 @@
         <button type="button" class="block w-full min-w-0 overflow-hidden rounded-lg border border-border p-3 text-left hover:bg-muted" onclick={() => { onSelect(item.threadId, item.folderId || '', item.accountId || ''); open = false }}>
           <span class="block truncate text-sm font-medium">{item.subject || $_('messageList.noSubject')}</span>
           <span class="block truncate text-xs text-muted-foreground">{item.accountName} · {item.participants?.map(p => p.name || p.email).join(', ')} · {new Date(item.latestDate as unknown as string).toLocaleString()}</span>
-          <span class="block truncate text-sm text-muted-foreground">{displaySnippet(item.snippet)}</span>
+          <span class="block truncate text-sm text-muted-foreground">{decodeHtmlEntities(item.snippet)}</span>
         </button>
       {/each}
     </div>
