@@ -210,7 +210,7 @@
 </script>
 
 <svelte:window onkeydown={keydown} onfocus={() => { if (active) { refresh(); if (!readerTab) void loadNavigation() } }} />
-<div class="mail-window {embedded ? 'h-full' : 'h-screen'} flex flex-col overflow-hidden bg-background text-foreground">
+<div class="mail-window {embedded ? 'h-full' : 'h-screen'} flex w-full flex-col overflow-hidden bg-background text-foreground">
   {#if !readerTab}
   <header class="flex items-center gap-2 border-b border-border p-2">
     {#if embedded}
@@ -254,7 +254,7 @@
         onBulkMarkRead={ids => void run(() => MarkAsRead(ids))} onBulkAction={bulkAction} enableCommandPalette={false} />
     </section>
     {/if}
-    <section class="mail-reader flex-1 min-w-0 min-h-0" role="presentation" onclick={() => setFocusedPane('viewer')}>
+    <section class="mail-reader flex w-full flex-1 min-w-0 min-h-0" role="presentation" onclick={() => setFocusedPane('viewer')}>
       {#if windowState.thread}
         {@const thread = windowState.thread}
         <ConversationViewer bind:this={viewer} threadId={thread.threadId} folderId={thread.folderId} accountId={thread.accountId} folderType={windowState.scope.folderType}

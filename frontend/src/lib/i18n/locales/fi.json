@@ -1330,6 +1330,7 @@
       "syncFolder": "Synkronoi nykyinen kansio (uudelleen peruuttaa)",
       "nextRail": "Seuraava näkymä sivupalkissa",
       "prevRail": "Edellinen näkymä sivupalkissa",
+      "closeTab": "Sulje aktiivinen välilehti",
       "quit": "Lopeta",
       "paneNext": "Siirry seuraavaan paneeliin",
       "panePrev": "Siirry edelliseen paneeliin",
