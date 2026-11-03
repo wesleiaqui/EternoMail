@@ -129,6 +129,22 @@
     return $_(`sidebar.${key}`)
   }
 
+  function restoredFolderName(accountId: string, folderType: string | null | undefined, folderId: string | null | undefined, storedName: string | undefined): string {
+    if (accountId !== 'unified') return storedName || 'Inbox'
+    const keys: Record<string, string> = {
+      inbox: 'navigation.allInboxes',
+      starred: 'sidebar.starred',
+      drafts: 'sidebar.drafts',
+      sent: 'sidebar.sent',
+      trash: 'sidebar.trash',
+      archive: 'sidebar.archived',
+      spam: 'sidebar.blocked',
+      replyLater: 'replyLater.title',
+    }
+    const key = keys[folderType || folderId || '']
+    return key ? $_(key) : storedName || 'Inbox'
+  }
+
   function addMailTab(scope: MailScope, kind: MailWorkspaceTab['kind']) {
     if (mailWorkspaceTabs.length >= maxMailWorkspaceTabs) {
       toasts.error($_('mailWindow.tabLimit', { values: { count: maxMailWorkspaceTabs } }))
@@ -779,7 +795,7 @@
       if (accountExists) {
         selectedAccountId = uiState.selectedAccountId
         selectedFolderId = uiState.selectedFolderId
-        selectedFolderName = uiState.selectedFolderName || 'Inbox'
+        selectedFolderName = restoredFolderName(uiState.selectedAccountId, uiState.selectedFolderType, uiState.selectedFolderId, uiState.selectedFolderName)
         selectedFolderType = uiState.selectedFolderType
 
         // Restore conversation selection

@@ -71,16 +71,16 @@
           {#each card.entries as id, index (id)}
             {@const entry = nav.entries.find(e => e.id === id)}
             {#if entry}
-              <div class="group flex items-center gap-1 px-2 py-0.5" role="group" aria-label={entry.name} draggable={editing}
+              <div class="group relative flex items-center gap-1 px-2 py-0.5" role="group" aria-label={entry.name} draggable={editing}
                 ondragstart={(event) => dragEntry(event, id)}
                 ondragover={(event) => event.preventDefault()} ondrop={(event) => drop(event, card.id, index)}>
-                <button type="button" class="sidebar-primary-link min-w-0 flex-1 {selectedFolderId === entry.folderId || (entry.kind === 'system' && selectedFolderId === entry.folderType) || (entry.kind === 'inboxes' && selectedFolderId === 'inbox') ? 'sidebar-primary-link-selected' : ''}" onclick={() => onSelect(entry)} title={entry.path || entry.name} aria-label={entry.name}>
+                <button type="button" class="sidebar-primary-link min-w-0 flex-1 {selectedFolderId === entry.folderId || (entry.kind === 'system' && selectedFolderId === entry.folderType) || (entry.kind === 'inboxes' && selectedFolderId === 'inbox') ? 'sidebar-primary-link-selected' : ''} {entry.kind === 'virtual' ? (isQuick(id) ? 'pr-16' : 'group-hover:pr-16') : (isQuick(id) ? 'pr-10' : 'group-hover:pr-10')}" onclick={() => onSelect(entry)} title={entry.path || entry.name} aria-label={entry.name}>
                   <Icon icon={entry.folderType === 'replyLater' ? 'mdi:clock-outline' : entry.kind === 'virtual' ? 'mdi:folder-multiple-outline' : entry.kind === 'inboxes' ? 'mdi:inbox-multiple-outline' : 'mdi:folder-outline'} class="h-5 w-5 shrink-0" />
                   <span class="navigation-entry-label min-w-0 flex-1 whitespace-normal break-words leading-tight line-clamp-2">{entry.name}</span>
                   {#if badgeCount(entry) !== undefined && badgeCount(entry)! > 0}<span class="ml-auto shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground" title={entry.unreadCount ? `${entry.unreadCount} unread / ${entry.totalCount || 0} messages` : `${badgeCount(entry)} messages`}>{badgeCount(entry)}</span>{/if}
                 </button>
                 {#if !editing}
-                  <button type="button" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded hover:bg-muted focus-visible:opacity-100 {isQuick(id) ? 'text-amber-500' : 'text-muted-foreground/60 opacity-0 group-hover:opacity-100'}"
+                  <button type="button" class="absolute {entry.kind === 'virtual' ? 'right-8' : 'right-1'} top-1/2 z-10 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded bg-background/80 hover:bg-muted focus-visible:opacity-100 transition-opacity {isQuick(id) ? 'text-amber-500' : 'text-muted-foreground/60 opacity-0 group-hover:opacity-100'}"
                     aria-label={$_('navigation.favorite')} aria-pressed={isQuick(id)} title={$_('navigation.favorite')}
                     disabled={!isQuick(id) && quickFull()}
                     onclick={() => nav.toggleQuick(id)}>
@@ -90,7 +90,7 @@
                 {#if entry.kind === 'virtual' && !editing}
                   <DropdownMenu.Root>
                     <DropdownMenu.Trigger
-                      class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      class="absolute right-1 top-1/2 z-10 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded bg-background/80 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100"
                       aria-label={$_('common.moreActions')}
                       title={$_('common.moreActions')}
                     >
