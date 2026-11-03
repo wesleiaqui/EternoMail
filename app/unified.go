@@ -70,6 +70,9 @@ func (a *App) unifiedSpecialFolderIDs(folderType string) ([]string, error) {
 
 func (a *App) GetUnifiedFolderConversations(folderType string, offset, limit int, sortOrder, filterValue string) ([]*message.Conversation, error) {
 	filterValue = replyLaterViewFilter(folderType, filterValue)
+	if folderType == "replyLater" {
+		return a.messageStore.ListReplyLaterConversations(offset, limit, sortOrder, filterValue)
+	}
 	if folderType == string(folder.TypeArchive) {
 		return a.listUnifiedArchived(offset, limit, sortOrder, filterValue)
 	}
@@ -135,6 +138,9 @@ func (a *App) listUnifiedArchived(offset, limit int, sortOrder, filterValue stri
 
 func (a *App) GetUnifiedFolderCount(folderType, filterValue string) (int, error) {
 	filterValue = replyLaterViewFilter(folderType, filterValue)
+	if folderType == "replyLater" {
+		return a.messageStore.CountReplyLaterConversations(filterValue)
+	}
 	if folderType == string(folder.TypeArchive) {
 		// The list path is authoritative for mixed physical/virtual archive
 		// sources; count it without exposing synthetic folder IDs.

@@ -6,6 +6,8 @@ export interface NavigationEntry {
   folderId?: string
   path?: string
   folderType?: string
+  totalCount?: number
+  unreadCount?: number
   count?: number
 }
 export interface NavigationCard { id: string; name: string; hidden: boolean; collapsed: boolean; entries: string[] }

@@ -67,7 +67,7 @@
   import { publishUndoOperationCompleted, publishUndoOperationCreated } from '$lib/components/list/undoMutationEvents'
   import { runMessageMutation } from '$lib/components/list/mutationInFlight'
   // @ts-ignore - wailsjs path
-  import { PrepareReply, GetPendingMailto, GetDraftForEdit, DeleteDraft, ClearDraftHistory, SendMessageWithDraftGuard, CancelPendingSend, CompletePendingSend, ListPendingSends, MarkAsRead, MarkAsUnread, Star, Unstar, ArchiveWithUndo, MarkAsSpamWithUndo, MarkAsNotSpamWithUndo, ResolveMailActionTarget, UndoOperation, UndoLatestWithResult, GetTermsAccepted, SetTermsAccepted, RefreshWindowConstraints, AcceptCertificate, GetStartHiddenActive, CloseWindow, QuitApp, OpenComposerWindow, OpenReaderWindow, GetOpenReaderInTabPreference, GetSystemTheme, NotifyStartupComplete, GetOAuthBuildStatus, GetOAuthWarningDisabled, SetOAuthWarningDisabled, GetLastSeenVersion, SetLastSeenVersion, GetAppInfo, GetWindowDecorationStatus } from '../wailsjs/go/app/App.js'
+  import { PrepareReply, GetPendingMailto, GetDraftForEdit, DeleteDraft, ClearDraftHistory, SendMessageWithDraftGuard, CancelPendingSend, CompletePendingSend, ListPendingSends, MarkAsRead, MarkAsUnread, Star, Unstar, ArchiveWithUndo, MarkAsSpamWithUndo, MarkAsNotSpamWithUndo, ResolveMailActionTarget, UndoOperation, UndoLatestWithResult, GetTermsAccepted, SetTermsAccepted, RefreshWindowConstraints, AcceptCertificate, GetStartHiddenActive, CloseWindow, QuitApp, OpenComposerWindow, OpenReaderWindow, GetSystemTheme, NotifyStartupComplete, GetOAuthBuildStatus, GetOAuthWarningDisabled, SetOAuthWarningDisabled, GetLastSeenVersion, SetLastSeenVersion, GetAppInfo, GetWindowDecorationStatus } from '../wailsjs/go/app/App.js'
   // @ts-ignore - wailsjs path
   import { smtp, folder, certificate, operations } from '../wailsjs/go/models'
   // @ts-ignore - wailsjs runtime
@@ -96,11 +96,10 @@
   let selectedFolderId = $state<string | null>(null)
   let selectedFolderName = $state('Inbox')
   let selectedFolderType = $state<string | null>(null)
-  type MailWorkspaceTab = { id: string; scope: MailScope }
+  type MailWorkspaceTab = { id: string; kind: 'workspace' | 'reader'; scope: MailScope }
   const maxMailWorkspaceTabs = 4
   let mailWorkspaceTabs = $state<MailWorkspaceTab[]>([])
   let activeMailWorkspace = $state('primary')
-  let preferReaderTabs = $state(false)
   // Track where the selection came from: 'unified' for unified section, 'account' for account tree
   let selectionSource = $state<'unified' | 'account' | null>(null)
 
@@ -123,47 +122,39 @@
     }
   }
 
-  function workspaceLabel(scope: MailScope): string {
-    if (scope.threadId && scope.threadSubject) return scope.threadSubject
+  function workspaceLabel(scope: MailScope, reader: boolean): string {
+    if (reader && scope.threadId && scope.threadSubject) return scope.threadSubject
     if (scope.accountId !== 'unified') return scope.folderName || $_('mailWindow.folder')
     const key = ({ inbox: 'allInboxes', archive: 'archived' } as Record<string, string>)[scope.folderType] || scope.folderType
     return $_(`sidebar.${key}`)
   }
 
-  function openWorkspaceTab() {
+  function addMailTab(scope: MailScope, kind: MailWorkspaceTab['kind']) {
     if (mailWorkspaceTabs.length >= maxMailWorkspaceTabs) {
       toasts.error($_('mailWindow.tabLimit', { values: { count: maxMailWorkspaceTabs } }))
       return
     }
-    const tab = { id: crypto.randomUUID(), scope: { ...currentMailScope() } }
+    const tab = { id: crypto.randomUUID(), kind, scope: { ...scope } }
     mailWorkspaceTabs = [...mailWorkspaceTabs, tab]
     switchMailWorkspace(tab.id)
   }
 
+  function openWorkspaceTab() {
+    addMailTab(currentMailScope(), 'workspace')
+  }
+
   function openReaderScope(scope: MailScope) {
-    if (preferReaderTabs) {
-      if (mailWorkspaceTabs.length >= maxMailWorkspaceTabs) {
-        toasts.error($_('mailWindow.tabLimit', { values: { count: maxMailWorkspaceTabs } }))
-        return
-      }
-      const tab = { id: crypto.randomUUID(), scope: { ...scope } }
-      mailWorkspaceTabs = [...mailWorkspaceTabs, tab]
-      switchMailWorkspace(tab.id)
-      return
-    }
-    if (!scope.threadId) return
-    void OpenReaderWindow(scope.threadAccountId || scope.accountId, scope.threadFolderId || scope.folderId, scope.threadId, scope.folderType)
-      .catch(error => toasts.error(String(error)))
+    if (scope.threadId) addMailTab(scope, 'reader')
   }
 
   function openListThreadInTab(accountId: string, folderId: string, threadId: string, folderType: string, subject: string) {
     const scope = currentMailScope()
-    openReaderScope({ ...scope, threadId, threadAccountId: accountId, threadFolderId: folderId, threadSubject: subject })
+    openReaderScope({ ...scope, folderType, threadId, threadAccountId: accountId, threadFolderId: folderId, threadSubject: subject })
   }
 
   function switchMailWorkspace(id: string) {
     activeMailWorkspace = id
-    setFocusedPane('messageList')
+    setFocusedPane(mailWorkspaceTabs.find(tab => tab.id === id)?.kind === 'reader' ? 'viewer' : 'messageList')
   }
 
   function closeWorkspaceTab(id: string) {
@@ -180,7 +171,11 @@
     if (!tab) return
     try {
       const { accountId, folderId, folderName, folderType } = tab.scope
-      await OpenMailWindow(accountId, folderId, folderName, folderType, tab.scope.threadId || '', tab.scope.threadAccountId || '', tab.scope.threadFolderId || '', tab.scope.searchQuery || '')
+      if (tab.kind === 'reader' && tab.scope.threadId) {
+        await OpenReaderWindow(tab.scope.threadAccountId || accountId, tab.scope.threadFolderId || folderId, tab.scope.threadId, folderType)
+      } else {
+        await OpenMailWindow(accountId, folderId, folderName, folderType, tab.scope.threadId || '', tab.scope.threadAccountId || '', tab.scope.threadFolderId || '', tab.scope.searchQuery || '')
+      }
       closeWorkspaceTab(id)
     } catch (error) { toasts.error(String(error)) }
   }
@@ -208,7 +203,8 @@
         const folderInfo = entry.accountId && entry.folderId ? findFolderById(entry.accountId, entry.folderId) : null
         scope = { accountId: entry.accountId || '', folderId: entry.folderId || '', folderName: entry.name, folderType: folderInfo?.type || 'folder' }
       }
-      updateWorkspaceScope(activeMailWorkspace, scope)
+      if (mailWorkspaceTabs.find(tab => tab.id === activeMailWorkspace)?.kind === 'reader') addMailTab(scope, 'workspace')
+      else updateWorkspaceScope(activeMailWorkspace, scope)
       setActiveExtension('mail')
     }
     window.addEventListener('postilaatikko:navigate', navigate)
@@ -559,7 +555,6 @@
   })
 
   onMount(async () => {
-    void GetOpenReaderInTabPreference().then(value => { preferReaderTabs = value }).catch(() => { preferReaderTabs = false })
     EventsOn('undo:history-open', () => {
       setActiveExtension('mail')
       showUndoHistory = true
@@ -2227,7 +2222,7 @@
       <button type="button" role="tab" aria-selected={activeMailWorkspace === 'primary'} class="max-w-52 truncate rounded px-3 py-1.5 text-sm {activeMailWorkspace === 'primary' ? 'bg-muted font-medium' : 'text-muted-foreground hover:bg-muted/60'}" title={selectedFolderName} onclick={() => switchMailWorkspace('primary')}>{selectedFolderName || $_('mailWindow.primaryWorkspace')}</button>
       {#each mailWorkspaceTabs as tab (tab.id)}
         <div class="flex shrink-0 items-center rounded {activeMailWorkspace === tab.id ? 'bg-muted' : 'hover:bg-muted/60'}">
-          <button type="button" role="tab" aria-selected={activeMailWorkspace === tab.id} class="max-w-48 truncate px-3 py-1.5 text-sm {activeMailWorkspace === tab.id ? 'font-medium' : 'text-muted-foreground'}" title={workspaceLabel(tab.scope)} onclick={() => switchMailWorkspace(tab.id)}>{workspaceLabel(tab.scope)}</button>
+          <button type="button" role="tab" aria-selected={activeMailWorkspace === tab.id} class="max-w-48 truncate px-3 py-1.5 text-sm {activeMailWorkspace === tab.id ? 'font-medium' : 'text-muted-foreground'}" title={workspaceLabel(tab.scope, tab.kind === 'reader')} onclick={() => switchMailWorkspace(tab.id)}>{workspaceLabel(tab.scope, tab.kind === 'reader')}</button>
           {#if activeMailWorkspace === tab.id}
             <button type="button" class="rounded p-1 text-muted-foreground hover:bg-background" title={$_('mailWindow.detachTab')} aria-label={$_('mailWindow.detachTab')} onclick={() => void detachWorkspaceTab(tab.id)}><Icon icon="mdi:open-in-new" width="16" /></button>
           {/if}
@@ -2284,7 +2279,7 @@
         selectedAccountId={selectedAccountId}
         selectedFolderId={selectedFolderId}
         selectionSource={selectionSource}
-        isFocused={getFocusedPane() === 'sidebar'}
+        isFocused={activeMailWorkspace === 'primary' && getFocusedPane() === 'sidebar'}
         isFlashing={isPaneFlashing('sidebar')}
         showBackButton={getLayoutMode() === 'narrow'}
         onBack={hideSidebar}
@@ -2339,7 +2334,7 @@
         onRowActionComplete={handleMessageListActionComplete}
         onBulkMarkRead={handleBulkMarkRead}
         onBulkAction={(id, options) => runListAction(id, options)}
-        isFocused={getFocusedPane() === 'messageList'}
+        isFocused={activeMailWorkspace === 'primary' && getFocusedPane() === 'messageList'}
         isFlashing={isPaneFlashing('messageList')}
         showFolderToggle={getLayoutMode() === 'narrow'}
         onToggleSidebar={showSidebar}
@@ -2375,11 +2370,11 @@
         onComposeToAddress={handleComposeToAddress}
         onEditDraft={handleEditDraft}
         onActionComplete={(autoSelectNext) => messageListRef?.handleActionComplete(autoSelectNext)}
-        isFocused={getFocusedPane() === 'viewer'}
+        isFocused={activeMailWorkspace === 'primary' && getFocusedPane() === 'viewer'}
         isFlashing={isPaneFlashing('viewer')}
         showBackButton={isResponsive()}
         onBack={() => { focusMode = 'off'; focusedMessageIdInFocus = null; hideViewer() }}
-        isViewerVisible={getActiveExtension() === 'mail' && (focusMode !== 'off' || !isResponsive() || getResponsiveView() === 'viewer')}
+        isViewerVisible={activeMailWorkspace === 'primary' && getActiveExtension() === 'mail' && (focusMode !== 'off' || !isResponsive() || getResponsiveView() === 'viewer')}
         inFocusMode={focusMode !== 'off'}
         focusModeKind={focusMode === 'off' ? null : focusMode}
         focusedMessageIdInFocus={focusedMessageIdInFocus}
@@ -2391,7 +2386,7 @@
     {#if getActiveExtension() === 'mail'}
       {#each mailWorkspaceTabs as tab (tab.id)}
         <div class="flex-1 min-w-0 min-h-0 overflow-hidden" style:display={activeMailWorkspace === tab.id ? 'flex' : 'none'}>
-          <MailWindowApp config={tab.scope} embedded active={activeMailWorkspace === tab.id} onScopeChange={scope => updateWorkspaceScope(tab.id, scope)} onNewTab={openWorkspaceTab} onOpenInTab={openReaderScope} />
+          <MailWindowApp config={tab.scope} embedded readerTab={tab.kind === 'reader'} onCloseTab={() => closeWorkspaceTab(tab.id)} active={activeMailWorkspace === tab.id} onScopeChange={scope => updateWorkspaceScope(tab.id, scope)} onNewTab={openWorkspaceTab} onOpenInTab={openReaderScope} />
         </div>
       {/each}
     {/if}
