@@ -2061,7 +2061,10 @@ func (s *Store) FindThreadID(accountID, messageID, inReplyTo string, references 
 	// (one per reference in allRefs), execute a single batched query with IN (...)
 	// covering all candidate message IDs and brackets variants.
 	candidateMap := make(map[string]int) // maps candidate ID variant -> rank (earliest in allRefs wins)
-	candidateValues := make([]string, 0, len(allRefs)*3)
+	// Each reference can contribute up to three variants. Start with the
+	// reference count as capacity and let append grow the slice, avoiding an
+	// unchecked len(allRefs)*3 allocation-size calculation.
+	candidateValues := make([]string, 0, len(allRefs))
 	for idx, ref := range allRefs {
 		trimmed := strings.TrimPrefix(strings.TrimSuffix(ref, ">"), "<")
 		variants := [3]string{ref, "<" + ref + ">", trimmed}
@@ -2074,8 +2077,7 @@ func (s *Store) FindThreadID(accountID, messageID, inReplyTo string, references 
 	}
 
 	placeholders := make([]string, len(candidateValues))
-	args := make([]any, 0, len(candidateValues)+1)
-	args = append(args, accountID)
+	args := []any{accountID}
 	for i, v := range candidateValues {
 		placeholders[i] = "?"
 		args = append(args, v)

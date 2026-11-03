@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Avoid integer-overflowing capacity calculations while matching email thread references.
 - Decode escaped characters in message-list and global-search snippets as text.
 - Load Reply Later conversations directly from the durable queue instead of scanning every mailbox folder.
 - Show unread message counts beside sidebar destinations, with total counts when nothing is unread.
