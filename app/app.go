@@ -1324,9 +1324,15 @@ func (a *App) OpenURL(url string) error {
 
 // isAllowedProtocol validates that a URL uses a safe, permitted scheme
 // (http, https, or mailto) and has a valid structure, preventing file://
-// and other dangerous execution schemes.
+// and other dangerous execution schemes. It guards against control characters
+// and leading dashes that could trigger CLI option/argument injection in
+// OS openers (e.g. xdg-open or open).
 func isAllowedProtocol(rawURL string) bool {
-	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	trimmed := strings.TrimSpace(rawURL)
+	if strings.ContainsAny(trimmed, "\r\n\x00") {
+		return false
+	}
+	parsed, err := url.Parse(trimmed)
 	if err != nil {
 		return false
 	}
@@ -1334,11 +1340,20 @@ func isAllowedProtocol(rawURL string) bool {
 	scheme := strings.ToLower(parsed.Scheme)
 	switch scheme {
 	case "http", "https":
-		// Require a non-empty host to prevent malformed or relative URLs
-		return parsed.Host != ""
+		// Require a non-empty hostname that does not start with a dash
+		// to avoid CLI flag/argument injection in URL handlers.
+		host := parsed.Hostname()
+		return host != "" && !strings.HasPrefix(host, "-")
 	case "mailto":
 		// mailto URLs may not have Host (e.g., mailto:user@example.com or mailto:?subject=...)
-		return parsed.Opaque != "" || parsed.Path != "" || parsed.RawQuery != ""
+		target := parsed.Opaque
+		if target == "" {
+			target = parsed.Path
+		}
+		if strings.HasPrefix(target, "-") {
+			return false
+		}
+		return target != "" || parsed.RawQuery != ""
 	default:
 		return false
 	}

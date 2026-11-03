@@ -112,6 +112,13 @@ func TestIsAllowedProtocol(t *testing.T) {
 		{"https://", false},
 		{"", false},
 		{"   ", false},
+		{"http://-flag", false},
+		{"https://--version", false},
+		{"http://-flag:8080/path", false},
+		{"mailto:--help", false},
+		{"mailto:-flag@example.com", false},
+		{"http://example.com\r\ninjected", false},
+		{"http://example.com\x00injected", false},
 	}
 
 	for _, tc := range tests {
