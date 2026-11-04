@@ -230,6 +230,32 @@
     }
   }
 
+  async function handleArchiveAndMarkRead() {
+    let archived = false
+    try {
+      const targetIds = await resolveActionMessages()
+      await runMessageMutation(targetIds, async () => {
+        const result = await ArchiveWithUndo(targetIds)
+        if (result.coalesced) return
+        archived = true
+
+        try {
+          await MarkAsRead(targetIds)
+        } catch (err) {
+          showTargetedUndoToast($_('toast.archived'), result.operationId, 'archive')
+          onActionComplete?.(true)
+          throw err
+        }
+
+        showTargetedUndoToast($_('toast.archived'), result.operationId, 'archive')
+        onActionComplete?.(true)
+      })
+    } catch (err) {
+      console.error('Archive and mark read failed:', err)
+      toasts.error($_(archived ? 'toast.failedToUpdateReadStatus' : 'toast.failedToArchive'))
+    }
+  }
+
   async function handleDelete() {
     if (isTrashFolder) {
       showDeleteConfirm = true
@@ -449,6 +475,10 @@
       <Icon icon="mdi:archive-outline" class="mr-2 h-4 w-4" />
       {$_('contextMenu.archive')}
       <ShortcutHint id="mail.archive" />
+    </ContextMenuItem>
+    <ContextMenuItem onSelect={handleArchiveAndMarkRead}>
+      <Icon icon="mdi:archive-check-outline" class="mr-2 h-4 w-4" />
+      {$_('contextMenu.archive')} + {$_('contextMenu.markAsRead')}
     </ContextMenuItem>
     <ContextMenuItem onSelect={handleDelete}>
       <Icon icon={isTrashFolder ? 'mdi:delete-forever' : 'mdi:delete-outline'} class="mr-2 h-4 w-4" />

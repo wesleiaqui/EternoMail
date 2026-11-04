@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - Let conversation-mode email cards use the full available reader width.
+- Add an Archive + mark as read action alongside Archive in message context menus.
 
 ## Postilaatikko 2026.11.04
 - Avoid integer-overflowing capacity calculations while matching email thread references.
