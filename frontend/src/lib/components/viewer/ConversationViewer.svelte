@@ -55,6 +55,10 @@
     onBack?: () => void
     /** True while the mail viewer is actually visible, including responsive layouts. */
     isViewerVisible?: boolean
+    /** Scroll position to restore after this conversation has rendered. */
+    restoreScrollTop?: number
+    /** Called before the viewer is destroyed so its workspace can restore its position. */
+    onSaveScrollPosition?: (threadId: string, folderId: string, accountId: string, scrollTop: number) => void
     // Focus mode (whole thread or single message takes full window)
     inFocusMode?: boolean
     focusModeKind?: 'thread' | 'message' | null
@@ -77,6 +81,8 @@
     showBackButton = false,
     onBack,
     isViewerVisible = true,
+    restoreScrollTop,
+    onSaveScrollPosition,
     inFocusMode = false,
     focusModeKind = null,
     focusedMessageIdInFocus = null,
@@ -324,6 +330,10 @@
     }
   }
 
+  export function prepareForSuspend() {
+    handleReadOnLeave()
+  }
+
   // Debounce timer for refreshConversation (coalesces rapid sync events)
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
   let pendingRefresh: { tid: string; fid: string } | null = null
@@ -502,6 +512,18 @@
   })
 
   onDestroy(() => {
+    // Inactive workspace tabs explicitly unmount their viewer to release the
+    // rendered message bodies. Treat that as leaving the message, but do not
+    // mutate read state when the whole app is simply shutting down.
+    if (!isViewerVisible) handleReadOnLeave()
+    if (threadId && folderId && accountId) {
+      onSaveScrollPosition?.(threadId, folderId, accountId, contentContainerRef?.scrollTop ?? 0)
+    }
+    // Ignore any body, signature, or security work that completes after this
+    // viewer is released; also drop the local conversation references now.
+    viewGeneration++
+    conversation = null
+    emailBodyRefs = {}
     // Do not issue an asynchronous read-state mutation during process shutdown.
     // Normal navigation finalizes the snapshot before this component unmounts.
     clearMarkAsReadTimer()
@@ -666,11 +688,15 @@
         // the message before it so the thread still reads as a thread.
         await tick()
         if (contentContainerRef) {
-          openTimelineAtTarget(
-            contentContainerRef,
-            readerMessages,
-            () => generation === viewGeneration && threadId === tid && folderId === fid,
-          )
+          if (restoreScrollTop !== undefined) {
+            contentContainerRef.scrollTop = restoreScrollTop
+          } else {
+            openTimelineAtTarget(
+              contentContainerRef,
+              readerMessages,
+              () => generation === viewGeneration && threadId === tid && folderId === fid,
+            )
+          }
         }
         // Capture only after the conversation is actually rendered and still
         // visible. A restored selection that is replaced during startup never
