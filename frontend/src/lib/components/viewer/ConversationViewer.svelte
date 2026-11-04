@@ -2561,7 +2561,7 @@
     --bubble-fill: color-mix(in srgb, hsl(var(--muted)) 55%, hsl(var(--background)));
     position: relative;
     overflow: visible;
-    width: min(86%, 58rem);
+    width: 100%;
     border-radius: 1rem;
     background: var(--bubble-fill) !important;
   }
