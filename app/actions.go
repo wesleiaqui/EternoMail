@@ -8,6 +8,7 @@ import (
 	stdlog "log"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	goImap "github.com/emersion/go-imap/v2"
@@ -378,7 +379,11 @@ func (a *App) moveToFolder(messageIDs []string, destFolderID string, recordUndo 
 	// messages[0].AccountID != destFolder.AccountID guard below then
 	// fires exactly once per partition with a correct full-batch
 	// classification.
-	if spans, _ := a.messageStore.SpansMultipleAccounts(messageIDs); spans {
+	spansAccounts, err := a.messageStore.SpansMultipleAccounts(messageIDs)
+	if err != nil {
+		return operationID, fmt.Errorf("failed to determine message accounts: %w", err)
+	}
+	if spansAccounts {
 		return a.moveToFolderCrossAccount(messageIDs, destFolderID, recordUndo, operationID)
 	}
 
@@ -2015,22 +2020,46 @@ func (a *App) moveToInboxCrossAccount(messageIDs []string, operationID string) (
 //     APPEND-then-Trash path (copyMessagesAcrossAccounts + recursive
 //     Trash on the partition's IDs).
 //
-// Each partition's outcome is independent — a Gmail partition's failure
-// doesn't block an IMAP partition's success.
+// If a partition fails, stop so later accounts are not moved after the
+// operation has already become partial. The destination account is ordered
+// last so a failed cross-account append leaves its local messages untouched.
 func (a *App) moveToFolderCrossAccount(messageIDs []string, destFolderID string, recordUndo bool, operationID string) (string, error) {
 	byAccount, err := a.partitionByAccount(messageIDs)
 	if err != nil {
 		return operationID, err
 	}
-	var firstErr error
-	for _, ids := range byAccount {
-		var actionErr error
-		operationID, actionErr = a.moveToFolder(ids, destFolderID, recordUndo, operationID)
-		if actionErr != nil && firstErr == nil {
-			firstErr = actionErr
-		}
+
+	destination, err := a.folderStore.Get(destFolderID)
+	if err != nil || destination == nil {
+		return operationID, fmt.Errorf("destination folder not found: %s", destFolderID)
 	}
-	return operationID, firstErr
+
+	// Process source accounts in a stable order, with the destination account
+	// last. Cross-account copies are confirmed before source cleanup, and a
+	// failure there must not also move the destination account's messages.
+	accounts := make([]string, 0, len(byAccount))
+	for accountID := range byAccount {
+		accounts = append(accounts, accountID)
+	}
+	sort.Strings(accounts)
+	sort.SliceStable(accounts, func(i, j int) bool {
+		return accounts[i] != destination.AccountID && accounts[j] == destination.AccountID
+	})
+
+	completedAccounts := make([]string, 0, len(accounts))
+	for _, accountID := range accounts {
+		ids := byAccount[accountID]
+		var moveErr error
+		operationID, moveErr = a.moveToFolder(ids, destFolderID, recordUndo, operationID)
+		if moveErr != nil {
+			if len(completedAccounts) == 0 {
+				return operationID, fmt.Errorf("move failed for account %s: %w", accountID, moveErr)
+			}
+			return operationID, fmt.Errorf("move stopped: account %s failed after completing account(s) %s: %w", accountID, strings.Join(completedAccounts, ", "), moveErr)
+		}
+		completedAccounts = append(completedAccounts, accountID)
+	}
+	return operationID, nil
 }
 
 // copyToFolderCrossAccount fan-outs CopyToFolder() per source-account
