@@ -10,6 +10,8 @@ package app
 //   - The frontend main window owns the timer and dispatches through the
 //     identical SendMessageWithDraftGuard call a direct send would use.
 //   - Cancel deletes the pending row; the draft is then reopened.
+//   - An explicit app quit dispatches queued sends immediately and waits for
+//     them; a failed send keeps its draft and cancels the quit request.
 //   - A restart never auto-sends: ExpirePendingSends marks leftover rows
 //     expired at startup and the draft simply reappears in Drafts.
 //   - The countdown timer lives in the WKWebView, which macOS throttles

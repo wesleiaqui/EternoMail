@@ -1254,6 +1254,14 @@ export function QuitApp() {
   return window['go']['app']['App']['QuitApp']();
 }
 
+export function RequestQuitApp() {
+  return window['go']['app']['App']['RequestQuitApp']();
+}
+
+export function CancelQuitAppRequest() {
+  return window['go']['app']['App']['CancelQuitAppRequest']();
+}
+
 export function ReadFileAsAttachment(arg1) {
   return window['go']['app']['App']['ReadFileAsAttachment'](arg1);
 }

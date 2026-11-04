@@ -580,6 +580,10 @@ func (a *App) preflight() (startupErr error) {
 // shuttingDown tracks if shutdown has been initiated to prevent multiple triggers
 var shuttingDown atomic.Bool
 
+// quitRequestPending prevents duplicate quit requests while the frontend sends
+// the Undo Send queue before it confirms shutdown.
+var quitRequestPending atomic.Bool
+
 // Startup is called when the app starts
 func (a *App) Startup(ctx context.Context) {
 	startedAt := time.Now()
@@ -975,19 +979,9 @@ func (a *App) BeforeClose(ctx context.Context) bool {
 
 	// Normal shutdown flow
 	log := logging.WithComponent("app")
-	log.Info().Msg("Window close requested, showing shutdown overlay")
+	log.Info().Msg("Window close requested, asking the app to finish pending sends")
 
-	shuttingDown.Store(true)
-
-	// Emit event to show shutdown overlay
-	wailsRuntime.EventsEmit(a.ctx, "app:shutting-down")
-
-	// Schedule actual quit after UI has time to render
-	go func() {
-		defer recoverPanic("app", "shutdown")
-		time.Sleep(150 * time.Millisecond)
-		wailsRuntime.Quit(a.ctx)
-	}()
+	a.RequestQuitApp()
 
 	// Prevent immediate close
 	return true
@@ -1031,18 +1025,26 @@ func (a *App) CloseWindow() {
 	}
 
 	// Normal shutdown flow
-	if !shuttingDown.CompareAndSwap(false, true) {
+	a.RequestQuitApp()
+}
+
+// RequestQuitApp asks the frontend to send pending Undo Send messages before
+// confirming application shutdown.
+func (a *App) RequestQuitApp() {
+	if !quitRequestPending.CompareAndSwap(false, true) {
 		return
 	}
 
-	log := logging.WithComponent("app")
-	log.Info().Msg("Window close requested, shutting down")
-	wailsRuntime.EventsEmit(a.ctx, "app:shutting-down")
-	go func() {
-		defer recoverPanic("app", "shutdown")
-		time.Sleep(150 * time.Millisecond)
-		wailsRuntime.Quit(a.ctx)
-	}()
+	if a.ctx == nil {
+		quitRequestPending.Store(false)
+		return
+	}
+	wailsRuntime.EventsEmit(a.ctx, "app:quit-requested")
+}
+
+// CancelQuitAppRequest allows the user to retry after a pending send fails.
+func (a *App) CancelQuitAppRequest() {
+	quitRequestPending.Store(false)
 }
 
 // QuitApp forces a real quit, bypassing background mode.
@@ -1051,6 +1053,7 @@ func (a *App) QuitApp() {
 	if !shuttingDown.CompareAndSwap(false, true) {
 		return
 	}
+	quitRequestPending.Store(false)
 
 	log := logging.WithComponent("app")
 	log.Info().Msg("Quit requested")
@@ -1076,15 +1079,9 @@ func (a *App) GetStartHiddenActive() bool {
 	return runBg
 }
 
-// InitiateShutdown triggers the application quit (called from frontend)
+// InitiateShutdown requests that the frontend finish pending sends before quitting.
 func (a *App) InitiateShutdown() {
-	if !shuttingDown.CompareAndSwap(false, true) {
-		return
-	}
-
-	log := logging.WithComponent("app")
-	log.Info().Msg("Initiating shutdown")
-	wailsRuntime.Quit(a.ctx)
+	a.RequestQuitApp()
 }
 
 // Shutdown is called when the app is closing
