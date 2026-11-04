@@ -535,27 +535,31 @@
     if (ps.dispatching) return Promise.resolve(false)
     ps.dispatching = true
     const dispatch = (async (): Promise<boolean> => {
+      let message: smtp.ComposeMessage
       try {
-        const msg = JSON.parse(ps.payload)
-        await SendMessageWithDraftGuard(ps.accountId, msg, ps.draftId)
-        if (ps.draftId) {
-          await DeleteDraft(ps.draftId).catch(err => console.error('Failed to delete draft after send:', err))
-          // Actual send ends the draft's undo history (approved lifecycle);
-          // cancelling a pending send never reaches here.
-          await ClearDraftHistory(`${ps.accountId}:${ps.draftId}`).catch(err => console.error('Failed to clear draft history after send:', err))
-        }
-        await CompletePendingSend(ps.id)
-        pendingRemove(ps.id)
-        addToast({ type: 'success', message: $_('composer.messageSent') })
-        messageListRef?.handleActionComplete?.(false)
-        return true
+        message = JSON.parse(ps.payload)
+        await SendMessageWithDraftGuard(ps.accountId, message, ps.draftId)
       } catch (err) {
-        // The send attempt is over; the draft row is untouched and reopenable.
+        // SMTP did not accept the message; preserve its draft and stop quit.
         await CompletePendingSend(ps.id).catch(() => {})
         pendingRemove(ps.id)
         addToast({ type: 'error', message: String(err) })
         return false
       }
+
+      // SMTP accepted the message. Cleanup failures must not retry the send
+      // or block quit, since that could deliver a duplicate on the next try.
+      if (ps.draftId) {
+        await DeleteDraft(ps.draftId).catch(err => console.error('Failed to delete draft after send:', err))
+        // Actual send ends the draft's undo history; cancelling a pending send
+        // never reaches here.
+        await ClearDraftHistory(`${ps.accountId}:${ps.draftId}`).catch(err => console.error('Failed to clear draft history after send:', err))
+      }
+      await CompletePendingSend(ps.id).catch(err => console.error('Email sent but pending-send cleanup failed:', err))
+      pendingRemove(ps.id)
+      addToast({ type: 'success', message: $_('composer.messageSent') })
+      messageListRef?.handleActionComplete?.(false)
+      return true
     })()
     pendingSendDispatches.set(ps.id, dispatch)
     void dispatch.then(
