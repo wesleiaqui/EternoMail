@@ -67,7 +67,7 @@
   import { publishUndoOperationCompleted, publishUndoOperationCreated } from '$lib/components/list/undoMutationEvents'
   import { runMessageMutation } from '$lib/components/list/mutationInFlight'
   // @ts-ignore - wailsjs path
-  import { PrepareReply, GetPendingMailto, GetDraftForEdit, DeleteDraft, ClearDraftHistory, SendMessageWithDraftGuard, CancelPendingSend, CompletePendingSend, ListPendingSends, MarkAsRead, MarkAsUnread, Star, Unstar, ArchiveWithUndo, MarkAsSpamWithUndo, MarkAsNotSpamWithUndo, ResolveMailActionTarget, UndoOperation, UndoLatestWithResult, GetTermsAccepted, SetTermsAccepted, RefreshWindowConstraints, AcceptCertificate, GetStartHiddenActive, CloseWindow, QuitApp, OpenComposerWindow, OpenReaderWindow, GetSystemTheme, NotifyStartupComplete, GetOAuthBuildStatus, GetOAuthWarningDisabled, SetOAuthWarningDisabled, GetLastSeenVersion, SetLastSeenVersion, GetAppInfo, GetWindowDecorationStatus } from '../wailsjs/go/app/App.js'
+  import { PrepareReply, GetPendingMailto, GetDraftForEdit, DeleteDraft, ClearDraftHistory, SendMessageWithDraftGuard, CancelPendingSend, CompletePendingSend, ListPendingSends, MarkAsRead, MarkAsUnread, Star, Unstar, ArchiveWithUndo, MarkAsSpamWithUndo, MarkAsNotSpamWithUndo, ResolveMailActionTarget, UndoOperation, UndoLatestWithResult, GetTermsAccepted, SetTermsAccepted, RefreshWindowConstraints, AcceptCertificate, GetStartHiddenActive, CloseWindow, QuitApp, RequestQuitApp, CancelQuitAppRequest, OpenComposerWindow, OpenReaderWindow, GetSystemTheme, NotifyStartupComplete, GetOAuthBuildStatus, GetOAuthWarningDisabled, SetOAuthWarningDisabled, GetLastSeenVersion, SetLastSeenVersion, GetAppInfo, GetWindowDecorationStatus } from '../wailsjs/go/app/App.js'
   // @ts-ignore - wailsjs path
   import { smtp, folder, certificate, operations } from '../wailsjs/go/models'
   // @ts-ignore - wailsjs runtime
@@ -337,8 +337,7 @@
 
   // Handle forced quit (Ctrl+Q) — always quits regardless of background mode
   function handleQuit() {
-    isShuttingDown = true
-    setTimeout(() => QuitApp(), 100)
+    RequestQuitApp()
   }
 
   // bits-ui modal primitives temporarily set body pointer-events to none.
@@ -503,6 +502,8 @@
   let pendingSends = $state<PendingSendItem[]>([])
   let pendingTick: ReturnType<typeof setInterval> | undefined
   let pendingNow = $state(Date.now())
+  const pendingSendDispatches = new Map<string, Promise<boolean>>()
+  let quitRequestInProgress = false
 
   // Keep the countdown fresh only while there is something pending. An always
   // running timer used to wake the whole app four times per second at idle.
@@ -528,27 +529,71 @@
     pendingSends = pendingSends.filter(p => p.id !== id)
   }
 
-  async function pendingDispatch(ps: PendingSendItem) {
-    if (ps.dispatching) return
+  function pendingDispatch(ps: PendingSendItem): Promise<boolean> {
+    const existing = pendingSendDispatches.get(ps.id)
+    if (existing) return existing
+    if (ps.dispatching) return Promise.resolve(false)
     ps.dispatching = true
-    try {
-      const msg = JSON.parse(ps.payload)
-      await SendMessageWithDraftGuard(ps.accountId, msg, ps.draftId)
-      if (ps.draftId) {
-        DeleteDraft(ps.draftId).catch(err => console.error('Failed to delete draft after send:', err))
-        // Actual send ends the draft's undo history (approved lifecycle);
-        // cancelling a pending send never reaches here.
-        ClearDraftHistory(`${ps.accountId}:${ps.draftId}`).catch(err => console.error('Failed to clear draft history after send:', err))
+    const dispatch = (async (): Promise<boolean> => {
+      let message: smtp.ComposeMessage
+      try {
+        message = JSON.parse(ps.payload)
+        await SendMessageWithDraftGuard(ps.accountId, message, ps.draftId)
+      } catch (err) {
+        // SMTP did not accept the message; preserve its draft and stop quit.
+        await CompletePendingSend(ps.id).catch(() => {})
+        pendingRemove(ps.id)
+        addToast({ type: 'error', message: String(err) })
+        return false
       }
-      await CompletePendingSend(ps.id)
+
+      // SMTP accepted the message. Cleanup failures must not retry the send
+      // or block quit, since that could deliver a duplicate on the next try.
+      if (ps.draftId) {
+        await DeleteDraft(ps.draftId).catch(err => console.error('Failed to delete draft after send:', err))
+        // Actual send ends the draft's undo history; cancelling a pending send
+        // never reaches here.
+        await ClearDraftHistory(`${ps.accountId}:${ps.draftId}`).catch(err => console.error('Failed to clear draft history after send:', err))
+      }
+      await CompletePendingSend(ps.id).catch(err => console.error('Email sent but pending-send cleanup failed:', err))
       pendingRemove(ps.id)
       addToast({ type: 'success', message: $_('composer.messageSent') })
       messageListRef?.handleActionComplete?.(false)
+      return true
+    })()
+    pendingSendDispatches.set(ps.id, dispatch)
+    void dispatch.then(
+      () => pendingSendDispatches.delete(ps.id),
+      () => pendingSendDispatches.delete(ps.id)
+    )
+    return dispatch
+  }
+
+  async function finishQuitRequest() {
+    if (quitRequestInProgress) return
+    quitRequestInProgress = true
+    isShuttingDown = true
+    try {
+      // Send the Undo Send queue immediately on explicit quit. Await each
+      // dispatch, including one already started by the countdown timer.
+      const persistedSends = await ListPendingSends() as PendingSendItem[]
+      const queuedIDs = new Set(pendingSends.map(ps => ps.id))
+      pendingSends = [...pendingSends, ...persistedSends.filter(ps => !queuedIDs.has(ps.id))]
+      while (pendingSends.length > 0) {
+        const sent = await pendingDispatch(pendingSends[0])
+        if (!sent) {
+          isShuttingDown = false
+          CancelQuitAppRequest()
+          return
+        }
+      }
+      await QuitApp()
     } catch (err) {
-      // The send attempt is over; the draft row is untouched and reopenable.
-      await CompletePendingSend(ps.id).catch(() => {})
-      pendingRemove(ps.id)
-      addToast({ type: 'error', message: String(err) })
+      console.error('Could not finish quitting after pending sends:', err)
+      isShuttingDown = false
+      CancelQuitAppRequest()
+    } finally {
+      quitRequestInProgress = false
     }
   }
 
@@ -648,6 +693,9 @@
     // Listen for shutdown event from backend (triggered by OS close signal)
     EventsOn('app:shutting-down', () => {
       isShuttingDown = true
+    })
+    EventsOn('app:quit-requested', () => {
+      void finishQuitRequest()
     })
 
     // Listen for untrusted certificate events from background sync

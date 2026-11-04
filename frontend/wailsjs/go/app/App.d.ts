@@ -655,6 +655,10 @@ export function QueuePendingSend(arg1:string,arg2:string,arg3:string):Promise<st
 
 export function QuitApp():Promise<void>;
 
+export function RequestQuitApp():Promise<void>;
+
+export function CancelQuitAppRequest():Promise<void>;
+
 export function ReadFileAsAttachment(arg1:string):Promise<app.ComposerAttachment>;
 
 export function ReauthorizeAccount(arg1:string):Promise<void>;
