@@ -97,8 +97,9 @@
   let selectedFolderName = $state('Inbox')
   let selectedFolderType = $state<string | null>(null)
   type MailWorkspaceTab = { id: string; kind: 'workspace' | 'reader'; scope: MailScope }
-  const maxMailWorkspaceTabs = 4
+  const maxMailWorkspaceTabs = 8
   let mailWorkspaceTabs = $state<MailWorkspaceTab[]>([])
+  let mailWindowTabInstances: Record<string, MailWindowApp | null> = {}
   let activeMailWorkspace = $state('primary')
   // Track where the selection came from: 'unified' for unified section, 'account' for account tree
   let selectionSource = $state<'unified' | 'account' | null>(null)
@@ -169,6 +170,7 @@
   }
 
   function switchMailWorkspace(id: string) {
+    if (id !== activeMailWorkspace && activeMailWorkspace !== 'primary') mailWindowTabInstances[activeMailWorkspace]?.prepareForSuspend()
     activeMailWorkspace = id
     setFocusedPane(mailWorkspaceTabs.find(tab => tab.id === id)?.kind === 'reader' ? 'viewer' : 'messageList')
   }
@@ -2424,7 +2426,7 @@
     {#if getActiveExtension() === 'mail'}
       {#each mailWorkspaceTabs as tab (tab.id)}
         <div class="flex w-full flex-1 min-w-0 min-h-0 overflow-hidden" style:display={activeMailWorkspace === tab.id ? 'flex' : 'none'}>
-          <MailWindowApp config={tab.scope} embedded readerTab={tab.kind === 'reader'} onCloseTab={() => closeWorkspaceTab(tab.id)} active={activeMailWorkspace === tab.id} onScopeChange={scope => updateWorkspaceScope(tab.id, scope)} onNewTab={openWorkspaceTab} onOpenInTab={openReaderScope} />
+          <MailWindowApp bind:this={mailWindowTabInstances[tab.id]} config={tab.scope} embedded readerTab={tab.kind === 'reader'} onCloseTab={() => closeWorkspaceTab(tab.id)} active={activeMailWorkspace === tab.id} onScopeChange={scope => updateWorkspaceScope(tab.id, scope)} onNewTab={openWorkspaceTab} onOpenInTab={openReaderScope} />
         </div>
       {/each}
     {/if}

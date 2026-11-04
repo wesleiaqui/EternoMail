@@ -35,7 +35,10 @@
   let pendingSearchFolderId = $state<string | null>(null)
   let list = $state<MessageList | undefined>(undefined)
   let viewer = $state<ConversationViewer | undefined>(undefined)
+  let savedReaderPosition = $state<{ key: string; top: number } | null>(null)
   const scopeKey = (scope: MailScope) => JSON.stringify([scope.accountId, scope.folderId])
+  const readerPositionKey = (thread: { accountId: string; folderId: string; threadId: string }) => JSON.stringify([thread.accountId, thread.folderId, thread.threadId])
+  const restoreReaderScrollTop = $derived(windowState.thread && savedReaderPosition?.key === readerPositionKey(windowState.thread) ? savedReaderPosition.top : undefined)
   const currentKey = $derived(scopeKey(windowState.scope))
   const scopeGroups = $derived([
     { id: 'unified', name: $_('navigation.virtualCard'), items: scopes.filter(scope => scope.accountId === 'unified' || scope.accountId === 'virtual') },
@@ -173,6 +176,9 @@
     onScopeChange?.({ ...windowState.scope, threadId: undefined, threadAccountId: undefined, threadFolderId: undefined, searchQuery: list?.getSearchQuery() || '' })
     setFocusedPane('messageList')
   }
+  export function prepareForSuspend() {
+    viewer?.prepareForSuspend()
+  }
   function keydown(event: KeyboardEvent) {
     if (!active || isInputElement(event.target) || isDialogGuardActive() || event.defaultPrevented) return
     if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'n') { event.preventDefault(); if (embedded) onNewTab?.(); else void newWindow(); return }
@@ -255,15 +261,17 @@
     </section>
     {/if}
     <section class="mail-reader flex w-full flex-1 min-w-0 min-h-0" role="presentation" onclick={() => setFocusedPane('viewer')}>
-      {#if windowState.thread}
+      {#if active && windowState.thread}
         {@const thread = windowState.thread}
         <ConversationViewer bind:this={viewer} threadId={thread.threadId} folderId={thread.folderId} accountId={thread.accountId} folderType={windowState.scope.folderType}
           isViewerVisible={active} isFocused={active && getFocusedPane() === 'viewer'} showBackButton onBack={closeReader} onReply={reply}
+          restoreScrollTop={restoreReaderScrollTop}
+          onSaveScrollPosition={(threadId, folderId, accountId, top) => { savedReaderPosition = { key: readerPositionKey({ threadId, folderId, accountId }), top } }}
           onEditDraft={draftId => run(() => OpenComposerWindow(thread.accountId, 'new', '', draftId, ''))}
           onToggleThreadFocus={readerTab ? undefined : () => readerOnly = !readerOnly} inFocusMode={readerOnly}
           onActionComplete={() => list?.handleActionComplete(true)}
           onComposeToAddress={address => run(() => OpenComposerWindow(thread.accountId, 'new', '', '', `mailto:${encodeURIComponent(address)}`))} />
-      {:else}<div class="h-full flex items-center justify-center text-muted-foreground text-sm">{$_('mailWindow.selectMessage')}</div>{/if}
+      {:else if active}<div class="h-full flex items-center justify-center text-muted-foreground text-sm">{$_('mailWindow.selectMessage')}</div>{/if}
     </section>
   </main>
   </div>
