@@ -1527,6 +1527,7 @@
   },
   "pendingSend": {
     "countdown": "Lähetetään {seconds} s kuluttua",
+    "sendNow": "Lähetä nyt",
     "cancel": "Peruuta",
     "cancelled": "Lähetys peruttu - luonnos palautettu",
     "alreadySending": "Liian myöhäistä - lähetys on jo käynnissä"

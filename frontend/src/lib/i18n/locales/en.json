@@ -1527,6 +1527,7 @@
   },
   "pendingSend": {
     "countdown": "Sending in {seconds}s",
+    "sendNow": "Send now",
     "cancel": "Cancel",
     "cancelled": "Send cancelled - draft restored",
     "alreadySending": "Too late - the send already started"
