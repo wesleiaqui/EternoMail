@@ -2588,15 +2588,15 @@
         <div class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto" role="tablist" aria-label={$_('mailWindow.workspaces')}>
           {#each mailWorkspaceTabs.filter(tab => tab.kind === 'reader') as tab (tab.id)}
             <div class="flex shrink-0 items-center rounded {activeMailWorkspace === tab.id ? 'bg-muted' : 'hover:bg-muted/60'}">
-              <button type="button" role="tab" aria-selected={activeMailWorkspace === tab.id} class="max-w-48 truncate px-3 py-1.5 text-sm {activeMailWorkspace === tab.id ? 'font-medium' : 'text-muted-foreground'}" title={workspaceLabel(tab.scope, true)} onclick={() => switchMailWorkspace(tab.id)}>{workspaceLabel(tab.scope, true)}</button>
+              <button type="button" role="tab" aria-selected={activeMailWorkspace === tab.id} class="max-w-48 truncate rounded-sm px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset {activeMailWorkspace === tab.id ? 'font-medium' : 'text-muted-foreground'}" title={workspaceLabel(tab.scope, true)} onclick={() => switchMailWorkspace(tab.id)}>{workspaceLabel(tab.scope, true)}</button>
               {#if activeMailWorkspace === tab.id}
-                <button type="button" class="rounded p-1 text-muted-foreground hover:bg-background" title={$_('mailWindow.detachTab')} aria-label={$_('mailWindow.detachTab')} onclick={() => void detachWorkspaceTab(tab.id)}><Icon icon="mdi:open-in-new" width="16" /></button>
+                <button type="button" class="rounded p-1 text-muted-foreground hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" title={$_('mailWindow.detachTab')} aria-label={$_('mailWindow.detachTab')} onclick={() => void detachWorkspaceTab(tab.id)}><Icon icon="mdi:open-in-new" width="16" /></button>
               {/if}
-              <button type="button" class="rounded p-1 text-muted-foreground hover:bg-background" title={$_('mailWindow.closeTab')} aria-label={$_('mailWindow.closeTab')} onclick={() => closeWorkspaceTab(tab.id)}><Icon icon="mdi:close" width="16" /></button>
+              <button type="button" class="rounded p-1 text-muted-foreground hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" title={$_('mailWindow.closeTab')} aria-label={$_('mailWindow.closeTab')} onclick={() => closeWorkspaceTab(tab.id)}><Icon icon="mdi:close" width="16" /></button>
             </div>
           {/each}
         </div>
-        <button class="flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted" onclick={() => OpenMailWindow(selectedAccountId || '', selectedFolderId || '', selectedFolderName, selectedFolderType || 'inbox', selectedThreadId || '', selectedConversationAccountId || '', selectedConversationFolderId || '', messageListRef?.getSearchQuery() || '').catch(error => toasts.error(String(error)))}>
+        <button class="flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" title={$_('mailWindow.newWindow')} aria-label={$_('mailWindow.newWindow')} onclick={() => OpenMailWindow(selectedAccountId || '', selectedFolderId || '', selectedFolderName, selectedFolderType || 'inbox', selectedThreadId || '', selectedConversationAccountId || '', selectedConversationFolderId || '', messageListRef?.getSearchQuery() || '').catch(error => toasts.error(String(error)))}>
             <Icon icon="mdi:open-in-new" width="16" />{$_('mailWindow.newWindow')}
         </button>
       </div>
