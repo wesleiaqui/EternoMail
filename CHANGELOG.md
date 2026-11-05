@@ -2,10 +2,13 @@
 
 ## [Unreleased]
 
+## Postilaatikko 2026.11.05
+
 - Send queued Undo Send emails immediately when quitting, and keep the app open with drafts intact if a send fails.
 - Release inactive conversation readers from memory while preserving each tab's selected thread and scroll position; allow up to eight additional mail tabs.
 - Let conversation-mode email cards use the full available reader width.
 - Add an Archive + mark as read action alongside Archive in message context menus.
+- Notarize and staple macOS release DMGs for Gatekeeper verification.
 
 ## Postilaatikko 2026.11.04
 - Avoid integer-overflowing capacity calculations while matching email thread references.

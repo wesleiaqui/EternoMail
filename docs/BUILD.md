@@ -37,6 +37,11 @@ Run `./scripts/build-macos-local.sh --help` for options. This local build is
 not notarized and does not publish a GitHub release. For the published DMG,
 use the repository's GitHub Actions release workflow.
 
+The tagged macOS release workflow signs the app and DMG, submits both to Apple
+for notarization, and staples the notarization tickets. It uses the existing
+`APPLE_ID` and `APPLE_APP_PASSWORD` repository Actions secrets; the password
+must be an app-specific password for the Developer ID team `LWSR8T5392`.
+
 If Go reports `cannot find GOROOT directory`, an old `GOROOT` override may be
 left in the shell environment. The script ignores it when its directory no
 longer exists. To fix the shell for other Go commands too, run `unset GOROOT`
