@@ -59,7 +59,10 @@ All `Alt` pane and folder navigation is disabled while focus mode is on.
 | `Ctrl+F` | Forward last message (requires viewed conversation) |
 | `Ctrl+U` | Mark as read (keyboard-focused or checked messages) |
 | `Ctrl+Shift+U` | Mark as unread (keyboard-focused or checked messages) |
-| `Ctrl+K` | Archive (keyboard-focused or checked messages) |
+| `e` | Archive and mark as read (keyboard-focused or checked messages) |
+| `Ctrl+K` | Archive without changing read status (keyboard-focused or checked messages) |
+| `l` | Add/remove from Read Later |
+| `Shift+L` | Add/remove from Reply Later |
 | `Ctrl+J` | Mark as spam (keyboard-focused or checked messages) |
 | `Ctrl+L` | Load remote images in viewed message |
 | `Ctrl+Shift+L` | Open "Always Load Images" dropdown |
@@ -191,7 +194,10 @@ MESSAGE ACTIONS
   S                   Star/Unstar
   Ctrl + U            Mark read
   Ctrl + Shift + U    Mark unread
-  Ctrl + K            Archive
+  E                   Archive + mark read
+  Ctrl + K            Archive only
+  L                   Read Later
+  Shift + L           Reply Later
   Ctrl + J            Spam
   V                   View message
   G / Shift + G       Jump to first / last loaded message

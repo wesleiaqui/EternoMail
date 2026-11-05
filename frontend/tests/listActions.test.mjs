@@ -91,7 +91,7 @@ test('every list action is available with a target', () => {
 test('list actions cover the mail commands the panel offers', () => {
   assert.deepEqual(
     LIST_ACTIONS.map((d) => d.id).sort(),
-    ['mail.archive', 'mail.markRead', 'mail.markUnread', 'mail.spam', 'mail.star', 'mail.toggleRead', 'mail.trash'],
+    ['mail.archive', 'mail.archiveAndMarkRead', 'mail.markRead', 'mail.markUnread', 'mail.spam', 'mail.star', 'mail.toggleRead', 'mail.trash'],
   )
 })
 
