@@ -15,8 +15,11 @@ export function isAllowedEmailURL(value: string): boolean {
       return !!parsed.hostname && !parsed.hostname.startsWith('-')
     }
     if (parsed.protocol === 'mailto:') {
-      // Reject bare 'mailto:' without address or query
-      return !!parsed.pathname || !!parsed.search
+      // Reject bare 'mailto:' without address or query, and reject targets
+      // starting with a dash to prevent CLI flag/argument injection in URL handlers.
+      const target = parsed.pathname
+      if (target.startsWith('-')) return false
+      return !!target || !!parsed.search
     }
     return false
   } catch {

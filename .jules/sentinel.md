@@ -14,3 +14,8 @@
 **Vulnerability:** Backend URL protocol validation in `app/app.go` (`isAllowedProtocol`) only validated that `parsed.Host != ""` for http/https URLs, allowing URLs with leading dashes in the hostname or mailto target, as well as unstripped control characters (`\r`, `\n`, `\0`), which could lead to CLI argument injection in OS URL handlers (`xdg-open` or `open`).
 **Learning:** When defense-in-depth checks are placed on the client UI, corresponding backend validation must mirror those checks to prevent direct or bypass API invocations from injecting CLI flags into system command execution.
 **Prevention:** Enforce strict hostname and target validation on the backend by disallowing leading dash (`-`) characters and control characters across all accepted URI schemes.
+
+## 2026-11-04 - Frontend Mailto Validation Parity Against CLI Option Injection
+**Vulnerability:** Frontend link validation (`isAllowedEmailURL`) rejected leading dash characters on `http:` and `https:` hostnames but accepted `mailto:` URLs starting with a dash (e.g. `mailto:-flag@example.com` or `mailto:--help`), diverging from backend guards.
+**Learning:** Defense-in-depth URL validators across frontend and backend boundaries must keep scheme-specific argument injection guards in sync, including `mailto` target paths.
+**Prevention:** Mirror all backend target/flag filters in frontend URL gatekeepers before passing URLs to external system openers or client dispatchers.
