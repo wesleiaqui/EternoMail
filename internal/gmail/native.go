@@ -69,6 +69,35 @@ type Label struct {
 	MessagesUnread int    `json:"messagesUnread"`
 }
 
+// CreateHiddenUserLabel creates a Gmail user label for app-owned metadata.
+// It is hidden from Gmail's navigation so internal triage state does not add
+// clutter to the user's folder list.
+func (c *Client) CreateHiddenUserLabel(ctx context.Context, name string) (*Label, error) {
+	var label Label
+	err := c.do(ctx, http.MethodPost, "/labels", nil, map[string]string{
+		"name": name, "labelListVisibility": "labelHide", "messageListVisibility": "hide",
+	}, &label)
+	if err != nil {
+		return nil, err
+	}
+	if label.ID == "" {
+		return nil, fmt.Errorf("gmail: label creation returned no ID")
+	}
+	return &label, nil
+}
+
+// ModifyThread changes labels on every message in a Gmail conversation.
+func (c *Client) ModifyThread(ctx context.Context, threadID string, addLabels, removeLabels []string) error {
+	body := map[string][]string{}
+	if len(addLabels) > 0 {
+		body["addLabelIds"] = addLabels
+	}
+	if len(removeLabels) > 0 {
+		body["removeLabelIds"] = removeLabels
+	}
+	return c.do(ctx, http.MethodPost, "/threads/"+url.PathEscape(threadID)+"/modify", nil, body, nil)
+}
+
 func (c *Client) Labels(ctx context.Context) ([]Label, error) {
 	var r struct {
 		Labels []Label `json:"labels"`

@@ -425,26 +425,6 @@ export namespace app {
 	        this.data = source["data"];
 	    }
 	}
-	export class DraftAttachmentBlob {
-	    hash: string;
-	    name: string;
-	    mime: string;
-	    size: number;
-	    content: string;
-
-	    static createFrom(source: any = {}) {
-	        return new DraftAttachmentBlob(source);
-	    }
-
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.hash = source["hash"];
-	        this.name = source["name"];
-	        this.mime = source["mime"];
-	        this.size = source["size"];
-	        this.content = source["content"];
-	    }
-	}
 	export class ConnectionTestResult {
 	    success: boolean;
 	    error?: string;
@@ -499,6 +479,26 @@ export namespace app {
 	        this.size = source["size"];
 	        this.isInline = source["isInline"];
 	        this.contentId = source["contentId"];
+	    }
+	}
+	export class DraftAttachmentBlob {
+	    hash: string;
+	    name: string;
+	    mime: string;
+	    size: number;
+	    content: string;
+
+	    static createFrom(source: any = {}) {
+	        return new DraftAttachmentBlob(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.hash = source["hash"];
+	        this.name = source["name"];
+	        this.mime = source["mime"];
+	        this.size = source["size"];
+	        this.content = source["content"];
 	    }
 	}
 	export class DraftEditResult {
@@ -2358,26 +2358,6 @@ export namespace draft {
 
 export namespace drafthistory {
 
-	export class Blob {
-	    hash: string;
-	    name: string;
-	    mime: string;
-	    size: number;
-	    content: number[];
-
-	    static createFrom(source: any = {}) {
-	        return new Blob(source);
-	    }
-
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.hash = source["hash"];
-	        this.name = source["name"];
-	        this.mime = source["mime"];
-	        this.size = source["size"];
-	        this.content = source["content"];
-	    }
-	}
 	export class Node {
 	    nodeId: string;
 	    draftKey: string;
@@ -3973,6 +3953,46 @@ export namespace sync {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.results = this.convertValues(source["results"], IMAPSearchResult);
 	        this.totalCount = source["totalCount"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
+export namespace triage {
+
+	export class Ref {
+	    accountId: string;
+	    conversationId: string;
+	    // Go type: time
+	    wakeAt?: any;
+
+	    static createFrom(source: any = {}) {
+	        return new Ref(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.accountId = source["accountId"];
+	        this.conversationId = source["conversationId"];
+	        this.wakeAt = this.convertValues(source["wakeAt"], null);
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

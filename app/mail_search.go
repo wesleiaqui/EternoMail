@@ -123,11 +123,17 @@ func matchesGmailThread(items []gmail.Message, vf *virtualfolder.VirtualFolder) 
 // never fetched here. Cursor pages keep per-account failures visible/retryable.
 func (a *App) SearchMail(req MailSearchRequest) (*MailSearchPage, error) {
 	switch req.Filter {
-	case "", "unread", "replyLater":
+	case "", "unread", "replyLater", "readLater":
 	default:
 		return nil, fmt.Errorf("unsupported online filter")
 	}
 	queued := map[string]bool{}
+	if req.Filter == "replyLater" {
+		a.syncGmailTriageQueues("reply-later")
+	}
+	if req.Filter == "readLater" {
+		a.syncGmailTriageQueues("read-later")
+	}
 	if req.Filter == "replyLater" {
 		if a.replyLaterStore == nil {
 			return nil, fmt.Errorf("Reply Later queue is not ready")
@@ -140,11 +146,20 @@ func (a *App) SearchMail(req MailSearchRequest) (*MailSearchPage, error) {
 			queued[ref.AccountID+"\x00"+ref.ConversationID] = true
 		}
 	}
+	if req.Filter == "readLater" {
+		refs, err := a.triageStore.ListReadLater()
+		if err != nil {
+			return nil, err
+		}
+		for _, ref := range refs {
+			queued[ref.AccountID+"\x00"+ref.ConversationID] = true
+		}
+	}
 	matchesFilter := func(conv *message.Conversation) bool {
 		if req.Filter == "unread" {
 			return conv.UnreadCount > 0
 		}
-		return req.Filter != "replyLater" || queued[conv.AccountID+"\x00"+conv.ThreadID]
+		return (req.Filter != "replyLater" && req.Filter != "readLater") || queued[conv.AccountID+"\x00"+conv.ThreadID]
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, 90*time.Second)
 	defer cancel()

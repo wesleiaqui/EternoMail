@@ -2,13 +2,12 @@
 
 ## [Unreleased]
 
-## Postilaatikko 2026.11.05
+## Postilaatikko 2026.11.05.1
 
-- Send queued Undo Send emails immediately when quitting, and keep the app open with drafts intact if a send fails.
-- Release inactive conversation readers from memory while preserving each tab's selected thread and scroll position; allow up to eight additional mail tabs.
-- Let conversation-mode email cards use the full available reader width.
-- Add an Archive + mark as read action alongside Archive in message context menus.
-- Notarize and staple macOS release DMGs for Gatekeeper verification.
+- Bring folder browsing and its message list into one context column, with All, Unread, Read Later, and Reply Later controls at the top.
+- Keep the favorites rail visible while browsing, place open email tabs above the wide reader, and optionally auto-hide the context column until the rail is hovered; folder views no longer open as tabs.
+- Store Read Later and Reply Later in Gmail labels for Gmail accounts, with local queues for other providers; snooze conversations locally until their wake time.
+- Repair schema-64 databases created by either concurrent migration branch without deleting their queued or move-history data.
 
 ## Postilaatikko 2026.11.04
 - Avoid integer-overflowing capacity calculations while matching email thread references.

@@ -4,6 +4,15 @@
     "complete": "{total} conversations · {unread} unread",
     "incomplete": "Online count incomplete"
   },
+  "triage": {
+    "all": "All",
+    "unread": "Unread",
+    "readLater": "Read later",
+    "replyLater": "Reply later",
+    "readLaterPending": "Read Later queue support is being added",
+    "autoHideContext": "Auto-hide this column; hover over the favorites rail to reveal it",
+    "keepContextVisible": "Keep this column visible"
+  },
   "undoHistory": {
     "title": "Undo History",
     "description": "Recent mailbox actions you can still undo. Cmd-Z on Mac (Ctrl-Z elsewhere) undoes the latest action.",
@@ -174,6 +183,25 @@
       "reference": "Conversation reference",
       "unknownAccount": "Account unavailable"
   },
+  "readLater": {
+    "title": "Read Later",
+    "add": "Add to Read Later",
+    "remove": "Remove from Read Later",
+    "added": "Added to Read Later",
+    "removed": "Removed from Read Later",
+    "failed": "Could not update Read Later"
+  },
+  "snooze": {
+    "action": "Snooze locally…",
+    "title": "Snooze in Postilaatikko",
+    "description": "Hide this conversation from your mail lists and bring it back after the selected number of days.",
+    "days": "Days",
+    "confirm": "Snooze",
+    "done": "Conversation snoozed",
+    "unsnooze": "Bring back now",
+    "restored": "Conversation brought back",
+    "failed": "Could not snooze conversation"
+  },
   "messageList": {
     "refreshVirtualFolder": "Refresh virtual folder",
     "searchMessages": "Search messages...",
@@ -188,6 +216,7 @@
     "unread": "({count} unread)",
     "clearSearch": "Clear search",
     "noResults": "No results found for \"{query}\"",
+    "filterReadLater": "Read Later",
     "indexBuilding": "Search index is still building...",
     "foundResults": "Found {count} result(s) for \"{query}\"",
     "loadMore": "Load more ({remaining} remaining)",

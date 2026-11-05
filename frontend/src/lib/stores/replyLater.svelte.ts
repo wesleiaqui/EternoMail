@@ -21,6 +21,7 @@ async function load(force = false): Promise<void> {
   if (!subscribed) {
     subscribed = true
     EventsOn('replyLater:changed', (event: MembershipEvent) => update(event, event.inQueue))
+    EventsOn('replyLater:synced', () => { void load(true).catch(() => {}) })
     EventsOn('folder:synced', (event: { accountId: string }) => {
       if (refs.some(ref => ref.accountId === event.accountId)) void load(true).catch(() => {})
     })

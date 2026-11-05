@@ -105,7 +105,7 @@ func (a *App) OpenMailWindow(accountID, folderID, folderName, folderType, thread
 		folderName = view.Name
 	case accountID == "unified":
 		switch folderID {
-		case "inbox", "sent", "drafts", "trash", "spam", "archive", "all", "starred", "replyLater":
+		case "inbox", "sent", "drafts", "trash", "spam", "archive", "all", "starred", "replyLater", "readLater", "snoozed":
 		default:
 			return errors.New("unknown unified folder")
 		}

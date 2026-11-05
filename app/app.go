@@ -45,6 +45,7 @@ import (
 	"github.com/hkdb/aerion/internal/settings"
 	"github.com/hkdb/aerion/internal/smime"
 	"github.com/hkdb/aerion/internal/sync"
+	"github.com/hkdb/aerion/internal/triage"
 	"github.com/hkdb/aerion/internal/undo"
 	"github.com/hkdb/aerion/internal/virtualfolder"
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -221,6 +222,7 @@ type App struct {
 	folderStore         *folder.Store
 	messageStore        *message.Store
 	replyLaterStore     *replylater.Store
+	triageStore         *triage.Store
 	replyContent        *replycontent.Service
 	virtualFolderStore  *virtualfolder.Store
 	filterStore         *mailfilter.Store
@@ -243,6 +245,7 @@ type App struct {
 	viewCountMu     goSync.Mutex
 	viewCountJobs   map[string]*viewCountJob
 	viewCountShared map[string]*viewCountJob
+	triageLabelMu   goSync.Mutex
 
 	// Background sync (polling + IDLE)
 	syncScheduler *sync.Scheduler
@@ -620,6 +623,11 @@ func (a *App) Startup(ctx context.Context) {
 	a.contentPolicyStore = folder.NewContentPolicyStore(db)
 	a.messageStore = message.NewStore(db)
 	a.replyLaterStore = replylater.NewStore(db)
+	a.triageStore = triage.NewStore(db)
+	if _, err := a.triageStore.ExpireSnoozes(time.Now()); err != nil {
+		log.Warn().Err(err).Msg("Failed to restore expired snoozed conversations")
+	}
+	go a.runSnoozeWakeLoop()
 	a.replyContent = replycontent.NewService(replycontent.ServiceOptions{})
 	a.virtualFolderStore = virtualfolder.NewStore(db)
 	a.filterStore = mailfilter.NewStore(db)

@@ -78,6 +78,9 @@ func (a *App) ChangeReplyLaterWithUndo(accountID, conversationID string, inQueue
 		return ReplyLaterChangeResult{}, fmt.Errorf("Reply Later queue is not ready")
 	}
 	ref := replylater.Ref{AccountID: accountID, ConversationID: conversationID}
+	if err := a.changeReplyLaterProvider(accountID, conversationID, inQueue); err != nil {
+		return ReplyLaterChangeResult{}, err
+	}
 	var changed bool
 	var err error
 	if inQueue {
@@ -103,6 +106,9 @@ func (a *App) ChangeReplyLaterWithUndo(accountID, conversationID string, inQueue
 func (a *App) SetReplyLaterMembership(ref replylater.Ref, inQueue bool) error {
 	if a.replyLaterStore == nil {
 		return fmt.Errorf("Reply Later queue is not ready")
+	}
+	if err := a.changeReplyLaterProvider(ref.AccountID, ref.ConversationID, inQueue); err != nil {
+		return err
 	}
 	var changed bool
 	var err error

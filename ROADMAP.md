@@ -4,6 +4,10 @@ Planned, in flight, open questions, and parked items for this fork. Done items a
 
 ## Product direction
 
+### Triage workspace navigation (2026-11-04)
+
+The mail workspace uses three columns: a thin, persistent favorites/queue rail; one medium context column; and a wide reader. The context column has one row of All, Unread, Read Later, and Reply Later toggles at its top. It accordion-switches between folder browsing and the selected folder's messages; selecting a folder reveals its messages in that same column, and a clear back/collapse action returns to folders. Tabs represent individual open emails only and sit above the reader; switching tabs keeps the rail and context column visible and restores the corresponding folder/message context. A preference may auto-hide the context column, with the rail remaining visible and hover revealing the column. This supersedes the simultaneous folder sidebar + message-list columns in the main mail workspace.
+
 The goal is a strong personal email client for one person using multiple accounts. Keep Gmail API support advancing where it improves Gmail, while preserving IMAP and other existing provider paths. Spark and Gmail remain interaction references; the accepted conversation/navigation design also borrows selected ideas from Spike, HEY, Shortwave, Unibox, MailMate and Superhuman. Keep the focus on one person's mail and workflows.
 
 ### Provider direction (updated 2026-11-03)
@@ -18,7 +22,7 @@ Execution checkpoint: UX-002's shared view/thread contract is integrated in PR #
 
 Parser checkpoint: PR #33 (`74ed7ff`) integrates plain-text extraction, then stacked PR #34 (`7436026`) integrates safe HTML extraction. UX-007 service/cache is reserved for Claude; its dependencies are the integrated reference contract and both parsers, independently of the remaining virtual-folder/live-device gate. No conversation-reader UI is shipped by these parser changes.
 
-- **Compact reading refinement:** conversation mode uses directional bubbles with sender labels once per run and details/originals on demand; signature/source controls stay out of the reading flow. Double-click a message-list row to open a reader-only conversation tab; its pop-out action opens an independent reader window. The + action opens a folder workspace tab. Track implementation in READER-001.
+- **Compact reading refinement:** conversation mode uses directional bubbles with sender labels once per run and details/originals on demand; signature/source controls stay out of the reading flow. Double-click a message-list row to open an email-only tab; its pop-out action opens an independent reader window. Folder/browser views are never opened as tabs. Track implementation in READER-001 and P-073.
 - **Email reactions:** display recognized Gmail reactions and delivered Outlook notification emails as reversible emoji chips on their exact source message; preserve unknown/unresolved messages and all originals. Sending reactions is a later task.
 - **Two reader formats:** Conversation extracts each email's new contribution into a readable timeline; Traditional shows full emails. Provide a visible toggle and per-message Show original. Preserve inline replies, meaningful formatting, attachments and crypto status; extraction uncertainty falls back to complete content.
 - **Unified and virtual views:** All Inboxes belongs inside the Virtual folders card. Real folders, saved queries and system views use consistent cross-account scope/filter semantics; query, grouping, reader format and panel layout remain independent.

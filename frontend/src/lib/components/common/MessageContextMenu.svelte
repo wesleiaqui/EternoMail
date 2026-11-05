@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from '@iconify/svelte'
   import { replyLaterQueue } from '$lib/stores/replyLater.svelte'
+  import { readLaterQueue } from '$lib/stores/readLater.svelte'
   import { ContextMenu as ContextMenuPrimitive } from 'bits-ui'
   import {
     ContextMenuContent,
@@ -23,6 +24,8 @@
     CopyToFolder,
     ResolveMailActionTarget,
     UndoOperation,
+    SnoozeConversation,
+    UnsnoozeConversation,
   } from '../../../../wailsjs/go/app/App'
   // @ts-ignore - wailsjs path
   import { account, operations } from '../../../../wailsjs/go/models'
@@ -35,6 +38,8 @@
   import { runMessageMutation } from '$lib/components/list/mutationInFlight'
   import ShortcutHint from '$lib/components/shortcuts/ShortcutHint.svelte'
   import { publishUndoOperationCompleted, publishUndoOperationCreated } from '$lib/components/list/undoMutationEvents'
+  import * as Dialog from '$lib/components/ui/dialog'
+  import { Button } from '$lib/components/ui/button'
 
   interface Props {
     conversationId?: string
@@ -69,6 +74,8 @@
   let accounts = $state<account.Account[]>([])
   let accountsLoaded = $state(false)
   let accountsLoading = $state(false)
+  let showSnoozeDialog = $state(false)
+  let snoozeDays = $state('1')
 
   // Permanent delete confirmation
   let showDeleteConfirm = $state(false)
@@ -129,6 +136,7 @@
     if (open) {
       loadAccounts()
       void replyLaterQueue.load().catch(() => {})
+      void readLaterQueue.load().catch(() => {})
     }
     onOpenChange?.(open)
   }
@@ -179,6 +187,37 @@
         label: $_('common.undo'), onClick: () => { void UndoOperation(result.operationId).catch(() => toasts.error($_('toast.undoFailed'))) },
       }])
     } catch (err) { toasts.error(`${$_('replyLater.failed')}: ${String(err)}`) }
+  }
+
+  async function handleReadLater() {
+    if (!conversationId) return
+    const inQueue = !readLaterQueue.has(accountId, conversationId)
+    try {
+      const changed = await readLaterQueue.set(accountId, conversationId, inQueue)
+      if (changed) toasts.success($_(inQueue ? 'readLater.added' : 'readLater.removed'))
+    } catch (err) { toasts.error(`${$_('readLater.failed')}: ${String(err)}`) }
+  }
+
+  async function confirmSnooze() {
+    if (!conversationId) return
+    const days = Number(snoozeDays)
+    if (!Number.isFinite(days) || days < 1 || days > 3650) return
+    const wakeAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+    try {
+      await SnoozeConversation(accountId, conversationId, wakeAt)
+      showSnoozeDialog = false
+      toasts.success($_('snooze.done'))
+      onActionComplete?.(true)
+    } catch (err) { toasts.error(`${$_('snooze.failed')}: ${String(err)}`) }
+  }
+
+  async function handleUnsnooze() {
+    if (!conversationId) return
+    try {
+      await UnsnoozeConversation(accountId, conversationId)
+      toasts.success($_('snooze.restored'))
+      onActionComplete?.(true)
+    } catch (err) { toasts.error(`${$_('snooze.failed')}: ${String(err)}`) }
   }
 
   // Action handlers
@@ -457,10 +496,25 @@
     {/if}
 
     {#if conversationId}
+      {#if folderType === 'snoozed'}
+        <ContextMenuItem onSelect={handleUnsnooze}>
+          <Icon icon="mdi:clock-check-outline" class="mr-2 h-4 w-4" />
+          {$_('snooze.unsnooze')}
+        </ContextMenuItem>
+      {:else}
+      <ContextMenuItem onSelect={handleReadLater}>
+        <Icon icon="mdi:book-clock-outline" class="mr-2 h-4 w-4" />
+        {$_(readLaterQueue.has(accountId, conversationId) ? 'readLater.remove' : 'readLater.add')}
+      </ContextMenuItem>
       <ContextMenuItem onSelect={handleReplyLater}>
         <Icon icon="mdi:clock-outline" class="mr-2 h-4 w-4" />
         {$_(replyLaterQueue.has(accountId, conversationId) ? 'replyLater.remove' : 'replyLater.add')}
       </ContextMenuItem>
+      <ContextMenuItem onSelect={() => { snoozeDays = '1'; showSnoozeDialog = true }}>
+        <Icon icon="mdi:clock-time-four-outline" class="mr-2 h-4 w-4" />
+        {$_('snooze.action')}
+      </ContextMenuItem>
+      {/if}
       <ContextMenuSeparator />
     {/if}
 
@@ -528,6 +582,23 @@
     </ContextMenuItem>
   </ContextMenuContent>
 </ContextMenuPrimitive.Root>
+
+<Dialog.Root bind:open={showSnoozeDialog}>
+  <Dialog.Content class="max-w-sm">
+    <Dialog.Header>
+      <Dialog.Title>{$_('snooze.title')}</Dialog.Title>
+      <Dialog.Description>{$_('snooze.description')}</Dialog.Description>
+    </Dialog.Header>
+    <label class="grid gap-2 text-sm" for="snooze-days">
+      {$_('snooze.days')}
+      <input id="snooze-days" type="number" min="1" max="3650" step="1" bind:value={snoozeDays} class="rounded-md border border-input bg-background px-3 py-2" />
+    </label>
+    <Dialog.Footer>
+      <Button variant="outline" onclick={() => showSnoozeDialog = false}>{$_('common.cancel')}</Button>
+      <Button onclick={confirmSnooze}>{$_('snooze.confirm')}</Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
 
 <!-- Permanent Delete Confirmation Dialog -->
 <ConfirmDialog

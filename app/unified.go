@@ -12,7 +12,7 @@ import (
 // unified navigation type. GetSpecialFolder is deliberately the single source
 // of truth: it honors an account's configured path before folder_type.
 func (a *App) unifiedSpecialFolders(folderType string) ([]*folder.Folder, error) {
-	if folderType == "replyLater" {
+	if folderType == "replyLater" || folderType == "readLater" || folderType == "snoozed" {
 		accounts, err := a.accountStore.List()
 		if err != nil {
 			return nil, err
@@ -71,7 +71,19 @@ func (a *App) unifiedSpecialFolderIDs(folderType string) ([]string, error) {
 func (a *App) GetUnifiedFolderConversations(folderType string, offset, limit int, sortOrder, filterValue string) ([]*message.Conversation, error) {
 	filterValue = replyLaterViewFilter(folderType, filterValue)
 	if folderType == "replyLater" {
+		if offset == 0 {
+			a.syncGmailTriageQueues("reply-later")
+		}
 		return a.messageStore.ListReplyLaterConversations(offset, limit, sortOrder, filterValue)
+	}
+	if folderType == "readLater" {
+		if offset == 0 {
+			a.syncGmailTriageQueues("read-later")
+		}
+		return a.messageStore.ListReadLaterConversations(offset, limit, sortOrder, filterValue)
+	}
+	if folderType == "snoozed" {
+		return a.messageStore.ListSnoozedConversations(offset, limit, sortOrder, filterValue)
 	}
 	if folderType == string(folder.TypeArchive) {
 		return a.listUnifiedArchived(offset, limit, sortOrder, filterValue)
@@ -141,6 +153,12 @@ func (a *App) GetUnifiedFolderCount(folderType, filterValue string) (int, error)
 	if folderType == "replyLater" {
 		return a.messageStore.CountReplyLaterConversations(filterValue)
 	}
+	if folderType == "readLater" {
+		return a.messageStore.CountReadLaterConversations(filterValue)
+	}
+	if folderType == "snoozed" {
+		return a.messageStore.CountSnoozedConversations(filterValue)
+	}
 	if folderType == string(folder.TypeArchive) {
 		// The list path is authoritative for mixed physical/virtual archive
 		// sources; count it without exposing synthetic folder IDs.
@@ -177,7 +195,15 @@ func (a *App) GetSearchCountUnifiedFolder(folderType, query, filterValue string)
 // SyncUnifiedFolder syncs each represented real folder. It never passes a
 // synthetic navigation ID to the sync engine.
 func (a *App) SyncUnifiedFolder(folderType string) error {
-	if folderType == "replyLater" {
+	if folderType == "replyLater" || folderType == "readLater" || folderType == "snoozed" {
+		if folderType == "snoozed" {
+			return nil
+		}
+		queue := "reply-later"
+		if folderType == "readLater" {
+			queue = "read-later"
+		}
+		a.syncGmailTriageQueues(queue)
 		return nil
 	}
 	folders, err := a.unifiedSpecialFolders(folderType)
@@ -208,11 +234,12 @@ func (a *App) EmptyUnifiedTrash() error {
 // replyLaterViewFilter keeps queue membership applied when quick filters or
 // local search further narrow the first-class queue view.
 func replyLaterViewFilter(folderType, filter string) string {
-	if folderType != "replyLater" {
+	if folderType != "replyLater" && folderType != "readLater" {
 		return filter
 	}
-	if filter == "" || filter == "replyLater" {
-		return "replyLater"
+	queueFilter := folderType
+	if filter == "" || filter == queueFilter {
+		return queueFilter
 	}
-	return "replyLater+" + filter
+	return queueFilter + "+" + filter
 }

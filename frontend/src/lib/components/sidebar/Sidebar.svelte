@@ -2,6 +2,7 @@
   import Icon from '@iconify/svelte'
   import NavigationCards from './NavigationCards.svelte'
   import { replyLaterQueue } from '$lib/stores/replyLater.svelte'
+  import { readLaterQueue } from '$lib/stores/readLater.svelte'
   import { navigationCards } from '$lib/stores/navigationCards.svelte'
   import type { NavigationEntry } from '$lib/sidebar/cards'
   import { folderChoices, filterFolders } from '$lib/sidebar/folderSearch'
@@ -34,6 +35,8 @@
   import { isFolderFavorite, favoritesFull, toggleFolderFavorite } from '$lib/sidebar/favorites'
   import type { virtualfolder } from '../../../../wailsjs/go/models'
   import { SyncFolders } from '../../../../wailsjs/go/app/App'
+  import { GetSnoozedCount } from '../../../../wailsjs/go/app/App'
+  import { EventsOn } from '../../../../wailsjs/runtime/runtime'
 
   // Folder item type for flat navigation list
   interface FolderNavItem {
@@ -137,6 +140,7 @@
     showBackButton?: boolean
     onBack?: () => void
     collapsed?: boolean
+    showCollapseControl?: boolean
     onToggleCollapsed?: () => void
     navigationEnabled?: boolean
   }
@@ -157,6 +161,7 @@
     showBackButton = false,
     onBack,
     collapsed = false,
+    showCollapseControl = true,
     onToggleCollapsed,
     navigationEnabled = true,
   }: Props = $props()
@@ -187,6 +192,7 @@
   const settingsPhoto = $derived(contactPhotos.get(settingsAccount?.email ?? ''))
   let editingAccount = $state<account.Account | null>(null)
   let deletingAccount = $state<account.Account | null>(null)
+  let snoozedCount = $state<number | undefined>(undefined)
 
   export function openSettings() {
     showSettingsDialog = true
@@ -211,6 +217,12 @@
     contactSourcesStore.load()
     void virtualFoldersStore.load()
     void replyLaterQueue.load().catch(() => {})
+    void readLaterQueue.load().catch(() => {})
+    void GetSnoozedCount().then(count => snoozedCount = count).catch(() => {})
+    const refreshSnoozedCount = () => { void GetSnoozedCount().then(count => snoozedCount = count).catch(() => {}) }
+    const stopSnoozeChanged = EventsOn('snooze:changed', refreshSnoozedCount)
+    const stopSnoozeExpired = EventsOn('snooze:expired', refreshSnoozedCount)
+    return () => { stopSnoozeChanged(); stopSnoozeExpired() }
   })
 
   $effect(() => {
@@ -234,6 +246,8 @@
     const entries: NavigationEntry[] = [
       { id: 'inboxes', kind: 'inboxes', name: $_('navigation.allInboxes'), ...folderCounts(item => item.type === 'inbox') },
       { id: 'replyLater', kind: 'system', folderType: 'replyLater', name: $_('replyLater.title'), count: replyLaterQueue.ready ? replyLaterQueue.count : undefined },
+      { id: 'readLater', kind: 'system', folderType: 'readLater', name: $_('readLater.title'), count: readLaterQueue.ready ? readLaterQueue.count : undefined },
+      { id: 'snoozed', kind: 'system', folderType: 'snoozed', name: $_('sidebar.snoozed'), count: snoozedCount },
       ...[...primaryFolders, ...secondaryFolders].map(item => ({ id: item.type, kind: 'system' as const, name: $_(item.label), folderType: item.type, ...folderCounts(folder => folder.type === item.type) })),
       ...sidebarPins.list.map(pin => ({ id: `folder:${pin.accountId}:${pin.folderId}`, kind: 'folder' as const, accountId: pin.accountId, folderId: pin.folderId, name: pin.name, path: pin.path, ...countsForFolder(pin.accountId, pin.folderId) })),
       ...virtualFoldersStore.folders.map(item => ({ id: `virtual:${item.id}`, kind: 'virtual' as const, folderId: item.id, name: item.name, unreadCount: virtualFoldersStore.unreadCounts[item.id] || 0 })),
@@ -373,7 +387,7 @@
   }
 
   function selectPrimaryFolder(type: string) {
-    const label = type === 'replyLater' ? 'replyLater.title' : [...primaryFolders, ...secondaryFolders].find(item => item.type === type)?.label || type
+    const label = type === 'replyLater' ? 'replyLater.title' : type === 'readLater' ? 'readLater.title' : type === 'snoozed' ? 'sidebar.snoozed' : [...primaryFolders, ...secondaryFolders].find(item => item.type === type)?.label || type
     onUnifiedSpecialFolderSelect?.(type, label)
   }
 
@@ -663,10 +677,12 @@
           <Icon icon="mdi:folder-multiple-outline" class="h-6 w-6" />
           <span data-sidebar-label>{$_('sidebar.allFolders')}</span>
         </button>
-        <button type="button" class="sidebar-collapse-nav-button" style:order="100" onclick={onToggleCollapsed} title={collapsed ? $_('sidebar.expand') : $_('sidebar.collapse')} aria-label={collapsed ? $_('sidebar.expand') : $_('sidebar.collapse')}>
-          <Icon icon={collapsed ? 'mdi:chevron-double-right' : 'mdi:chevron-double-left'} class="h-5 w-5" />
-          <span data-sidebar-label>{collapsed ? $_('sidebar.expand') : $_('sidebar.collapse')}</span>
-        </button>
+        {#if showCollapseControl}
+          <button type="button" class="sidebar-collapse-nav-button" style:order="100" onclick={onToggleCollapsed} title={collapsed ? $_('sidebar.expand') : $_('sidebar.collapse')} aria-label={collapsed ? $_('sidebar.expand') : $_('sidebar.collapse')}>
+            <Icon icon={collapsed ? 'mdi:chevron-double-right' : 'mdi:chevron-double-left'} class="h-5 w-5" />
+            <span data-sidebar-label>{collapsed ? $_('sidebar.expand') : $_('sidebar.collapse')}</span>
+          </button>
+        {/if}
       </nav>
     {/if}
   </div>

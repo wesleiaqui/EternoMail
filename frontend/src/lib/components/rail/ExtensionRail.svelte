@@ -1,4 +1,5 @@
 <script lang="ts">
+  let { onRevealContext = () => {}, onHideContext = () => {} }: { onRevealContext?: () => void; onHideContext?: () => void } = $props()
   import RailButton from './RailButton.svelte'
   import { getRailTabs } from '$lib/stores/extensionRegistry.svelte'
   import { getActiveExtension, setActiveExtension } from '$lib/stores/uiState.svelte'
@@ -49,7 +50,7 @@
   }
 </script>
 <svelte:window onkeydown={keydown} />
-<nav class="flex flex-col items-stretch w-12 flex-shrink-0 bg-muted/30 border-r border-border pt-2" aria-label={$_('navigation.quickAccess')}>
+<nav class="flex flex-col items-stretch w-12 flex-shrink-0 bg-muted/30 border-r border-border pt-2" aria-label={$_('navigation.quickAccess')} onmouseenter={onRevealContext} onmouseleave={onHideContext}>
   <RailButton icon="mdi:email" label="Mail" active={getActiveExtension() === 'mail'} onclick={() => setActiveExtension('mail')} />
   {#each nav.quick as entry, index (entry.id)}
     <RailButton

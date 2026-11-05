@@ -17,6 +17,7 @@ import {smtp} from '../models';
 import {imap} from '../models';
 import {settings} from '../models';
 import {pgp} from '../models';
+import {triage} from '../models';
 import {replycontent} from '../models';
 import {replylater} from '../models';
 import {smime} from '../models';
@@ -42,6 +43,8 @@ export function AddImageAllowlist(arg1:string,arg2:string):Promise<void>;
 export function AddMicrosoftSharedMailbox(arg1:string,arg2:string,arg3:string):Promise<account.Account>;
 
 export function AddPGPKeyServer(arg1:string):Promise<void>;
+
+export function AddReadLater(arg1:string,arg2:string):Promise<boolean>;
 
 export function AddReplyLater(arg1:string,arg2:string):Promise<boolean>;
 
@@ -140,6 +143,8 @@ export function CancelOAuthFlow():Promise<void>;
 export function CancelPendingSend(arg1:string):Promise<void>;
 
 export function CancelVirtualFolderOnlineCount(arg1:string):Promise<void>;
+
+export function ChangeReadLater(arg1:string,arg2:string,arg3:boolean):Promise<boolean>;
 
 export function ChangeReplyLaterWithUndo(arg1:string,arg2:string,arg3:boolean):Promise<app.ReplyLaterChangeResult>;
 
@@ -409,6 +414,10 @@ export function GetPGPSignPolicy(arg1:string):Promise<string>;
 
 export function GetPendingMailto():Promise<app.MailtoData>;
 
+export function GetReadLaterCount():Promise<number>;
+
+export function GetReadLaterQueue():Promise<Array<triage.Ref>>;
+
 export function GetReadReceiptResponsePolicy():Promise<string>;
 
 export function GetReaderIdentityEmails():Promise<Array<string>>;
@@ -448,6 +457,10 @@ export function GetShowTitleBar():Promise<boolean>;
 export function GetShowViewerCircles():Promise<boolean>;
 
 export function GetSkippedUpdateVersion():Promise<string>;
+
+export function GetSnoozedConversations():Promise<Array<triage.Ref>>;
+
+export function GetSnoozedCount():Promise<number>;
 
 export function GetSourceAddressbooks(arg1:string):Promise<Array<carddav.Addressbook>>;
 
@@ -538,6 +551,8 @@ export function IsFlatpak():Promise<boolean>;
 export function IsImageAllowed(arg1:string):Promise<boolean>;
 
 export function IsOAuthConfigured(arg1:string):Promise<boolean>;
+
+export function IsReadLater(arg1:string,arg2:string):Promise<boolean>;
 
 export function IsReady():Promise<boolean>;
 
@@ -682,6 +697,8 @@ export function RemoveFromInboxWithUndo(arg1:Array<string>):Promise<app.Undoable
 export function RemoveImageAllowlist(arg1:number):Promise<void>;
 
 export function RemovePGPKeyServer(arg1:number):Promise<void>;
+
+export function RemoveReadLater(arg1:string,arg2:string):Promise<boolean>;
 
 export function RemoveReplyLater(arg1:string,arg2:string):Promise<boolean>;
 
@@ -841,6 +858,8 @@ export function SetThemeMode(arg1:string):Promise<void>;
 
 export function ShowWindow():Promise<void>;
 
+export function SnoozeConversation(arg1:string,arg2:string,arg3:string):Promise<void>;
+
 export function Star(arg1:Array<string>):Promise<void>;
 
 export function StartContactsOnlyOAuthFlow(arg1:string):Promise<void>;
@@ -890,6 +909,8 @@ export function Undo():Promise<string>;
 export function UndoLatestWithResult():Promise<app.UndoLatestResult>;
 
 export function UndoOperation(arg1:string):Promise<string>;
+
+export function UnsnoozeConversation(arg1:string,arg2:string):Promise<boolean>;
 
 export function Unstar(arg1:Array<string>):Promise<void>;
 

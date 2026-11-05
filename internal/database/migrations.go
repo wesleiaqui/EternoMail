@@ -1672,4 +1672,77 @@ var migrations = []Migration{
 	-- identity. Existing signatures remain the fallback for legacy identities.
 	ALTER TABLE identities ADD COLUMN signature_rules TEXT NOT NULL DEFAULT '[]';
 	`},
+	{Version: 64, SQL: `
+	-- Gmail label IDs are per-account provider metadata; local queue membership
+	-- mirrors Gmail for fast views and remains authoritative for other providers.
+	CREATE TABLE IF NOT EXISTS gmail_triage_labels (
+	  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+	  queue TEXT NOT NULL CHECK(queue IN ('read-later','reply-later')),
+	  label_id TEXT NOT NULL,
+	  PRIMARY KEY(account_id, queue)
+	);
+	CREATE TABLE IF NOT EXISTS read_later_queue (
+	  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+	  conversation_id TEXT NOT NULL,
+	  added_at TEXT NOT NULL DEFAULT (datetime('now')),
+	  PRIMARY KEY(account_id, conversation_id)
+	);
+	CREATE INDEX IF NOT EXISTS idx_read_later_queue_added ON read_later_queue(added_at DESC);
+	CREATE TABLE IF NOT EXISTS snoozed_conversations (
+	  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+	  conversation_id TEXT NOT NULL,
+	  wake_at TEXT NOT NULL,
+	  added_at TEXT NOT NULL DEFAULT (datetime('now')),
+	  PRIMARY KEY(account_id, conversation_id)
+	);
+	CREATE INDEX IF NOT EXISTS idx_snoozed_conversations_wake ON snoozed_conversations(wake_at);
+	`},
+	{Version: 65, SQL: `
+	-- Two independent feature branches briefly used schema version 64. Databases
+	-- created by either branch can therefore arrive at version 64 with only one
+	-- of these table sets. Re-assert both idempotently before those features ship
+	-- together; CREATE IF NOT EXISTS preserves any existing queue/history rows.
+	CREATE TABLE IF NOT EXISTS gmail_triage_labels (
+	  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+	  queue TEXT NOT NULL CHECK(queue IN ('read-later','reply-later')),
+	  label_id TEXT NOT NULL,
+	  PRIMARY KEY(account_id, queue)
+	);
+	CREATE TABLE IF NOT EXISTS read_later_queue (
+	  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+	  conversation_id TEXT NOT NULL,
+	  added_at TEXT NOT NULL DEFAULT (datetime('now')),
+	  PRIMARY KEY(account_id, conversation_id)
+	);
+	CREATE INDEX IF NOT EXISTS idx_read_later_queue_added ON read_later_queue(added_at DESC);
+	CREATE TABLE IF NOT EXISTS snoozed_conversations (
+	  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+	  conversation_id TEXT NOT NULL,
+	  wake_at TEXT NOT NULL,
+	  added_at TEXT NOT NULL DEFAULT (datetime('now')),
+	  PRIMARY KEY(account_id, conversation_id)
+	);
+	CREATE INDEX IF NOT EXISTS idx_snoozed_conversations_wake ON snoozed_conversations(wake_at);
+	CREATE TABLE IF NOT EXISTS mail_filter_move_history (
+	  id INTEGER PRIMARY KEY AUTOINCREMENT,
+	  action_id TEXT NOT NULL,
+	  account_id TEXT NOT NULL,
+	  folder_id TEXT NOT NULL,
+	  dest_folder_id TEXT NOT NULL,
+	  from_name TEXT NOT NULL DEFAULT '',
+	  from_email TEXT NOT NULL DEFAULT '',
+	  to_list TEXT NOT NULL DEFAULT '[]',
+	  cc_list TEXT NOT NULL DEFAULT '[]',
+	  subject TEXT NOT NULL DEFAULT '',
+	  moved_at TEXT NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_mail_filter_move_history_scope
+	  ON mail_filter_move_history(account_id, dest_folder_id, moved_at DESC);
+	CREATE TABLE IF NOT EXISTS mail_filter_suggestions (
+	  suggestion_key TEXT PRIMARY KEY,
+	  state TEXT NOT NULL DEFAULT 'pending',
+	  payload_json TEXT NOT NULL,
+	  updated_at TEXT NOT NULL
+	);
+	`},
 }

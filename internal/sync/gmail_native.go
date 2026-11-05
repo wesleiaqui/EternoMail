@@ -117,7 +117,7 @@ func (e *Engine) syncGmailFolders(ctx context.Context, accountID string, c *gmai
 	}
 	types := map[string]folder.Type{"INBOX": folder.TypeInbox, "SENT": folder.TypeSent, "DRAFT": folder.TypeDrafts, "TRASH": folder.TypeTrash, "SPAM": folder.TypeSpam, "STARRED": folder.TypeStarred}
 	for _, label := range labels {
-		if label.ID == "UNREAD" {
+		if label.ID == "UNREAD" || strings.HasPrefix(label.Name, "Postilaatikko/Triage/") {
 			continue
 		}
 		typ := types[label.ID]

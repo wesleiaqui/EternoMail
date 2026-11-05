@@ -30,6 +30,10 @@ export function AddPGPKeyServer(arg1) {
   return window['go']['app']['App']['AddPGPKeyServer'](arg1);
 }
 
+export function AddReadLater(arg1, arg2) {
+  return window['go']['app']['App']['AddReadLater'](arg1, arg2);
+}
+
 export function AddReplyLater(arg1, arg2) {
   return window['go']['app']['App']['AddReplyLater'](arg1, arg2);
 }
@@ -224,6 +228,10 @@ export function CancelPendingSend(arg1) {
 
 export function CancelVirtualFolderOnlineCount(arg1) {
   return window['go']['app']['App']['CancelVirtualFolderOnlineCount'](arg1);
+}
+
+export function ChangeReadLater(arg1, arg2, arg3) {
+  return window['go']['app']['App']['ChangeReadLater'](arg1, arg2, arg3);
 }
 
 export function ChangeReplyLaterWithUndo(arg1, arg2, arg3) {
@@ -762,6 +770,14 @@ export function GetPendingMailto() {
   return window['go']['app']['App']['GetPendingMailto']();
 }
 
+export function GetReadLaterCount() {
+  return window['go']['app']['App']['GetReadLaterCount']();
+}
+
+export function GetReadLaterQueue() {
+  return window['go']['app']['App']['GetReadLaterQueue']();
+}
+
 export function GetReadReceiptResponsePolicy() {
   return window['go']['app']['App']['GetReadReceiptResponsePolicy']();
 }
@@ -840,6 +856,14 @@ export function GetShowViewerCircles() {
 
 export function GetSkippedUpdateVersion() {
   return window['go']['app']['App']['GetSkippedUpdateVersion']();
+}
+
+export function GetSnoozedConversations() {
+  return window['go']['app']['App']['GetSnoozedConversations']();
+}
+
+export function GetSnoozedCount() {
+  return window['go']['app']['App']['GetSnoozedCount']();
 }
 
 export function GetSourceAddressbooks(arg1) {
@@ -1020,6 +1044,10 @@ export function IsImageAllowed(arg1) {
 
 export function IsOAuthConfigured(arg1) {
   return window['go']['app']['App']['IsOAuthConfigured'](arg1);
+}
+
+export function IsReadLater(arg1, arg2) {
+  return window['go']['app']['App']['IsReadLater'](arg1, arg2);
 }
 
 export function IsReady() {
@@ -1308,6 +1336,10 @@ export function RemoveImageAllowlist(arg1) {
 
 export function RemovePGPKeyServer(arg1) {
   return window['go']['app']['App']['RemovePGPKeyServer'](arg1);
+}
+
+export function RemoveReadLater(arg1, arg2) {
+  return window['go']['app']['App']['RemoveReadLater'](arg1, arg2);
 }
 
 export function RemoveReplyLater(arg1, arg2) {
@@ -1626,6 +1658,10 @@ export function ShowWindow() {
   return window['go']['app']['App']['ShowWindow']();
 }
 
+export function SnoozeConversation(arg1, arg2, arg3) {
+  return window['go']['app']['App']['SnoozeConversation'](arg1, arg2, arg3);
+}
+
 export function Star(arg1) {
   return window['go']['app']['App']['Star'](arg1);
 }
@@ -1724,6 +1760,10 @@ export function UndoLatestWithResult() {
 
 export function UndoOperation(arg1) {
   return window['go']['app']['App']['UndoOperation'](arg1);
+}
+
+export function UnsnoozeConversation(arg1, arg2) {
+  return window['go']['app']['App']['UnsnoozeConversation'](arg1, arg2);
 }
 
 export function Unstar(arg1) {

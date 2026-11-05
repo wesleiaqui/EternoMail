@@ -173,6 +173,21 @@ func (a *App) GetConversation(threadID, folderID string) (*message.Conversation,
 		if !strings.HasPrefix(threadID, prefix) {
 			return nil, fmt.Errorf("thread account mismatch")
 		}
+		// The folder list and background sync already maintain Gmail thread
+		// headers locally. Re-fetching ThreadMetadata synchronously on every
+		// tab open serializes behind other Gmail operations and makes opening a
+		// cached conversation wait on the network. Use the local snapshot first;
+		// normal Gmail history sync refreshes it in the background.
+		cached, cacheErr := a.messageStore.GetConversation(threadID, folderID)
+		if cacheErr == nil && cached != nil && len(cached.Messages) > 0 {
+			if err := a.messageStore.EnrichReactions(cached.Messages); err != nil {
+				return nil, err
+			}
+			for _, m := range cached.Messages {
+				m.BodyText = textrepair.FinnishUTF8(m.BodyText)
+			}
+			return cached, nil
+		}
 		c, err := a.syncEngine.GmailClient(a.ctx, f.AccountID)
 		if err != nil {
 			return nil, err

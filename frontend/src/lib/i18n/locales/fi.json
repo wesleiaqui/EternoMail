@@ -4,6 +4,15 @@
     "complete": "{total} keskustelua · {unread} lukematta",
     "incomplete": "Palvelimen laskenta on kesken"
   },
+  "triage": {
+    "all": "Kaikki",
+    "unread": "Lukemattomat",
+    "readLater": "Lue myöhemmin",
+    "replyLater": "Vastaa myöhemmin",
+    "readLaterPending": "Lue myöhemmin -jono on työn alla",
+    "autoHideContext": "Piilota tämä sarake automaattisesti; tuo se näkyviin osoittamalla suosikit-sivupalkkia",
+    "keepContextVisible": "Pidä tämä sarake näkyvissä"
+  },
   "undoHistory": {
     "title": "Kumoushistoria",
     "description": "Viimeisimmät sähköpostitoiminnot, jotka voit vielä kumota. Cmd-Z Macissa (Ctrl-Z muilla alustoilla) kumoaa aina viimeisimmän toiminnon.",
@@ -174,6 +183,25 @@
       "reference": "Keskustelun tunniste",
       "unknownAccount": "Tili ei ole käytettävissä"
   },
+  "readLater": {
+    "title": "Lue myöhemmin",
+    "add": "Lisää Lue myöhemmin -jonoon",
+    "remove": "Poista Lue myöhemmin -jonosta",
+    "added": "Lisätty Lue myöhemmin -jonoon",
+    "removed": "Poistettu Lue myöhemmin -jonosta",
+    "failed": "Lue myöhemmin -jonon päivitys epäonnistui"
+  },
+  "snooze": {
+    "action": "Lykkää paikallisesti…",
+    "title": "Lykkää Postilaatikossa",
+    "description": "Piilota keskustelu viestilistoista ja tuo se takaisin valitun päivien määrän jälkeen.",
+    "days": "Päiviä",
+    "confirm": "Lykkää",
+    "done": "Keskustelu lykätty",
+    "unsnooze": "Palauta nyt",
+    "restored": "Keskustelu palautettu",
+    "failed": "Keskustelun lykkääminen epäonnistui"
+  },
   "messageList": {
     "refreshVirtualFolder": "Päivitä virtuaalikansio",
     "searchMessages": "Etsi viestejä...",
@@ -188,6 +216,7 @@
     "unread": "({count} lukematonta)",
     "clearSearch": "Tyhjennä haku",
     "noResults": "Ei tuloksia haulle ”{query}”",
+    "filterReadLater": "Lue myöhemmin",
     "indexBuilding": "Hakuindeksiä luodaan vielä...",
     "foundResults": "Löytyi {count} tulos(ta) haulle ”{query}”",
     "loadMore": "Lataa lisää ({remaining} jäljellä)",
