@@ -538,6 +538,7 @@
 <MessageContextMenu
   bind:this={contextMenuRef}
   messageIds={contextMenuMessageIds}
+  replyMessageId={useMultiSelect ? undefined : (ownMessageIds.at(-1) || undefined)}
   conversationId={useMultiSelect ? undefined : conversation.threadId}
   {accountId}
   currentFolderId={folderId}

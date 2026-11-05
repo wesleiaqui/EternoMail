@@ -44,6 +44,7 @@
   interface Props {
     conversationId?: string
     messageIds: string[]
+    replyMessageId?: string
     accountId: string
     currentFolderId: string
     folderType: string
@@ -58,6 +59,7 @@
   let {
     conversationId,
     messageIds,
+    replyMessageId,
     accountId,
     currentFolderId,
     folderType,
@@ -103,6 +105,8 @@
   const isTrashFolder = $derived(folderType === 'trash')
   const isSpamFolder = $derived(folderType === 'spam')
   const isSingleMessage = $derived(messageIds.length === 1)
+  const replyTargetMessageId = $derived(replyMessageId || (isSingleMessage ? messageIds[0] : ''))
+  const canReply = $derived(Boolean(replyTargetMessageId && onReply))
   const undoInFlight = new Set<string>()
 
   async function resolveActionMessages(): Promise<string[]> {
@@ -222,20 +226,20 @@
 
   // Action handlers
   async function handleReply() {
-    if (isSingleMessage && onReply) {
-      onReply('reply', messageIds[0])
+    if (canReply && onReply) {
+      onReply('reply', replyTargetMessageId)
     }
   }
 
   async function handleReplyAll() {
-    if (isSingleMessage && onReply) {
-      onReply('reply-all', messageIds[0])
+    if (canReply && onReply) {
+      onReply('reply-all', replyTargetMessageId)
     }
   }
 
   async function handleForward() {
-    if (isSingleMessage && onReply) {
-      onReply('forward', messageIds[0])
+    if (canReply && onReply) {
+      onReply('forward', replyTargetMessageId)
     }
   }
 
@@ -476,7 +480,7 @@
 
   <ContextMenuContent>
     <!-- Reply actions (single message only) -->
-    {#if isSingleMessage}
+    {#if canReply}
       <ContextMenuItem onSelect={handleReply}>
         <Icon icon="mdi:reply" class="mr-2 h-4 w-4" />
         {$_('contextMenu.reply')}
