@@ -204,7 +204,7 @@ func (s *Store) ListReplyLaterConversations(offset, limit int, sortOrder, filter
 			MAX(CASE WHEN m.has_attachments = 1 THEN 1 ELSE 0 END) as has_attachments,
 			MAX(CASE WHEN m.is_starred = 1 THEN 1 ELSE 0 END) as is_starred,
 			MAX(m.date) as latest_date,
-			GROUP_CONCAT(m.id) as message_ids,
+			GROUP_CONCAT(m.id ORDER BY m.date ASC, m.id ASC) as message_ids,
 			MAX(CASE WHEN m.smime_encrypted = 1 OR m.pgp_encrypted = 1 THEN 1 ELSE 0 END) as is_encrypted,
 			MAX(m.inbox_category) as inbox_category,
 			a.id as account_id,
@@ -242,7 +242,7 @@ func (s *Store) ListReadLaterConversations(offset, limit int, sortOrder, filter 
 	query := `
 		SELECT COALESCE(m.thread_id,m.id), MIN(m.subject), MAX(m.snippet), COUNT(*),
 		 SUM(CASE WHEN m.is_read=0 THEN 1 ELSE 0 END), MAX(CASE WHEN m.has_attachments=1 THEN 1 ELSE 0 END),
-		 MAX(CASE WHEN m.is_starred=1 THEN 1 ELSE 0 END), MAX(m.date), GROUP_CONCAT(m.id),
+		 MAX(CASE WHEN m.is_starred=1 THEN 1 ELSE 0 END), MAX(m.date), GROUP_CONCAT(m.id ORDER BY m.date ASC, m.id ASC),
 		 MAX(CASE WHEN m.smime_encrypted=1 OR m.pgp_encrypted=1 THEN 1 ELSE 0 END), MAX(m.inbox_category),
 		 a.id,a.name,a.color,f.id,json_group_array(DISTINCT json_object('name',m.from_name,'email',m.from_email))
 		FROM read_later_queue rl JOIN messages m ON m.account_id=rl.account_id
@@ -266,7 +266,7 @@ func (s *Store) ListSnoozedConversations(offset, limit int, sortOrder, filter st
 	}
 	query := `SELECT COALESCE(m.thread_id,m.id),MIN(m.subject),MAX(m.snippet),COUNT(*),
 	 SUM(CASE WHEN m.is_read=0 THEN 1 ELSE 0 END),MAX(CASE WHEN m.has_attachments=1 THEN 1 ELSE 0 END),
-	 MAX(CASE WHEN m.is_starred=1 THEN 1 ELSE 0 END),MAX(m.date),GROUP_CONCAT(m.id),
+		 MAX(CASE WHEN m.is_starred=1 THEN 1 ELSE 0 END),MAX(m.date),GROUP_CONCAT(m.id ORDER BY m.date ASC, m.id ASC),
 	 MAX(CASE WHEN m.smime_encrypted=1 OR m.pgp_encrypted=1 THEN 1 ELSE 0 END),MAX(m.inbox_category),
 	 a.id,a.name,a.color,f.id,json_group_array(DISTINCT json_object('name',m.from_name,'email',m.from_email))
 	 FROM snoozed_conversations sz JOIN messages m ON m.account_id=sz.account_id
@@ -329,7 +329,7 @@ func (s *Store) listConversationsByFolderIDs(folderIDs []string, offset, limit i
 			MAX(CASE WHEN m.has_attachments = 1 THEN 1 ELSE 0 END) as has_attachments,
 			MAX(CASE WHEN m.is_starred = 1 THEN 1 ELSE 0 END) as is_starred,
 			MAX(m.date) as latest_date,
-			GROUP_CONCAT(m.id) as message_ids,
+			GROUP_CONCAT(m.id ORDER BY m.date ASC, m.id ASC) as message_ids,
 			MAX(CASE WHEN m.smime_encrypted = 1 OR m.pgp_encrypted = 1 THEN 1 ELSE 0 END) as is_encrypted,
 			MAX(m.inbox_category) as inbox_category,
 			a.id as account_id,
@@ -1777,7 +1777,7 @@ func (s *Store) ListConversationsByFolder(folderID string, offset, limit int, so
 			MAX(CASE WHEN has_attachments = 1 THEN 1 ELSE 0 END) as has_attachments,
 			MAX(CASE WHEN is_starred = 1 THEN 1 ELSE 0 END) as is_starred,
 			MAX(date) as latest_date,
-			GROUP_CONCAT(id) as message_ids,
+			GROUP_CONCAT(id ORDER BY date ASC, id ASC) as message_ids,
 			MAX(CASE WHEN smime_encrypted = 1 OR pgp_encrypted = 1 THEN 1 ELSE 0 END) as is_encrypted,
 			MAX(inbox_category) as inbox_category,
 			%s as participants_json
@@ -3079,7 +3079,7 @@ func (s *Store) SearchConversations(folderID, query string, offset, limit int, f
 			MAX(CASE WHEN m.has_attachments = 1 THEN 1 ELSE 0 END) as has_attachments,
 			MAX(CASE WHEN m.is_starred = 1 THEN 1 ELSE 0 END) as is_starred,
 			MAX(m.date) as latest_date,
-			GROUP_CONCAT(m.id) as message_ids,
+			GROUP_CONCAT(m.id ORDER BY m.date ASC, m.id ASC) as message_ids,
 			MAX(CASE WHEN m.smime_encrypted = 1 OR m.pgp_encrypted = 1 THEN 1 ELSE 0 END) as is_encrypted,
 			json_group_array(DISTINCT json_object('name', m.from_name, 'email', m.from_email)) as participants_json
 		FROM messages m
@@ -3199,7 +3199,7 @@ func (s *Store) SearchConversationsByFolderIDs(folderIDs []string, query string,
 			MAX(CASE WHEN m.has_attachments = 1 THEN 1 ELSE 0 END) as has_attachments,
 			MAX(CASE WHEN m.is_starred = 1 THEN 1 ELSE 0 END) as is_starred,
 			MAX(m.date) as latest_date,
-			GROUP_CONCAT(m.id) as message_ids,
+			GROUP_CONCAT(m.id ORDER BY m.date ASC, m.id ASC) as message_ids,
 			MAX(CASE WHEN m.smime_encrypted = 1 OR m.pgp_encrypted = 1 THEN 1 ELSE 0 END) as is_encrypted,
 			a.id as account_id,
 			a.name as account_name,
