@@ -223,8 +223,12 @@ func (a *App) SaveAttachmentAs(attachmentID string) (string, error) {
 	return resultPath, nil
 }
 
-// openFile opens a file with the system default application
+// openFile opens a file with the system default application after validating the path
 func (a *App) openFile(path string) error {
+	if err := a.validateOpenPath(path); err != nil {
+		return err
+	}
+
 	if runtime.GOOS == "linux" && platform.IsFlatpak() {
 		if platform.IsDocPortalPath(path) {
 			wailsRuntime.EventsEmit(a.ctx, "flatpak:filesystem-dialog")
@@ -253,9 +257,15 @@ func (a *App) openFile(path string) error {
 	return cmd.Start()
 }
 
-// validateOpenPath checks that the path is under an allowed root directory
+// validateOpenPath checks that the path is under an allowed root directory and
+// does not trigger CLI option injection or control character attacks.
 func (a *App) validateOpenPath(path string) error {
-	absPath, err := filepath.Abs(path)
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" || strings.HasPrefix(trimmed, "-") || strings.ContainsAny(trimmed, "\r\n\x00") {
+		return fmt.Errorf("invalid path: %q", path)
+	}
+
+	absPath, err := filepath.Abs(trimmed)
 	if err != nil {
 		return fmt.Errorf("invalid path: %w", err)
 	}
@@ -266,10 +276,20 @@ func (a *App) validateOpenPath(path string) error {
 		return fmt.Errorf("failed to get home directory: %w", err)
 	}
 
+	var attachmentsPath, dataPath string
+	if a.paths != nil {
+		attachmentsPath = a.paths.AttachmentsPath()
+		dataPath = a.paths.Data
+	}
+
 	allowedRoots := []string{
-		a.paths.AttachmentsPath(),
 		filepath.Join(homeDir, "Downloads"),
-		a.paths.Data,
+	}
+	if attachmentsPath != "" {
+		allowedRoots = append(allowedRoots, attachmentsPath)
+	}
+	if dataPath != "" {
+		allowedRoots = append(allowedRoots, dataPath)
 	}
 
 	for _, root := range allowedRoots {
@@ -284,9 +304,6 @@ func (a *App) validateOpenPath(path string) error {
 
 // OpenFile opens a file with the system default application (exposed to frontend)
 func (a *App) OpenFile(path string) error {
-	if err := a.validateOpenPath(path); err != nil {
-		return err
-	}
 	return a.openFile(path)
 }
 
