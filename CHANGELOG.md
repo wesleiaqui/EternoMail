@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## Postilaatikko 2026.11.06.1
+
+- Keep reader toolbar tooltips above the scrolling message pane so they remain fully visible.
+- Add Send now beside Cancel during the Undo Send countdown.
+- Show Reply, Reply All, and Forward when right-clicking a single conversation row, targeting its latest message.
+
 ## Postilaatikko 2026.11.05.1
 
 - Bring folder browsing and its message list into one context column, with All, Unread, Read Later, and Reply Later controls at the top.
