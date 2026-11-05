@@ -19,3 +19,8 @@
 **Vulnerability:** Frontend link validation (`isAllowedEmailURL`) rejected leading dash characters on `http:` and `https:` hostnames but accepted `mailto:` URLs starting with a dash (e.g. `mailto:-flag@example.com` or `mailto:--help`), diverging from backend guards.
 **Learning:** Defense-in-depth URL validators across frontend and backend boundaries must keep scheme-specific argument injection guards in sync, including `mailto` target paths.
 **Prevention:** Mirror all backend target/flag filters in frontend URL gatekeepers before passing URLs to external system openers or client dispatchers.
+
+## 2026-11-05 - Centralized Path Validation and CLI Option Injection Prevention for File Openers
+**Vulnerability:** `OpenAttachment` and `OpenEncryptedAttachment` called `openFile` directly without passing through `validateOpenPath`, while `validateOpenPath` itself did not guard against leading dash (`-`) characters or control characters in file paths passed to system handlers (`xdg-open` or `open`).
+**Learning:** File opening functions wrapping OS launchers must enforce directory boundary checks and CLI option injection defenses centrally in the internal dispatcher (`openFile`), rather than relying on individual caller methods.
+**Prevention:** Route all file execution/opening through a centralized helper that enforces strict directory containment and rejects paths beginning with dashes or containing control characters.
