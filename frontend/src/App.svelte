@@ -2681,6 +2681,11 @@
       <div class="h-full bg-primary transition-all" style="width: {Math.min(100, (pendingRemaining(pendingSends[0]) / 30) * 100)}%"></div>
     </div>
     <button
+      class="rounded-full bg-primary px-3 py-1 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+      disabled={pendingSends[0].dispatching}
+      onclick={() => void pendingDispatch(pendingSends[0])}
+    >{$_('pendingSend.sendNow')}</button>
+    <button
       class="rounded-full px-2.5 py-1 text-sm font-medium hover:bg-muted disabled:opacity-50"
       disabled={pendingSends[0].dispatching}
       onclick={() => void pendingCancel(pendingSends[0])}
