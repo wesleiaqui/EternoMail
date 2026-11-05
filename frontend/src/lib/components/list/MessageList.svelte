@@ -1856,7 +1856,6 @@
   }
 
   export function setQuickFilter(mode: '' | 'unread' | 'readLater' | 'replyLater') {
-    if (!['', 'unread', 'replyLater'].includes(mode)) return
     setFilter(mode)
   }
 

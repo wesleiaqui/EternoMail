@@ -13,6 +13,8 @@
   import { KEY } from './lib/keyboard/shortcuts'
   import { createMailWindowState, navigateMailWindow, selectMailWindowConversation, type MailScope } from './lib/windows/mailWindow'
   import { toasts } from './lib/stores/toast'
+  import { readLaterQueue } from './lib/stores/readLater.svelte'
+  import { replyLaterQueue } from './lib/stores/replyLater.svelte'
   import { publishUndoOperationCreated, publishUndoOperationCompleted } from './lib/components/list/undoMutationEvents'
   import { runMessageMutation } from './lib/components/list/mutationInFlight'
   import type { virtualfolder } from '../wailsjs/go/models'
@@ -132,9 +134,27 @@
       list?.handleActionComplete(true)
     }))
   }
+  async function archiveAndMarkRead(ids: string[]) {
+    if (!ids.length) return
+    await run(() => runMessageMutation(ids, async () => {
+      const result = await ArchiveWithUndo(ids)
+      if (result.coalesced) return
+      await MarkAsRead(ids)
+      const operation = result.operationId
+      publishUndoOperationCreated(operation, ids, 'archive')
+      toasts.success($_('toast.archived'), [{ label: $_('common.undo'), onClick: () => run(async () => {
+        await UndoOperation(operation)
+        publishUndoOperationCompleted(operation)
+        refresh()
+      }) }])
+      list?.clearChecked()
+      list?.handleActionComplete(true)
+    }))
+  }
   async function bulkAction(id: string, options?: { permanent?: boolean }) {
     const ids = list?.getCheckedMessageIds() ?? []
     if (!ids.length) return
+    if (id === 'mail.archiveAndMarkRead') { await archiveAndMarkRead(ids); return }
     if (id === 'mail.archive') { await archive(ids); return }
     if (id === 'mail.trash') { list?.requestDelete(ids, options?.permanent === true); return }
     if (id === 'mail.markRead' || id === 'mail.markUnread') {
@@ -186,6 +206,36 @@
     if (event.key === 'Escape') { closeReader(); return }
     if (event.key === '/') { event.preventDefault(); list?.toggleSearchFocus(); return }
     if (event.key === 'c') { event.preventDefault(); void compose(); return }
+    if (event.key === 'e') {
+      event.preventDefault()
+      if (getFocusedPane() === 'viewer') viewer?.archiveAndMarkRead()
+      else void archiveAndMarkRead(list?.getSelectedMessageIds() ?? [])
+      return
+    }
+    if (event.key === 'l' || event.key === 'L') {
+      const thread = windowState.thread
+      if (!thread) return
+      event.preventDefault()
+      const kind = event.key === 'l' ? 'readLater' : 'replyLater'
+      void (async () => {
+        try {
+          if (kind === 'readLater') {
+            await readLaterQueue.load()
+            const inQueue = !readLaterQueue.has(thread.accountId, thread.threadId)
+            const changed = await readLaterQueue.set(thread.accountId, thread.threadId, inQueue)
+            if (changed) toasts.success($_(inQueue ? 'readLater.added' : 'readLater.removed'))
+            return
+          }
+          await replyLaterQueue.load()
+          const inQueue = !replyLaterQueue.has(thread.accountId, thread.threadId)
+          const result = await replyLaterQueue.set(thread.accountId, thread.threadId, inQueue)
+          if (result?.changed) toasts.success($_(inQueue ? 'replyLater.added' : 'replyLater.removed'))
+        } catch (error) {
+          toasts.error(String(error))
+        }
+      })()
+      return
+    }
     if (getFocusedPane() === 'viewer') {
       if (event.key === 'v') { event.preventDefault(); viewer?.toggleFolderPicker('move'); return }
       if (event.key === 'r') { event.preventDefault(); viewer?.reply(); return }

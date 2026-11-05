@@ -505,10 +505,12 @@
       <ContextMenuItem onSelect={handleReadLater}>
         <Icon icon="mdi:book-clock-outline" class="mr-2 h-4 w-4" />
         {$_(readLaterQueue.has(accountId, conversationId) ? 'readLater.remove' : 'readLater.add')}
+        <ShortcutHint id="mail.readLater" />
       </ContextMenuItem>
       <ContextMenuItem onSelect={handleReplyLater}>
         <Icon icon="mdi:clock-outline" class="mr-2 h-4 w-4" />
         {$_(replyLaterQueue.has(accountId, conversationId) ? 'replyLater.remove' : 'replyLater.add')}
+        <ShortcutHint id="mail.replyLater" />
       </ContextMenuItem>
       <ContextMenuItem onSelect={() => { snoozeDays = '1'; showSnoozeDialog = true }}>
         <Icon icon="mdi:clock-time-four-outline" class="mr-2 h-4 w-4" />
@@ -533,6 +535,7 @@
     <ContextMenuItem onSelect={handleArchiveAndMarkRead}>
       <Icon icon="mdi:archive-check-outline" class="mr-2 h-4 w-4" />
       {$_('contextMenu.archive')} + {$_('contextMenu.markAsRead')}
+      <ShortcutHint id="mail.archiveAndMarkRead" />
     </ContextMenuItem>
     <ContextMenuItem onSelect={handleDelete}>
       <Icon icon={isTrashFolder ? 'mdi:delete-forever' : 'mdi:delete-outline'} class="mr-2 h-4 w-4" />

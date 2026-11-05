@@ -7,6 +7,8 @@
   import { LAYOUT_SYMBOL, PERMANENT_DELETE } from '$lib/keyboard/shortcuts'
   import './lib/iconify-offline'
   import { clearCache as clearInlineAttachmentCache } from './lib/stores/inlineAttachmentCache'
+  import { readLaterQueue } from './lib/stores/readLater.svelte'
+  import { replyLaterQueue } from './lib/stores/replyLater.svelte'
 
   import { onDestroy, onMount, tick, untrack } from 'svelte'
   import TitleBar from './lib/components/common/TitleBar.svelte'
@@ -1026,6 +1028,7 @@
       registerCommandAvailability(listAction.id, () => listActionAvailable(listAction.id))
     }
     registerCommandHandler('mail.archive', () => runListAction('mail.archive'))
+    registerCommandHandler('mail.archiveAndMarkRead', () => runListAction('mail.archiveAndMarkRead'))
     registerCommandHandler('mail.spam', () => runListAction('mail.spam'))
     registerCommandHandler('mail.trash', () => runListAction('mail.trash'))
     registerCommandHandler('mail.star', () => runListAction('mail.star'))
@@ -1986,10 +1989,18 @@
       case 'e':
         e.preventDefault()
         if (focusedPane === 'viewer' && selectedThreadId) {
-          viewerRef?.archive()
+          viewerRef?.archiveAndMarkRead()
           return
         }
-        runListAction('mail.archive')
+        runListAction('mail.archiveAndMarkRead')
+        return
+      case 'l':
+        e.preventDefault()
+        void toggleLaterQueue('readLater')
+        return
+      case 'L':
+        e.preventDefault()
+        void toggleLaterQueue('replyLater')
         return
       case 'v':
         if (!isMailActive()) return
@@ -2214,6 +2225,7 @@
       try {
         const ids = await resolveActionTarget(target)
         switch (actionId) {
+          case 'mail.archiveAndMarkRead': return handleBulkArchiveAndMarkRead(ids)
           case 'mail.archive': return handleBulkArchive(ids)
           case 'mail.spam': return handleBulkSpam(ids)
           case 'mail.markRead': return handleBulkMarkRead(ids)
@@ -2223,7 +2235,7 @@
         }
       } catch (error) {
         console.error('Mail action target validation failed:', error)
-        const errorKey = actionId === 'mail.archive' ? 'toast.failedToArchive'
+        const errorKey = actionId === 'mail.archive' || actionId === 'mail.archiveAndMarkRead' ? 'toast.failedToArchive'
           : actionId === 'mail.spam' ? 'toast.failedToMarkAsSpam'
             : actionId === 'mail.markRead' ? 'toast.failedToMarkAsRead'
               : actionId === 'mail.markUnread' ? 'toast.failedToMarkAsUnread'
@@ -2255,6 +2267,55 @@
     } catch (err) {
       console.error('Archive failed:', err)
       addToast({ type: 'error', message: $_('toast.failedToArchive') })
+    }
+  }
+
+  async function handleBulkArchiveAndMarkRead(messageIds: string[]) {
+    let archived = false
+    try {
+      await runMessageMutation(messageIds, async () => {
+        const result = await ArchiveWithUndo(messageIds)
+        if (result.coalesced) return
+        archived = true
+        try {
+          await MarkAsRead(messageIds)
+        } catch (err) {
+          showTargetedUndoToast($_('toast.archived'), result.operationId, messageIds, 'archive')
+          messageListRef?.clearChecked()
+          messageListRef?.handleActionComplete(true)
+          throw err
+        }
+        showTargetedUndoToast($_('toast.archived'), result.operationId, messageIds, 'archive')
+        messageListRef?.clearChecked()
+        messageListRef?.handleActionComplete(true)
+      })
+    } catch (err) {
+      console.error('Archive and mark read failed:', err)
+      addToast({ type: 'error', message: $_(archived ? 'toast.failedToUpdateReadStatus' : 'toast.failedToArchive') })
+    }
+  }
+
+  async function toggleLaterQueue(kind: 'readLater' | 'replyLater') {
+    const accountId = selectedConversationAccountId || selectedAccountId
+    const conversationId = selectedThreadId
+    if (!accountId || accountId === 'unified' || accountId === 'virtual' || !conversationId) return
+
+    try {
+      if (kind === 'readLater') {
+        await readLaterQueue.load()
+        const inQueue = !readLaterQueue.has(accountId, conversationId)
+        const changed = await readLaterQueue.set(accountId, conversationId, inQueue)
+        if (changed) addToast({ type: 'success', message: $_(inQueue ? 'readLater.added' : 'readLater.removed') })
+        return
+      }
+
+      await replyLaterQueue.load()
+      const inQueue = !replyLaterQueue.has(accountId, conversationId)
+      const result = await replyLaterQueue.set(accountId, conversationId, inQueue)
+      if (result?.changed) addToast({ type: 'success', message: $_(inQueue ? 'replyLater.added' : 'replyLater.removed') })
+    } catch (err) {
+      console.error(`Failed to update ${kind} queue:`, err)
+      addToast({ type: 'error', message: $_(kind === 'readLater' ? 'readLater.failed' : 'replyLater.failed') })
     }
   }
 
@@ -2416,12 +2477,14 @@
       role="presentation"
       onclick={() => handlePaneClick('sidebar')}
     >
-      <div class="grid min-h-10 shrink-0 grid-cols-[repeat(4,minmax(0,1fr))_auto] items-center gap-1 overflow-hidden border-b border-border px-2 py-1" aria-label={$_('messageList.quickFilters')}>
-        <button type="button" class="min-w-0 rounded-full border px-1.5 py-1 text-center text-[11px] leading-tight font-medium {triageStatus === 'all' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-pressed={triageStatus === 'all'} onclick={() => selectTriageFilter('')}>{$_('triage.all')}</button>
-        <button type="button" class="min-w-0 rounded-full border px-1.5 py-1 text-center text-[11px] leading-tight font-medium {triageStatus === 'unread' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-pressed={triageStatus === 'unread'} onclick={() => selectTriageFilter('unread')}>{$_('triage.unread')}</button>
-        <button type="button" class="min-w-0 rounded-full border px-1.5 py-1 text-center text-[11px] leading-tight font-medium {triageStatus === 'readLater' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-pressed={triageStatus === 'readLater'} onclick={() => selectTriageFilter('readLater')}>{$_('triage.readLater')}</button>
-        <button type="button" class="min-w-0 rounded-full border px-1.5 py-1 text-center text-[11px] leading-tight font-medium {triageStatus === 'replyLater' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-pressed={triageStatus === 'replyLater'} onclick={() => selectTriageFilter('replyLater')}>{$_('triage.replyLater')}</button>
-        <button type="button" class="ml-auto shrink-0 rounded p-1.5 text-muted-foreground hover:bg-muted" aria-pressed={contextPaneAutoHide} title={contextPaneAutoHide ? $_('triage.keepContextVisible') : $_('triage.autoHideContext')} onclick={toggleContextPaneAutoHide}><Icon icon={contextPaneAutoHide ? 'mdi:pin-outline' : 'mdi:pin-off-outline'} width="16" /></button>
+      <div class="flex min-h-10 shrink-0 items-center gap-1 overflow-hidden border-b border-border px-2 py-1" aria-label={$_('messageList.quickFilters')}>
+        <div class="flex shrink-0 items-center gap-1" role="group" aria-label={$_('messageList.quickFilters')}>
+          <button type="button" class="flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageStatus === 'all' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.all')} title={$_('triage.all')} aria-pressed={triageStatus === 'all'} onclick={() => selectTriageFilter('')}><Icon icon="mdi:inbox-multiple-outline" width="16" /></button>
+          <button type="button" class="flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageStatus === 'unread' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.unread')} title={$_('triage.unread')} aria-pressed={triageStatus === 'unread'} onclick={() => selectTriageFilter('unread')}><Icon icon="mdi:email-outline" width="16" /></button>
+          <button type="button" class="flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageStatus === 'readLater' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.readLater')} title={$_('triage.readLater')} aria-pressed={triageStatus === 'readLater'} onclick={() => selectTriageFilter('readLater')}><Icon icon="mdi:book-clock-outline" width="16" /></button>
+          <button type="button" class="flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageStatus === 'replyLater' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.replyLater')} title={$_('triage.replyLater')} aria-pressed={triageStatus === 'replyLater'} onclick={() => selectTriageFilter('replyLater')}><Icon icon="mdi:reply" width="16" /></button>
+        </div>
+        <button type="button" class="ml-auto flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-pressed={contextPaneAutoHide} title={contextPaneAutoHide ? $_('triage.keepContextVisible') : $_('triage.autoHideContext')} aria-label={contextPaneAutoHide ? $_('triage.keepContextVisible') : $_('triage.autoHideContext')} onclick={toggleContextPaneAutoHide}><Icon icon={contextPaneAutoHide ? 'mdi:pin-outline' : 'mdi:pin-off-outline'} width="16" /></button>
       </div>
       <Sidebar
         navigationEnabled={true}
@@ -2471,12 +2534,14 @@
       tabindex="-1"
       onclick={() => handlePaneClick('messageList')}
     >
-      <div class="grid min-h-10 shrink-0 grid-cols-[repeat(4,minmax(0,1fr))_auto] items-center gap-1 overflow-hidden border-b border-border px-2 py-1" aria-label={$_('messageList.quickFilters')}>
-        <button type="button" class="min-w-0 rounded-full border px-1.5 py-1 text-center text-[11px] leading-tight font-medium {triageStatus === 'all' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-pressed={triageStatus === 'all'} onclick={() => selectTriageFilter('')}>{$_('triage.all')}</button>
-        <button type="button" class="min-w-0 rounded-full border px-1.5 py-1 text-center text-[11px] leading-tight font-medium {triageStatus === 'unread' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-pressed={triageStatus === 'unread'} onclick={() => selectTriageFilter('unread')}>{$_('triage.unread')}</button>
-        <button type="button" class="min-w-0 rounded-full border px-1.5 py-1 text-center text-[11px] leading-tight font-medium {triageStatus === 'readLater' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-pressed={triageStatus === 'readLater'} onclick={() => selectTriageFilter('readLater')}>{$_('triage.readLater')}</button>
-        <button type="button" class="min-w-0 rounded-full border px-1.5 py-1 text-center text-[11px] leading-tight font-medium {triageStatus === 'replyLater' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-pressed={triageStatus === 'replyLater'} onclick={() => selectTriageFilter('replyLater')}>{$_('triage.replyLater')}</button>
-        <button type="button" class="ml-auto shrink-0 rounded p-1.5 text-muted-foreground hover:bg-muted" aria-pressed={contextPaneAutoHide} title={contextPaneAutoHide ? $_('triage.keepContextVisible') : $_('triage.autoHideContext')} onclick={toggleContextPaneAutoHide}><Icon icon={contextPaneAutoHide ? 'mdi:pin-outline' : 'mdi:pin-off-outline'} width="16" /></button>
+      <div class="flex min-h-10 shrink-0 items-center gap-1 overflow-hidden border-b border-border px-2 py-1" aria-label={$_('messageList.quickFilters')}>
+        <div class="flex shrink-0 items-center gap-1" role="group" aria-label={$_('messageList.quickFilters')}>
+          <button type="button" class="flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageStatus === 'all' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.all')} title={$_('triage.all')} aria-pressed={triageStatus === 'all'} onclick={() => selectTriageFilter('')}><Icon icon="mdi:inbox-multiple-outline" width="16" /></button>
+          <button type="button" class="flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageStatus === 'unread' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.unread')} title={$_('triage.unread')} aria-pressed={triageStatus === 'unread'} onclick={() => selectTriageFilter('unread')}><Icon icon="mdi:email-outline" width="16" /></button>
+          <button type="button" class="flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageStatus === 'readLater' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.readLater')} title={$_('triage.readLater')} aria-pressed={triageStatus === 'readLater'} onclick={() => selectTriageFilter('readLater')}><Icon icon="mdi:book-clock-outline" width="16" /></button>
+          <button type="button" class="flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageStatus === 'replyLater' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.replyLater')} title={$_('triage.replyLater')} aria-pressed={triageStatus === 'replyLater'} onclick={() => selectTriageFilter('replyLater')}><Icon icon="mdi:reply" width="16" /></button>
+        </div>
+        <button type="button" class="ml-auto flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-pressed={contextPaneAutoHide} title={contextPaneAutoHide ? $_('triage.keepContextVisible') : $_('triage.autoHideContext')} aria-label={contextPaneAutoHide ? $_('triage.keepContextVisible') : $_('triage.autoHideContext')} onclick={toggleContextPaneAutoHide}><Icon icon={contextPaneAutoHide ? 'mdi:pin-outline' : 'mdi:pin-off-outline'} width="16" /></button>
       </div>
       <div class="flex-1 min-h-0">
         <MessageList

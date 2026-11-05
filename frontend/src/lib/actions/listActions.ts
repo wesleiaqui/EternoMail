@@ -10,6 +10,7 @@ const apply = (id: string, ctx: ListActionContext, executor: MessageActionExecut
     : fallback()
 
 export const LIST_ACTIONS: ActionDef[] = [
+  { id: 'mail.archiveAndMarkRead', isAvailable: hasTarget, run: (ctx, x) => apply('mail.archiveAndMarkRead', ctx, x, () => x.archive(ctx.target.messageIds)) },
   { id: 'mail.archive', isAvailable: hasTarget, run: (ctx, x) => apply('mail.archive', ctx, x, () => x.archive(ctx.target.messageIds)) },
   { id: 'mail.spam', isAvailable: hasTarget, run: (ctx, x) => apply('mail.spam', ctx, x, () => x.spam(ctx.target.messageIds)) },
   { id: 'mail.markRead', isAvailable: hasTarget, run: (ctx, x) => apply('mail.markRead', ctx, x, () => x.markRead(ctx.target.messageIds)) },

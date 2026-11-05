@@ -1253,6 +1253,39 @@
     }
   }
 
+  async function handleArchiveAndMarkRead() {
+    if (!conversation?.messages) return
+    let messageIds = conversation.messages.map(m => m.id)
+    let archived = false
+    try {
+      messageIds = await resolveDisplayedMessageTarget(messageIds)
+      await runMessageMutation(messageIds, async () => {
+        moveMutationInFlight = true
+        try {
+          const result = await ArchiveWithUndo(messageIds)
+          if (result.coalesced) return
+          archived = true
+          try {
+            await MarkAsRead(messageIds)
+          } catch (err) {
+            publishUndoOperationCreated(result.operationId, messageIds, 'archive')
+            showArchiveUndoToast(result.operationId)
+            onActionComplete?.(true)
+            throw err
+          }
+          publishUndoOperationCreated(result.operationId, messageIds, 'archive')
+          showArchiveUndoToast(result.operationId)
+          onActionComplete?.(true)
+        } finally {
+          moveMutationInFlight = false
+        }
+      })
+    } catch (err) {
+      console.error('Archive and mark read failed:', err)
+      toasts.error($_(archived ? 'toast.failedToUpdateReadStatus' : 'toast.failedToArchive'))
+    }
+  }
+
   async function handleDone() {
     if (!conversation?.messages) return
     let messageIds = conversation.messages.map(m => m.id)
@@ -1767,6 +1800,10 @@
 
   export function archive() {
     handleArchive()
+  }
+
+  export function archiveAndMarkRead() {
+    handleArchiveAndMarkRead()
   }
 
   export function spam() {
