@@ -18,9 +18,9 @@ Keep IMAP support. The app now feels faster, so the earlier CPU/memory concern i
 
 Detailed implementation plan: [D-002 — conversation, navigation and agent API](docs/plans/2026-10-26-conversation-navigation-agent-api.md). Its 41 small `UX-*` tasks, dependencies, owner slots and recommended model/effort are in [TASKS.md](TASKS.md#d-002-conversation-navigation-and-agent-api-queue). These are planned changes; a candidate branch or successful build does not mean they are integrated or released.
 
-Execution checkpoint: UX-002's shared view/thread contract is integrated in PR #29 (`d3490b1`), and UX-004's extraction schema plus 22 synthetic fixtures in PR #30 (`664f630`). Those accepted models remain the foundation for parser/service work. PR #31 adds the coordination protocol. PR #32 (`2191cb8`) integrates the virtual-folder date/NULL-subject repair; actual-device verification and remaining header-refresh/exclude-mode work stay open. UX-016 and UX-019 can proceed from the shared contract. The former divergent local-main Send Later candidate remains on GitHub as `codex/p011-local-main-backup-20261026` through `cba3457`, with its live/security gates intact.
+Execution checkpoint: UX-002's shared view/thread contract is integrated in PR #29 (`d3490b1`), and UX-004's extraction schema plus 22 synthetic fixtures in PR #30 (`664f630`). Those accepted models remain the foundation for parser/service work. PR #31 adds the coordination protocol. PR #32 (`2191cb8`) and the UX-001 follow-up (`dcafd9b`, `bab920e`) integrate the virtual-folder date/NULL-subject repair and refresh path; actual-device verification remains open. UX-016 action targets and UX-019 API design are integrated. The former divergent local-main Send Later candidate remains on GitHub as `codex/p011-local-main-backup-20261026` through `cba3457`, with its live/security gates intact.
 
-Parser checkpoint: PR #33 (`74ed7ff`) integrates plain-text extraction, then stacked PR #34 (`7436026`) integrates safe HTML extraction. UX-007 service/cache is reserved for Claude; its dependencies are the integrated reference contract and both parsers, independently of the remaining virtual-folder/live-device gate. No conversation-reader UI is shipped by these parser changes.
+Parser checkpoint: PR #33 (`74ed7ff`) integrates plain-text extraction, then stacked PR #34 (`7436026`) integrates safe HTML extraction. UX-007 service/cache is in Review on its existing owner branch; its dependencies are the integrated reference contract and both parsers, independently of the remaining virtual-folder/live-device gate. No conversation-reader UI is shipped by these parser changes.
 
 - **Compact reading refinement:** conversation mode uses directional bubbles with sender labels once per run and details/originals on demand; signature/source controls stay out of the reading flow. Double-click a message-list row to open an email-only tab; its pop-out action opens an independent reader window. Folder/browser views are never opened as tabs. Track implementation in READER-001 and P-073.
 - **Email reactions:** display recognized Gmail reactions and delivered Outlook notification emails as reversible emoji chips on their exact source message; preserve unknown/unresolved messages and all originals. Sending reactions is a later task.
@@ -47,7 +47,7 @@ Implement sidebar cards/rail shortcuts, then Gmail-first operations, global serv
 
 ### Priorities
 
-1. **Recipient autocomplete and address-book sync.** Make compose suggestions useful from explicitly synced contact sources and locally available message headers, without fetching message bodies.
+1. **Recipient autocomplete and address-book sync — integrated in PRs #60 and #106.** Suggestions use explicitly configured contact sources and locally available message headers without fetching message bodies. Native composer interaction and live contact-source sync remain device-verification follow-ups.
 2. **Scheduled send — critical.** Compose now, choose a delivery time, and have Postilaatikko send it reliably.
 3. **Gmail API integration.** Continue Gmail-native capabilities such as server search, history refresh and filters while retaining IMAP support and existing provider paths.
 4. **Calendar from email:** recognize date/time mentions and offer links that open or create events in installed calendar applications.
@@ -67,10 +67,10 @@ Implement sidebar cards/rail shortcuts, then Gmail-first operations, global serv
 
 ### Recommended implementation order
 
-1. **Recipient lookup (P-065):** restore immediate compose suggestions using authorized contacts and locally available message headers.
-2. **Gmail API capabilities:** continue incremental Gmail-specific features while preserving IMAP and existing provider paths.
-3. **Scheduled send and existing workflows:** preserve the current IMAP path and Send Later trust boundaries while delivering reliability improvements.
-4. **Remaining roadmap:** D-002 presentation/agent clients, calendar recognition, templates and notifications with their existing dependencies. Safety and delivery recovery fixes may proceed throughout.
+1. **Recipient lookup (P-065) is integrated** in PRs #60 and #106; verify suggestions and contact sync in the installed macOS app.
+2. **Gmail API capabilities:** continue incremental Gmail-specific features while preserving IMAP and existing provider paths. Profile/budget work (GMAIL-001) is still in progress and gates the broader GMAIL-002 plan.
+3. **Scheduled send (P-011) remains critical:** continue its helper/security/live-delivery release gates in parallel; candidate code is not a shipped guarantee.
+4. **Remaining roadmap:** continue D-002 presentation/agent clients, calendar recognition, templates and notifications with their existing dependencies. Safety and delivery recovery fixes may proceed throughout.
 
 ## Guidance for agents
 
