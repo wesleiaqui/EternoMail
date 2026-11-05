@@ -1961,7 +1961,7 @@
   {:else if conversation}
     <div class="conversation-viewer-content flex flex-col h-full">
     <!-- Header with Actions -->
-    <div class="spark-viewer-toolbar flex flex-wrap gap-2 items-center justify-between px-4 py-3 border-b border-border">
+    <div class="spark-viewer-toolbar relative z-20 shrink-0 flex flex-wrap gap-2 items-center justify-between px-4 py-3 border-b border-border">
       <div class="flex flex-wrap items-center gap-2">
         {#if showBackButton}
           <button
