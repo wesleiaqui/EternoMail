@@ -1672,8 +1672,48 @@ func nullString(s string) interface{} {
 	return s
 }
 
-// parseTimeString parses a time string in various formats
+// parseTimeString parses a time string in various formats.
+// Performance optimization: checks string length and separator characters to try
+// the exact expected layout first without failing and allocating error objects
+// on multiple preceding layouts. Falls back to sequential trial for unknown formats.
 func parseTimeString(s string) time.Time {
+	if s == "" {
+		return time.Time{}
+	}
+
+	// Fast-path layout dispatch based on length and separators:
+	switch len(s) {
+	case 19: // "2006-01-02 15:04:05" or "2006-01-02T15:04:05"
+		if s[10] == ' ' {
+			if t, err := time.Parse("2006-01-02 15:04:05", s); err == nil {
+				return t
+			}
+		} else if s[10] == 'T' {
+			if t, err := time.Parse("2006-01-02T15:04:05", s); err == nil {
+				return t
+			}
+		}
+	case 10: // "2006-01-02"
+		if t, err := time.Parse("2006-01-02", s); err == nil {
+			return t
+		}
+	default:
+		if len(s) >= 28 && s[19] == ' ' {
+			// "2006-01-02 15:04:05 -0700 MST" (Go time.Time.String() in SQLite)
+			if t, err := time.Parse("2006-01-02 15:04:05 -0700 MST", s); err == nil {
+				return t
+			}
+		} else if len(s) >= 20 && (s[10] == 'T' || s[10] == 't') {
+			// RFC3339 or RFC3339Nano
+			if t, err := time.Parse(time.RFC3339, s); err == nil {
+				return t
+			}
+			if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+				return t
+			}
+		}
+	}
+
 	formats := []string{
 		time.RFC3339,
 		time.RFC3339Nano,
