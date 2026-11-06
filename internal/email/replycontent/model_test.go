@@ -96,11 +96,47 @@ func TestNormalizeText(t *testing.T) {
 		{"", ""},
 		{"  hello \n\n world\t!  ", "hello world !"},
 		{"On Mon,\r\nAlice wrote:\r\n> hi", "On Mon, Alice wrote: > hi"},
-		{"Lähettäjä: Alice", "Lähettäjä: Alice"},
+		{"Lähettäjä: Alice", "Lähettäjä: Alice"},
 	}
 	for _, tt := range tests {
 		if got := NormalizeText(tt.in); got != tt.want {
 			t.Errorf("NormalizeText(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+// BenchmarkNormalizeText measures the whitespace-collapsing normalization used
+// on extracted HTML/plain body text during reply-content extraction. It runs on
+// a realistic multi-KB message body containing mixed whitespace (spaces, tabs,
+// line breaks and a non-breaking space) to reflect a real conversation body.
+func BenchmarkNormalizeText(b *testing.B) {
+	body := strings.Builder{}
+	body.Grow(8 * 1024)
+	for i := 0; i < 400; i++ {
+		body.WriteString("On Mon, ")
+		body.WriteString("Alice <alice@example.com> wrote:\r\n")
+		body.WriteString("> ")
+		body.WriteString("This is a quoted line\twith a tab\u00a0and a non-breaking space.\n\n")
+		body.WriteString("Regards,\nBob\n\n")
+	}
+	input := body.String()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if got := NormalizeText(input); got == "" {
+			b.Fatal("NormalizeText returned empty")
+		}
+	}
+}
+
+// BenchmarkNormalizeTextShort checks a short, sender-name-sized string with no
+// whitespace to confirm the single-pass decoder does not regress small inputs.
+func BenchmarkNormalizeTextShort(b *testing.B) {
+	input := "Alice <alice@example.com>"
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if got := NormalizeText(input); got != input {
+			b.Fatalf("NormalizeText(%q) = %q, want %q", input, got, input)
 		}
 	}
 }

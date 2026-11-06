@@ -13,6 +13,8 @@ package replycontent
 import (
 	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // ExtractorVersion identifies the extraction rules. Stored results with another
@@ -190,6 +192,84 @@ func (r Result) Validate() error {
 // NormalizeText collapses every run of whitespace, line breaks and
 // non-breaking spaces included, into one space and trims the ends. Fixtures
 // express expected text this way so they do not depend on serialization.
+//
+// Performance optimization: single pass into a strings.Builder that collapses
+// whitespace runs inline instead of strings.Fields (which allocates a []string
+// of field headers) followed by strings.Join. ASCII whitespace is detected with
+// a byte comparison; only non-ASCII runes (e.g. U+00A0 non-breaking space) are
+// decoded and tested with unicode.IsSpace, preserving strings.Fields parity.
 func NormalizeText(s string) string {
-	return strings.Join(strings.Fields(s), " ")
+	n := len(s)
+	var sb strings.Builder
+	sb.Grow(n)
+	i := 0
+	wrote := false
+	for i < n {
+		c := s[i]
+		var r rune
+		var size int
+		var space bool
+		if c < 0x80 {
+			size = 1
+			space = c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v'
+		} else {
+			r, size = utf8.DecodeRuneInString(s[i:])
+			if r == utf8.RuneError {
+				r = rune(s[i])
+				size = 1
+			}
+			space = unicode.IsSpace(r)
+		}
+		if space {
+			// Consume the entire whitespace run (ASCII and non-ASCII mixed) and
+			// emit exactly one space before the next word, never at the edges.
+			i += size
+			for i < n {
+				c = s[i]
+				if c < 0x80 {
+					if c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v' {
+						i++
+						continue
+					}
+					break
+				}
+				r, size = utf8.DecodeRuneInString(s[i:])
+				if r == utf8.RuneError {
+					size = 1
+				}
+				if !unicode.IsSpace(r) {
+					break
+				}
+				i += size
+			}
+			if wrote && i < n {
+				sb.WriteByte(' ')
+			}
+			continue
+		}
+		// Copy the run of non-whitespace runes in one block.
+		start := i
+		i += size
+		for i < n {
+			c = s[i]
+			if c < 0x80 {
+				if c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v' {
+					break
+				}
+				i++
+				continue
+			}
+			r, size = utf8.DecodeRuneInString(s[i:])
+			if r == utf8.RuneError {
+				size = 1
+			}
+			if unicode.IsSpace(r) {
+				break
+			}
+			i += size
+		}
+		sb.WriteString(s[start:i])
+		wrote = true
+	}
+	return sb.String()
 }
