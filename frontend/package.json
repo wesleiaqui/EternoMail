@@ -1,7 +1,7 @@
 {
   "name": "postilaatikko",
   "private": true,
-  "version": "2026.11.06.3",
+  "version": "2026.11.07.1",
   "type": "module",
   "scripts": {
     "test": "node --test --test-concurrency=2 tests/*.test.mjs",
