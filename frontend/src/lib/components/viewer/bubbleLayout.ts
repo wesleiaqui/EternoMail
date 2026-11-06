@@ -14,17 +14,19 @@ export function senderAddress(value: string): string {
   return (text.match(/<\s*([^<>\s]+@[^<>\s]+)\s*>/)?.[1] || text).replace(/^mailto:/i, '').normalize('NFC').toLowerCase()
 }
 
-/** Messages from configured identities stay right; every other participant is
- * left-aligned. Participant accents are assigned in first-seen order so group
- * threads remain easy to scan without treating any sender as the account owner.
+/** Messages from configured identities stay right and other participants stay
+ * left. If identity data is unavailable, anchor the first speaker on the right
+ * as a presentation-only fallback. Participant accents follow first-seen order.
  */
 export function bubbleLayout(messages: BubbleMessage[], isSelf: (email: string) => boolean) {
   const participants = [...new Set(messages.map(message => senderAddress(message.fromEmail)).filter(Boolean))]
+  const hasSelf = participants.some(email => isSelf(email))
+  const fallbackAnchor = !hasSelf && participants.length > 1 ? participants[0] : null
   const accents = new Map(participants.map((sender, index) => [sender, senderAccent(index)]))
   return new Map(messages.map((message, index) => {
     const sender = senderAddress(message.fromEmail)
     return [message.id, {
-      side: !!sender && isSelf(sender) ? 'right' : 'left',
+      side: (!!sender && isSelf(sender)) || sender === fallbackAnchor ? 'right' : 'left',
       accent: accents.get(sender) || senderAccent(0),
       showSender: index === 0 || senderAddress(messages[index - 1].fromEmail) !== sender,
     }] as const
