@@ -543,14 +543,60 @@
 
   let viewGeneration = 0
 
+  // Small bounded in-memory snapshot cache (capped at 6 conversations) to make
+  // switching back and forth between recent threads instant without a blank flash.
+  // Sensitive/decrypted content and attachments are excluded.
+  const threadCache = new Map<string, messageModels.Conversation>()
+  const MAX_CACHED_THREADS = 6
+
+  function getCachedThread(accId: string | null, tid: string): messageModels.Conversation | null {
+    const key = `${accId || ''}:${tid}`
+    const hit = threadCache.get(key)
+    if (!hit) return null
+    // Move to MRU position
+    threadCache.delete(key)
+    threadCache.set(key, hit)
+    return hit
+  }
+
+  function setCachedThread(accId: string | null, tid: string, conv: messageModels.Conversation) {
+    if (!conv || !tid) return
+    const key = `${accId || ''}:${tid}`
+    threadCache.delete(key)
+    threadCache.set(key, conv)
+    while (threadCache.size > MAX_CACHED_THREADS) {
+      const oldest = threadCache.keys().next().value
+      if (oldest === undefined) break
+      threadCache.delete(oldest)
+    }
+  }
+
   // Load conversation when threadId changes
   $effect(() => {
     // Props have already changed by the time this effect runs, so finalizing
     // here cannot reorder the list before the next conversation is selected.
     handleReadOnLeave()
-    void accountId
+    const targetAccountId = accountId
     viewGeneration++
-    conversation = null
+
+    // Check if we have a recent snapshot for instant display
+    const cached = threadId ? getCachedThread(targetAccountId, threadId) : null
+    if (cached) {
+      conversation = cached
+      // Auto-expand unread messages and the last message from cache
+      if (cached.messages) {
+        const newExpanded = new Set<string>()
+        cached.messages.forEach((m, i) => {
+          if (!m.isRead || i === cached.messages!.length - 1) {
+            newExpanded.add(m.id)
+          }
+        })
+        expandedMessages = newExpanded
+      }
+    } else {
+      conversation = null
+    }
+
     smimeResults = {}
     pgpResults = {}
     smimeLoading = new Set()
@@ -570,7 +616,7 @@
     revealedReactions = new Set()
 
     if (threadId && folderId) {
-      loadConversation(threadId, folderId)
+      loadConversation(threadId, folderId, !!cached)
     }
 
     if (!threadId || !folderId) {
@@ -655,9 +701,9 @@
     }
   }
 
-  async function loadConversation(tid: string, fid: string) {
+  async function loadConversation(tid: string, fid: string, wasCached = false) {
     const generation = viewGeneration
-    loading = true
+    if (!wasCached) loading = true
     error = null
 
     try {
@@ -665,6 +711,10 @@
 
       // Stale guard: user navigated away while we were fetching
       if (threadId !== tid || folderId !== fid || generation !== viewGeneration) return
+
+      if (result) {
+        setCachedThread(accountId, tid, result)
+      }
 
       conversation = result
 
@@ -690,7 +740,7 @@
       }
     } catch (err) {
       console.error('Failed to load conversation:', err)
-      if (generation === viewGeneration) error = $_('viewer.failedToLoad')
+      if (generation === viewGeneration && !conversation) error = $_('viewer.failedToLoad')
     } finally {
       // A newer load owns the loading state; leave it alone.
       if (generation === viewGeneration) {

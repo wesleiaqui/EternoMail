@@ -120,6 +120,18 @@ func (a *App) handleNewSyncedMessage(accountID, folderID string, msg *message.Me
 	a.enqueueFolderBodyPrefetch(accountID, folderID, msg.ID)
 }
 
+// PrefetchMessageBodies warms bodies for a small set of visible or hovered messages on demand.
+func (a *App) PrefetchMessageBodies(accountID, folderID string, messageIDs []string) {
+	if len(messageIDs) == 0 {
+		return
+	}
+	const maxPrefetchRequested = 10
+	if len(messageIDs) > maxPrefetchRequested {
+		messageIDs = messageIDs[:maxPrefetchRequested]
+	}
+	a.enqueueFolderBodyPrefetchBatch(accountID, folderID, messageIDs, true)
+}
+
 func (a *App) enqueueFolderBodyPrefetch(accountID, folderID, messageID string) {
 	a.enqueueFolderBodyPrefetchBatch(accountID, folderID, []string{messageID}, false)
 }

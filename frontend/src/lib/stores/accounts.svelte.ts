@@ -566,6 +566,28 @@ class AccountStore {
   }
 
   /**
+   * Fast O(1) folder index keyed by folder ID.
+   * Built from all accounts and their folder trees whenever account data updates.
+   */
+  get folderIndex(): Record<string, folder.Folder> {
+    const index: Record<string, folder.Folder> = {}
+    const walk = (trees: folder.FolderTree[]) => {
+      for (const tree of trees) {
+        if (tree.folder) {
+          index[tree.folder.id] = tree.folder
+        }
+        if (tree.children && tree.children.length > 0) {
+          walk(tree.children)
+        }
+      }
+    }
+    for (const acc of this.accounts) {
+      if (acc.folders) walk(acc.folders)
+    }
+    return index
+  }
+
+  /**
    * Reorder accounts by providing the new order of account IDs.
    * Updates backend and reloads accounts to reflect new order.
    */

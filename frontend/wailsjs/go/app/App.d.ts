@@ -258,6 +258,8 @@ export function ExpirePendingSends():Promise<void>;
 
 export function FetchMessageBody(arg1:string):Promise<message.Message>;
 
+export function PrefetchMessageBodies(arg1:string,arg2:string,arg3:Array<string>):Promise<void>;
+
 export function FetchServerMessage(arg1:string,arg2:string,arg3:number):Promise<message.Message>;
 
 export function FindLocalMessageIDs(arg1:string,arg2:string,arg3:Array<string>):Promise<Array<string>>;

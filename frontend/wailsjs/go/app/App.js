@@ -458,6 +458,10 @@ export function FetchMessageBody(arg1) {
   return window['go']['app']['App']['FetchMessageBody'](arg1);
 }
 
+export function PrefetchMessageBodies(arg1, arg2, arg3) {
+  return window['go']['app']['App']['PrefetchMessageBodies'](arg1, arg2, arg3);
+}
+
 export function FetchServerMessage(arg1, arg2, arg3) {
   return window['go']['app']['App']['FetchServerMessage'](arg1, arg2, arg3);
 }

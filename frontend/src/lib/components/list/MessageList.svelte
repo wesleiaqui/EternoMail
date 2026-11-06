@@ -29,7 +29,7 @@
   import { cn } from '$lib/utils'
   import { Button } from '$lib/components/ui/button'
   // @ts-ignore - wailsjs bindings
-  import { RefreshViewHeaders, SearchMail, CancelMailSearch, MoveToInboxWithUndo, GetConversations, GetConversationCount, SyncFolder, ForceSyncFolder, CancelFolderSync, SetMessageListSortOrder, GetUnifiedFolderConversations, GetUnifiedFolderCount, SearchConversations, SearchUnifiedFolder, GetSearchCount, GetSearchCountUnifiedFolder, SyncUnifiedFolder, SyncVirtualFolder, EmptyUnifiedTrash, GetFTSIndexStatus, IsFTSIndexing, TrashWithUndo, DeletePermanently, EmptyTrash, UndoOperation, IMAPSearchFolder, IMAPSearchUnifiedInbox, FetchServerMessage, GetVirtualFolderConversations, GetVirtualFolderCount, GetVirtualFolderCachedView } from '../../../../wailsjs/go/app/App'
+  import { RefreshViewHeaders, SearchMail, CancelMailSearch, MoveToInboxWithUndo, GetConversations, GetConversationCount, SyncFolder, ForceSyncFolder, CancelFolderSync, SetMessageListSortOrder, GetUnifiedFolderConversations, GetUnifiedFolderCount, SearchConversations, SearchUnifiedFolder, GetSearchCount, GetSearchCountUnifiedFolder, SyncUnifiedFolder, SyncVirtualFolder, EmptyUnifiedTrash, GetFTSIndexStatus, IsFTSIndexing, TrashWithUndo, DeletePermanently, EmptyTrash, UndoOperation, IMAPSearchFolder, IMAPSearchUnifiedInbox, FetchServerMessage, GetVirtualFolderConversations, GetVirtualFolderCount, GetVirtualFolderCachedView, PrefetchMessageBodies } from '../../../../wailsjs/go/app/App'
   import { toasts } from '$lib/stores/toast'
   import { withShortcut, ariaKeyshortcuts } from '$lib/keyboard/format'
   import ShortcutHint from '$lib/components/shortcuts/ShortcutHint.svelte'
@@ -520,13 +520,34 @@
         default: return undefined
       }
     })()
-    for (const tree of acct.folders) {
-      if (tree.folder?.id === fldId) return tree.folder.type === folderId || tree.folder.path === configuredPath
-      for (const child of tree.children || []) {
-        if (child.folder?.id === fldId) return child.folder.type === folderId || child.folder.path === configuredPath
-      }
+    const fld = accountStore.folderIndex[fldId]
+    if (fld && fld.accountId === acctId) {
+      return fld.type === folderId || fld.path === configuredPath
     }
     return false
+  }
+
+  // Viewport and hover body prefetch to make conversation opening instant.
+  const prefetchedMessages = new Set<string>()
+  let hoverPrefetchTimer: ReturnType<typeof setTimeout> | null = null
+
+  function prefetchConversationBodies(conv: any) {
+    if (!conv) return
+    const targetAccountId = conv.accountId || accountId
+    const targetFolderId = conv.folderId || folderId
+    if (!targetAccountId || !targetFolderId || targetAccountId === 'virtual') return
+    const ids: string[] = (conv.messageIds || conv.messages?.map((m: any) => m.id) || []).filter((id: string) => id && !prefetchedMessages.has(id))
+    if (!ids.length) return
+    for (const id of ids) prefetchedMessages.add(id)
+    void PrefetchMessageBodies(targetAccountId, targetFolderId, ids.slice(0, 10)).catch(() => {})
+  }
+
+  function handleRowHover(conv: any) {
+    if (hoverPrefetchTimer) clearTimeout(hoverPrefetchTimer)
+    hoverPrefetchTimer = setTimeout(() => {
+      hoverPrefetchTimer = null
+      prefetchConversationBodies(conv)
+    }, 150)
   }
 
   // Schedule a debounced reload — coalesces rapid sync events from multiple accounts
@@ -1112,6 +1133,9 @@
 
       if (folderChanged || !selectedThreadId) {
         selectedThreadId = conversations[0].threadId
+      }
+      for (const conv of conversations.slice(0, 5)) {
+        prefetchConversationBodies(conv)
       }
     } catch (err) {
       // Discard stale error — folder was switched while this load was in-flight (#200)
@@ -3143,6 +3167,7 @@
                   onActionComplete={handleActionComplete}
                   {onReply}
                   onDelete={(ids) => requestDelete(ids)}
+                  onHover={() => handleRowHover(conv)}
                 />
               {/each}
               {#if !expandedInboxGroups.has(group.id) && getInboxCardVisibleCount(group.category) > 0 && group.conversations.length > getInboxCardVisibleCount(group.category)}
@@ -3186,6 +3211,7 @@
           onActionComplete={handleActionComplete}
           {onReply}
           onDelete={(ids) => requestDelete(ids)}
+          onHover={() => handleRowHover(conv)}
         />
       {/each}
 
