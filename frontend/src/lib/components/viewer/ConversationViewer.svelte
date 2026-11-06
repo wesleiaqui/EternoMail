@@ -2210,6 +2210,7 @@
               >
                 <div
                   class="spark-message-card border rounded-lg overflow-hidden transition-all {readerMode === 'conversation' ? 'conversation-bubble ' + (bubble?.side === 'right' ? 'bubble-right' : 'bubble-left') : ''} {focusedMessageId === msg.id ? 'border-primary ring-2 ring-primary/20' : 'border-border'}"
+                  style={readerMode === 'conversation' ? `--bubble-accent: ${bubble?.accent || 'hsl(var(--primary))'}` : undefined}
                   data-message-id={msg.id}
                   tabindex="-1"
                   role="button"
@@ -2682,15 +2683,18 @@
 
 <style>
   .conversation-bubble {
-    --bubble-fill: color-mix(in srgb, hsl(var(--muted)) 55%, hsl(var(--background)));
+    --bubble-accent: hsl(var(--muted-foreground));
+    --bubble-fill: color-mix(in srgb, var(--bubble-accent) 12%, hsl(var(--background)));
     position: relative;
     overflow: visible;
-    width: 100%;
+    width: min(82%, 76rem);
     border-radius: 1rem;
     background: var(--bubble-fill) !important;
+    border-color: color-mix(in srgb, var(--bubble-accent) 30%, hsl(var(--border)));
   }
   .conversation-bubble.bubble-right {
-    --bubble-fill: color-mix(in srgb, hsl(var(--primary)) 14%, hsl(var(--background)));
+    --bubble-accent: hsl(var(--primary));
+    --bubble-fill: color-mix(in srgb, var(--bubble-accent) 13%, hsl(var(--background)));
     margin-left: auto;
   }
   .conversation-bubble.bubble-left { margin-right: auto; }
@@ -2714,7 +2718,7 @@
     border-top: 1px solid hsl(var(--border));
     border-right: 1px solid hsl(var(--border));
   }
-  @media (max-width: 600px) { .conversation-bubble { width: 94%; } }
+  @media (max-width: 800px) { .conversation-bubble { width: 94%; } }
   .viewer-toolbar-action :global(svg) {
     transition: color 150ms ease, transform 150ms ease;
   }
