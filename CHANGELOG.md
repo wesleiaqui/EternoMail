@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep the conversation currently being read in its original inbox card and row position when delayed mark-as-read updates or list refreshes reorder messages; it returns to normal grouping after you select another conversation.
+
 ## Postilaatikko 2026.11.06.1
 
 - Keep reader toolbar tooltips above the scrolling message pane so they remain fully visible.

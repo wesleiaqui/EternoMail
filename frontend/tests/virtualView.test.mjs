@@ -11,3 +11,15 @@ test('a selected message stays under the cursor after becoming read', () => {
   assert.deepEqual(retainReadSelection([a, c], [a, c], 'b', true), [a, c], 'explicitly removed rows stay removed')
   assert.deepEqual(retainReadSelection([a, b, c], [a, c], 'b', false), [a, c])
 })
+
+test('the active row keeps its index when a same-folder refresh resorts it', () => {
+  const first = { threadId: 'first', unreadCount: 1 }
+  const activeBefore = { threadId: 'active', unreadCount: 0 }
+  const last = { threadId: 'last', unreadCount: 1 }
+  const activeAfter = { threadId: 'active', unreadCount: 0 }
+
+  assert.deepEqual(
+    retainReadSelection([first, activeBefore, last], [activeAfter, first, last], 'active', false),
+    [first, activeAfter, last],
+  )
+})
