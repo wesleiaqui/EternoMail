@@ -702,6 +702,10 @@ export function GetMessageCount(arg1, arg2) {
   return window['go']['app']['App']['GetMessageCount'](arg1, arg2);
 }
 
+export function PrefetchMessageBodies(arg1, arg2, arg3) {
+  return window['go']['app']['App']['PrefetchMessageBodies'](arg1, arg2, arg3);
+}
+
 export function GetMessageListDensity() {
   return window['go']['app']['App']['GetMessageListDensity']();
 }

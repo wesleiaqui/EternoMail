@@ -380,6 +380,8 @@ export function GetMessage(arg1:string):Promise<message.Message>;
 
 export function GetMessageCount(arg1:string,arg2:string):Promise<number>;
 
+export function PrefetchMessageBodies(arg1:string,arg2:string,arg3:Array<string>):Promise<boolean>;
+
 export function GetMessageListDensity():Promise<string>;
 
 export function GetMessageListSortOrder():Promise<string>;
