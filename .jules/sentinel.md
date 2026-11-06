@@ -24,3 +24,8 @@
 **Vulnerability:** `OpenAttachment` and `OpenEncryptedAttachment` called `openFile` directly without passing through `validateOpenPath`, while `validateOpenPath` itself did not guard against leading dash (`-`) characters or control characters in file paths passed to system handlers (`xdg-open` or `open`).
 **Learning:** File opening functions wrapping OS launchers must enforce directory boundary checks and CLI option injection defenses centrally in the internal dispatcher (`openFile`), rather than relying on individual caller methods.
 **Prevention:** Route all file execution/opening through a centralized helper that enforces strict directory containment and rejects paths beginning with dashes or containing control characters.
+
+## 2026-11-06 - Directory Component Dash Validation and OpenFolder CLI Option Defense
+**Vulnerability:** In `OpenFolder`, the directory target was resolved via `filepath.Dir(path)` without checking if path components or the directory itself began with a dash (`-`). If a subfolder name started with a dash, `filepath.Dir` could pass an option flag argument to `xdg-open` or `open`.
+**Learning:** Path validation must inspect every component of the path relative to the allowed root, not merely the outermost path prefix, because directory resolution functions like `filepath.Dir` can extract internal path segments into argument positions.
+**Prevention:** Ensure path validation rejects any segment starting with a dash, and validate resolved directory targets in folder opening helpers prior to invoking OS handlers.
