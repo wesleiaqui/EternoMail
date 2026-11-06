@@ -217,15 +217,17 @@
             </div>
           {:else}
             <button
-              class="p-2 rounded-md hover:bg-muted transition-colors opacity-0 group-hover:opacity-100"
+              class="p-2 rounded-md hover:bg-muted transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               title={$_('attachment.open')}
+              aria-label={$_('attachment.open')}
               onclick={() => handleEncryptedOpen(att)}
             >
               <Icon icon="mdi:open-in-new" class="w-4 h-4 text-muted-foreground" />
             </button>
             <button
-              class="p-2 rounded-md hover:bg-muted transition-colors opacity-0 group-hover:opacity-100"
+              class="p-2 rounded-md hover:bg-muted transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               title={$_('attachment.download')}
+              aria-label={$_('attachment.download')}
               onclick={() => handleEncryptedDownload(att)}
             >
               <Icon icon="mdi:download" class="w-4 h-4 text-muted-foreground" />
@@ -277,15 +279,17 @@
             </div>
           {:else}
             <button
-              class="p-2 rounded-md hover:bg-muted transition-colors opacity-0 group-hover:opacity-100"
+              class="p-2 rounded-md hover:bg-muted transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               title={$_('attachment.open')}
+              aria-label={$_('attachment.open')}
               onclick={() => handleOpen(att)}
             >
               <Icon icon="mdi:open-in-new" class="w-4 h-4 text-muted-foreground" />
             </button>
             <button
-              class="p-2 rounded-md hover:bg-muted transition-colors opacity-0 group-hover:opacity-100"
+              class="p-2 rounded-md hover:bg-muted transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               title={$_('attachment.download')}
+              aria-label={$_('attachment.download')}
               onclick={() => handleDownload(att)}
             >
               <Icon icon="mdi:download" class="w-4 h-4 text-muted-foreground" />
