@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## Postilaatikko 2026.11.06.3
+
+- Improve attachment-action keyboard focus and accessible labels.
+- Harden CLI path validation against option injection.
+- Make search-query preparation faster with fewer allocations and correct Unicode whitespace handling.
+
 ## Postilaatikko 2026.11.06.2
 
 - Keep the conversation currently being read in its original inbox card and row position when delayed mark-as-read updates or list refreshes reorder messages; it returns to normal grouping after you select another conversation.
