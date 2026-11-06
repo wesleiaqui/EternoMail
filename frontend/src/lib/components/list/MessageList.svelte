@@ -14,6 +14,7 @@
 
 <script lang="ts">
   import { refreshVirtualView, isExpectedSearchCancellation } from './virtualFolderRefresh'
+  import { pinnedGroupForSelection, retainPinnedConversationPosition, type PinnedInboxGroup } from './activeInboxGroup'
   import { retainReadSelection } from '$lib/sidebar/virtualView'
   import { app as searchModels } from '../../../../wailsjs/go/models'
 
@@ -174,13 +175,22 @@
     conversations: message.Conversation[]
   }
 
+  type InboxGroupPin = PinnedInboxGroup<Pick<InboxDisplayGroup, 'id' | 'label' | 'icon' | 'category' | 'recipient'>>
+
   // Inbox presentation is deliberately a view preference: it never changes
   // folders, messages or the server-side sort order.
   let inboxDisplayMode = $state<InboxDisplayMode>(getInboxDisplayMode())
   let showInboxDisplayPicker = $state(false)
   let collapsedInboxGroups = $state<Set<string>>(new Set())
   let expandedInboxGroups = $state<Set<string>>(new Set())
+  let pinnedInboxGroup = $state<InboxGroupPin | null>(null)
   let inboxCardPreferencesVersion = $state(0)
+
+  $effect(() => {
+    if (pinnedInboxGroup && pinnedInboxGroup.threadId !== selectedThreadId) {
+      pinnedInboxGroup = null
+    }
+  })
 
   const inboxDisplayOptions = $derived<Array<{ id: InboxDisplayMode; label: string; description: string; icon: string }>>([
     { id: 'priority', label: $_('inbox.priority'), description: $_('inbox.priorityDescription'), icon: 'mdi:lightning-bolt-outline' },
@@ -200,6 +210,7 @@
       inboxDisplayMode = mode
       collapsedInboxGroups = new Set()
       expandedInboxGroups = new Set()
+      pinnedInboxGroup = null
     }
     const handleInboxCardPreferencesChange = () => {
       // Recreate the category view after an option is changed in Settings.
@@ -221,7 +232,33 @@
     setInboxDisplayPreference(mode)
     collapsedInboxGroups = new Set()
     expandedInboxGroups = new Set()
+    pinnedInboxGroup = null
     showInboxDisplayPicker = false
+  }
+
+  function pinInboxGroupForConversation(threadId: string) {
+    if (!canUseInboxDisplay) {
+      pinnedInboxGroup = null
+      return
+    }
+
+    const group = inboxGroups().find(item => item.conversations.some(conversation => conversation.threadId === threadId))
+    if (!group) {
+      pinnedInboxGroup = null
+      return
+    }
+
+    pinnedInboxGroup = {
+      threadId,
+      index: group.conversations.findIndex(conversation => conversation.threadId === threadId),
+      group: {
+        id: group.id,
+        label: group.label,
+        icon: group.icon,
+        category: group.category,
+        recipient: group.recipient,
+      },
+    }
   }
 
   function toggleInboxGroup(groupID: string) {
@@ -365,6 +402,12 @@
     }
 
     for (const conversation of conversations) {
+      const pinnedGroup = pinnedGroupForSelection(conversation.threadId, selectedThreadId, pinnedInboxGroup)
+      if (pinnedGroup) {
+        add(pinnedGroup.id, pinnedGroup.label, pinnedGroup.icon, pinnedGroup.category, conversation, pinnedGroup.recipient)
+        continue
+      }
+
       if (inboxDisplayMode === 'categories') {
         // Read conversations always live in one "Lidos" card. This keeps the
         // action of opening an email tangible: once the last unread message in
@@ -399,7 +442,16 @@
       : inboxDisplayMode === 'priority'
         ? ['priority', 'other']
         : []
-    return [...groups.values()].sort((a, b) => {
+    const selectedPinnedGroup = selectedThreadId
+      ? pinnedGroupForSelection(selectedThreadId, selectedThreadId, pinnedInboxGroup)
+      : null
+    return [...groups.values()].map(group => {
+      if (!selectedPinnedGroup || group.id !== selectedPinnedGroup.id || !pinnedInboxGroup) return group
+      return {
+        ...group,
+        conversations: retainPinnedConversationPosition(group.conversations, pinnedInboxGroup.threadId, pinnedInboxGroup.index),
+      }
+    }).sort((a, b) => {
       if (order.length === 0) return 0
       return order.indexOf(a.category) - order.indexOf(b.category)
     })
@@ -568,6 +620,19 @@
     EventsOn('messages:readChanged', (data: { messageIds: string[], isRead: boolean }) => {
       // Update conversations locally instead of reloading from DB
       let anyUpdated = false
+      const selected = conversations.find(conversation => conversation.threadId === selectedThreadId)
+      const selectedMessageIds = selected?.messageIds || []
+      if (
+        selected &&
+        data.isRead &&
+        selectedMessageIds.some(id => data.messageIds.includes(id)) &&
+        pinnedInboxGroup?.threadId !== selected.threadId
+      ) {
+        // Capture its pre-read card before the unread count moves it into the
+        // Read/Other card. It stays visible there until another conversation
+        // is selected, while the underlying read status can update normally.
+        pinInboxGroupForConversation(selected.threadId)
+      }
       for (const c of conversations) {
         const affectedCount = (c.messageIds || []).filter(id => data.messageIds.includes(id)).length
         if (affectedCount > 0) {
@@ -726,6 +791,7 @@
     rememberListState()
     prevAccountId = currentAccount
     prevFolderId = currentFolder
+    pinnedInboxGroup = null
     filterMode = ''
     loadGeneration++ // Invalidate any in-flight loads from the previous folder (#200)
     offset = 0
@@ -1590,6 +1656,7 @@
 
     // Normal click - select for viewing, clear checks
     checkedThreadIds = new Set()
+    pinInboxGroupForConversation(threadId)
     selectedThreadId = threadId
 
     // For unified view or search, use real folderId and accountId from conversation data
