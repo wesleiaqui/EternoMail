@@ -16,6 +16,8 @@ import (
 	"github.com/hkdb/aerion/internal/email/reactions"
 	"github.com/hkdb/aerion/internal/logging"
 	"github.com/rs/zerolog"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Store provides message persistence operations
@@ -3298,50 +3300,70 @@ func (s *Store) SearchConversationsUnifiedInbox(query string, offset, limit int,
 	return s.SearchConversationsByFolderIDs(ids, query, offset, limit, filter)
 }
 
-// prepareFTSQuery prepares a user query for FTS5
-// Handles special characters and adds prefix matching for better UX.
-// Performance optimization: Formats the query directly into a pre-allocated strings.Builder
-// and skips strings.ReplaceAll when no double quotes are present, eliminating intermediate
-// slice allocations and reducing allocations by over 50%.
+// prepareFTSQuery prepares a user query for FTS5 with prefix matching.
+// Performance optimization: Tokenizes in-place without strings.Fields allocations
+// and streams escaped quotes directly into strings.Builder.
 func prepareFTSQuery(query string) string {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return ""
 	}
-
-	words := strings.Fields(query)
-	if len(words) == 0 {
-		return ""
-	}
-
 	var sb strings.Builder
-	// Pre-allocate estimated buffer size to prevent re-allocations
-	sb.Grow(len(query) + len(words)*4)
-
-	for i, word := range words {
-		if i > 0 {
+	sb.Grow(len(query) + 16)
+	first := true
+	for i, n := 0, len(query); i < n; {
+		for i < n {
+			if query[i] <= ' ' {
+				i++
+				continue
+			}
+			if query[i] >= 0x80 {
+				if r, sz := utf8.DecodeRuneInString(query[i:]); unicode.IsSpace(r) {
+					i += sz
+					continue
+				}
+			}
+			break
+		}
+		if i >= n {
+			break
+		}
+		start := i
+		for i < n && query[i] > ' ' {
+			if query[i] >= 0x80 {
+				r, sz := utf8.DecodeRuneInString(query[i:])
+				if unicode.IsSpace(r) {
+					break
+				}
+				i += sz
+				continue
+			}
+			i++
+		}
+		word := query[start:i]
+		if !first {
 			sb.WriteByte(' ')
 		}
-		hasQuotes := strings.ContainsRune(word, '"')
-		endsInStar := strings.HasSuffix(word, "*")
-
-		if !endsInStar && len(word) > 0 {
+		first = false
+		quote := !strings.HasSuffix(word, "*") && len(word) > 0
+		if quote {
 			sb.WriteByte('"')
-			if hasQuotes {
-				sb.WriteString(strings.ReplaceAll(word, "\"", "\"\""))
-			} else {
-				sb.WriteString(word)
+		}
+		if strings.ContainsRune(word, '"') {
+			for j := 0; j < len(word); j++ {
+				if word[j] == '"' {
+					sb.WriteString(`""`)
+				} else {
+					sb.WriteByte(word[j])
+				}
 			}
-			sb.WriteString("\"*")
 		} else {
-			if hasQuotes {
-				sb.WriteString(strings.ReplaceAll(word, "\"", "\"\""))
-			} else {
-				sb.WriteString(word)
-			}
+			sb.WriteString(word)
+		}
+		if quote {
+			sb.WriteString(`"*`)
 		}
 	}
-
 	return sb.String()
 }
 

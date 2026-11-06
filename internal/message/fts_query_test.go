@@ -65,6 +65,11 @@ func TestPrepareFTSQuery(t *testing.T) {
 			query:    "foo:bar status^1 (urgent)",
 			expected: `"foo:bar"* "status^1"* "(urgent)"*`,
 		},
+		{
+			name:     "unicode whitespace non-breaking and ideographic",
+			query:    "hello\u00a0world\u3000test",
+			expected: `"hello"* "world"* "test"*`,
+		},
 	}
 
 	for _, tt := range tests {
