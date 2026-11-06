@@ -25,7 +25,7 @@
   import { decodeHtmlEntities } from '$lib/utils/decodeHtmlEntities'
   import { _ } from '$lib/i18n'
   // @ts-ignore - wailsjs path
-  import { message, folder, operations } from '../../../../wailsjs/go/models'
+  import { message, operations } from '../../../../wailsjs/go/models'
   // @ts-ignore - wailsjs path
   import { OpenReaderWindow, MarkAsRead, MarkAsUnread, RemoveFromInboxWithUndo, ResolveMailActionTarget, UndoOperation } from '../../../../wailsjs/go/app/App'
   import ReplyLaterButton from '$lib/components/common/ReplyLaterButton.svelte'
@@ -542,9 +542,6 @@
 >
   <div
     data-conversation-row
-    data-conversation-id={conversation.threadId}
-    data-account-id={conversation.accountId || accountId}
-    data-folder-id={conversation.folderId || folderId}
     draggable={getLayoutMode() !== 'narrow'}
     class="group relative w-full flex items-start overflow-hidden touch-pan-y {densityClasses.row[density]} text-left border-b border-border transition-colors duration-300 cursor-pointer outline-none {selected
       ? 'bg-primary/20'
