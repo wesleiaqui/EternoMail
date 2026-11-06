@@ -97,6 +97,16 @@ func TestValidateOpenPath(t *testing.T) {
 			path:    "/etc/shadow",
 			wantErr: true,
 		},
+		{
+			name:    "path component leading dash",
+			path:    filepath.Join(attachmentsDir, "-flag", "doc.pdf"),
+			wantErr: true,
+		},
+		{
+			name:    "path component leading dash option",
+			path:    filepath.Join(downloadsDir, "-oProxyCommand=calc", "doc.pdf"),
+			wantErr: true,
+		},
 	}
 
 	for _, tc := range tests {

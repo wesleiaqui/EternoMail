@@ -258,7 +258,7 @@ func (a *App) openFile(path string) error {
 }
 
 // validateOpenPath checks that the path is under an allowed root directory and
-// does not trigger CLI option injection or control character attacks.
+// does not trigger CLI option injection or control character attacks in system openers.
 func (a *App) validateOpenPath(path string) error {
 	trimmed := strings.TrimSpace(path)
 	if trimmed == "" || strings.HasPrefix(trimmed, "-") || strings.ContainsAny(trimmed, "\r\n\x00") {
@@ -292,14 +292,30 @@ func (a *App) validateOpenPath(path string) error {
 		allowedRoots = append(allowedRoots, dataPath)
 	}
 
+	var matchedRoot string
 	for _, root := range allowedRoots {
 		cleanRoot := filepath.Clean(root) + string(filepath.Separator)
 		if strings.HasPrefix(absPath, cleanRoot) || absPath == filepath.Clean(root) {
-			return nil
+			matchedRoot = filepath.Clean(root)
+			break
+		}
+	}
+	if matchedRoot == "" {
+		return fmt.Errorf("path %q is outside allowed directories", path)
+	}
+
+	// Reject any path component beginning with '-' relative to the root to prevent CLI flag injection
+	rel, err := filepath.Rel(matchedRoot, absPath)
+	if err != nil {
+		return fmt.Errorf("invalid path relative to root: %w", err)
+	}
+	for _, comp := range strings.Split(rel, string(filepath.Separator)) {
+		if strings.HasPrefix(comp, "-") {
+			return fmt.Errorf("invalid path component %q starting with dash", comp)
 		}
 	}
 
-	return fmt.Errorf("path %q is outside allowed directories", path)
+	return nil
 }
 
 // OpenFile opens a file with the system default application (exposed to frontend)
@@ -322,7 +338,12 @@ func (a *App) OpenFolder(path string) error {
 
 	switch runtime.GOOS {
 	case "linux":
-		cmd = exec.Command("xdg-open", filepath.Dir(path))
+		dir := filepath.Dir(path)
+		// Ensure resolved directory is validated against option injection
+		if strings.HasPrefix(filepath.Clean(dir), "-") || strings.HasPrefix(filepath.Base(dir), "-") {
+			return fmt.Errorf("invalid directory path: %q", dir)
+		}
+		cmd = exec.Command("xdg-open", dir)
 	case "darwin":
 		// -R reveals the file in Finder
 		cmd = exec.Command("open", "-R", path)
