@@ -142,6 +142,8 @@ export function CancelOAuthFlow():Promise<void>;
 
 export function CancelPendingSend(arg1:string):Promise<void>;
 
+export function CancelQuitAppRequest():Promise<void>;
+
 export function CancelVirtualFolderOnlineCount(arg1:string):Promise<void>;
 
 export function ChangeReadLater(arg1:string,arg2:string,arg3:boolean):Promise<boolean>;
@@ -257,8 +259,6 @@ export function EmptyUnifiedTrash():Promise<void>;
 export function ExpirePendingSends():Promise<void>;
 
 export function FetchMessageBody(arg1:string):Promise<message.Message>;
-
-export function PrefetchMessageBodies(arg1:string,arg2:string,arg3:Array<string>):Promise<void>;
 
 export function FetchServerMessage(arg1:string,arg2:string,arg3:number):Promise<message.Message>;
 
@@ -658,6 +658,8 @@ export function PickRecipientPGPKeyFile():Promise<string>;
 
 export function PickSMIMECertificateFile():Promise<string>;
 
+export function PrefetchMessageBodies(arg1:string,arg2:string,arg3:Array<string>):Promise<boolean>;
+
 export function Preflight():Promise<void>;
 
 export function PrepareReply(arg1:string,arg2:string):Promise<smtp.ComposeMessage>;
@@ -671,10 +673,6 @@ export function PutDraftAttachmentBlob(arg1:string,arg2:string,arg3:string):Prom
 export function QueuePendingSend(arg1:string,arg2:string,arg3:string):Promise<string>;
 
 export function QuitApp():Promise<void>;
-
-export function RequestQuitApp():Promise<void>;
-
-export function CancelQuitAppRequest():Promise<void>;
 
 export function ReadFileAsAttachment(arg1:string):Promise<app.ComposerAttachment>;
 
@@ -715,6 +713,8 @@ export function ReorderFilterRules(arg1:Array<string>):Promise<void>;
 export function ReorderVirtualFolders(arg1:Array<string>):Promise<void>;
 
 export function RequestMacOSContactsAccess():Promise<string>;
+
+export function RequestQuitApp():Promise<void>;
 
 export function RequestUndoFromMenu():Promise<void>;
 

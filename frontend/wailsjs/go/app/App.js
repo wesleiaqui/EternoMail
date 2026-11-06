@@ -226,6 +226,10 @@ export function CancelPendingSend(arg1) {
   return window['go']['app']['App']['CancelPendingSend'](arg1);
 }
 
+export function CancelQuitAppRequest() {
+  return window['go']['app']['App']['CancelQuitAppRequest']();
+}
+
 export function CancelVirtualFolderOnlineCount(arg1) {
   return window['go']['app']['App']['CancelVirtualFolderOnlineCount'](arg1);
 }
@@ -456,10 +460,6 @@ export function ExpirePendingSends() {
 
 export function FetchMessageBody(arg1) {
   return window['go']['app']['App']['FetchMessageBody'](arg1);
-}
-
-export function PrefetchMessageBodies(arg1, arg2, arg3) {
-  return window['go']['app']['App']['PrefetchMessageBodies'](arg1, arg2, arg3);
 }
 
 export function FetchServerMessage(arg1, arg2, arg3) {
@@ -1258,6 +1258,10 @@ export function PickSMIMECertificateFile() {
   return window['go']['app']['App']['PickSMIMECertificateFile']();
 }
 
+export function PrefetchMessageBodies(arg1, arg2, arg3) {
+  return window['go']['app']['App']['PrefetchMessageBodies'](arg1, arg2, arg3);
+}
+
 export function Preflight() {
   return window['go']['app']['App']['Preflight']();
 }
@@ -1284,14 +1288,6 @@ export function QueuePendingSend(arg1, arg2, arg3) {
 
 export function QuitApp() {
   return window['go']['app']['App']['QuitApp']();
-}
-
-export function RequestQuitApp() {
-  return window['go']['app']['App']['RequestQuitApp']();
-}
-
-export function CancelQuitAppRequest() {
-  return window['go']['app']['App']['CancelQuitAppRequest']();
 }
 
 export function ReadFileAsAttachment(arg1) {
@@ -1372,6 +1368,10 @@ export function ReorderVirtualFolders(arg1) {
 
 export function RequestMacOSContactsAccess() {
   return window['go']['app']['App']['RequestMacOSContactsAccess']();
+}
+
+export function RequestQuitApp() {
+  return window['go']['app']['App']['RequestQuitApp']();
 }
 
 export function RequestUndoFromMenu() {
