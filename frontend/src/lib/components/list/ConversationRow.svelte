@@ -25,7 +25,7 @@
   import { decodeHtmlEntities } from '$lib/utils/decodeHtmlEntities'
   import { _ } from '$lib/i18n'
   // @ts-ignore - wailsjs path
-  import { message, folder, operations } from '../../../../wailsjs/go/models'
+  import { message, operations } from '../../../../wailsjs/go/models'
   // @ts-ignore - wailsjs path
   import { OpenReaderWindow, MarkAsRead, MarkAsUnread, RemoveFromInboxWithUndo, ResolveMailActionTarget, UndoOperation } from '../../../../wailsjs/go/app/App'
   import ReplyLaterButton from '$lib/components/common/ReplyLaterButton.svelte'
@@ -65,6 +65,7 @@
     onReply?: (mode: 'reply' | 'reply-all' | 'forward', messageId: string) => void
     onDelete?: (messageIds: string[]) => void  // Swipe-left delete (routes through MessageList.requestDelete)
     onOpenInTab?: (accountId: string, folderId: string, threadId: string, folderType: string, subject: string) => void
+    onHover?: () => void
   }
 
   let {
@@ -91,28 +92,18 @@
     onReply,
     onDelete,
     onOpenInTab,
+    onHover,
   }: Props = $props()
 
   // Resolve the folder name for this row. In unified inbox, virtual folder and
   // All Inboxes views each conversation can live in a different folder, so we
-  // look the folder name up from the account's folder tree. Falls back to the
-  // searchFolderName passed by search results, then to an empty string.
+  // look the folder name up from the account store's O(1) folderIndex.
+  // Falls back to searchFolderName passed by search results, then to an empty string.
   const folderName = $derived.by(() => {
     if (searchFolderName) return searchFolderName
-    const account = accountStore.accounts.find((item) => item.account.id === accountId)
-    if (!account) return ''
-    const found = findFolderInTree(account.folders || [], folderId)
-    return found?.name || ''
+    if (!folderId) return ''
+    return accountStore.folderIndex[folderId]?.name || ''
   })
-
-  function findFolderInTree(trees: folder.FolderTree[], id: string): folder.Folder | null {
-    for (const tree of trees) {
-      if (tree.folder?.id === id) return tree.folder
-      const child = findFolderInTree(tree.children || [], id)
-      if (child) return child
-    }
-    return null
-  }
 
   // Forward keyboard access (Alt+M / Alt+C) to this row's context-menu folder picker
   let contextMenuRef: MessageContextMenu | null = null
@@ -551,13 +542,11 @@
 >
   <div
     data-conversation-row
-    data-conversation-id={conversation.threadId}
-    data-account-id={conversation.accountId || accountId}
-    data-folder-id={conversation.folderId || folderId}
     draggable={getLayoutMode() !== 'narrow'}
     class="group relative w-full flex items-start overflow-hidden touch-pan-y {densityClasses.row[density]} text-left border-b border-border transition-colors duration-300 cursor-pointer outline-none {selected
       ? 'bg-primary/20'
       : 'hover:bg-muted/50'} {getAccentBarUnread() && hasUnread ? 'border-l-2 border-l-primary' : ''} {swipeAnim === 'select' ? 'swipe-select-anim' : ''} {swipeAnim === 'delete' ? 'swipe-delete-anim' : ''}"
+    onmouseenter={() => onHover?.()}
     onclick={handleRowClick}
     ondblclick={async (event) => {
       if (!isRowOpenTarget(event.target, event.currentTarget)) return

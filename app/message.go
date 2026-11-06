@@ -30,24 +30,6 @@ func (a *App) GetMessageCount(accountID, folderID string) (int, error) {
 	return a.messageStore.CountByFolder(folderID)
 }
 
-// PrefetchMessageBodies queues a bounded set of message bodies for a visible
-// folder-list viewport. It respects the folder's effective download policy;
-// attachments remain on demand.
-func (a *App) PrefetchMessageBodies(accountID, folderID string, messageIDs []string) (bool, error) {
-	if len(messageIDs) == 0 {
-		return false, nil
-	}
-	policy, err := a.GetFolderContentPolicy(accountID, folderID)
-	if err != nil {
-		return false, err
-	}
-	if !policy.BodyPrefetch {
-		return false, nil
-	}
-	a.enqueueFolderBodyPrefetchBatch(accountID, folderID, messageIDs, true)
-	return true, nil
-}
-
 // GetMessage returns a full message by ID
 func (a *App) GetMessage(id string) (*message.Message, error) {
 	return a.messageStore.Get(id)
@@ -130,6 +112,9 @@ func (a *App) GetConversations(accountID, folderID string, offset, limit int, so
 	if err != nil {
 		return nil, err
 	}
+	// Return headers first; body prefetch runs asynchronously and the policy
+	// keeps non-sidebar folders header-only.
+	go a.enqueueFolderConversationPrefetch(accountID, folderID, conversations)
 	return conversations, nil
 }
 
@@ -154,6 +139,7 @@ func (a *App) GetUnifiedInboxConversations(offset, limit int, sortOrder, filter 
 	if err != nil {
 		return nil, err
 	}
+	go a.enqueueUnifiedInboxConversationPrefetch(conversations)
 	return conversations, nil
 }
 

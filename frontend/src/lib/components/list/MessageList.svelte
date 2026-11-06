@@ -18,7 +18,7 @@
   import { retainReadSelection } from '$lib/sidebar/virtualView'
   import { app as searchModels } from '../../../../wailsjs/go/models'
 
-  import { onMount, onDestroy, tick } from 'svelte'
+  import { onMount, onDestroy } from 'svelte'
   import OnlineViewCount from './OnlineViewCount.svelte'
   import Icon from '@iconify/svelte'
   import ConversationRow from './ConversationRow.svelte'
@@ -29,7 +29,7 @@
   import { cn } from '$lib/utils'
   import { Button } from '$lib/components/ui/button'
   // @ts-ignore - wailsjs bindings
-  import { RefreshViewHeaders, SearchMail, CancelMailSearch, MoveToInboxWithUndo, GetConversations, GetConversationCount, PrefetchMessageBodies, SyncFolder, ForceSyncFolder, CancelFolderSync, SetMessageListSortOrder, GetUnifiedFolderConversations, GetUnifiedFolderCount, SearchConversations, SearchUnifiedFolder, GetSearchCount, GetSearchCountUnifiedFolder, SyncUnifiedFolder, SyncVirtualFolder, EmptyUnifiedTrash, GetFTSIndexStatus, IsFTSIndexing, TrashWithUndo, DeletePermanently, EmptyTrash, UndoOperation, IMAPSearchFolder, IMAPSearchUnifiedInbox, FetchServerMessage, GetVirtualFolderConversations, GetVirtualFolderCount, GetVirtualFolderCachedView } from '../../../../wailsjs/go/app/App'
+  import { RefreshViewHeaders, SearchMail, CancelMailSearch, MoveToInboxWithUndo, GetConversations, GetConversationCount, SyncFolder, ForceSyncFolder, CancelFolderSync, SetMessageListSortOrder, GetUnifiedFolderConversations, GetUnifiedFolderCount, SearchConversations, SearchUnifiedFolder, GetSearchCount, GetSearchCountUnifiedFolder, SyncUnifiedFolder, SyncVirtualFolder, EmptyUnifiedTrash, GetFTSIndexStatus, IsFTSIndexing, TrashWithUndo, DeletePermanently, EmptyTrash, UndoOperation, IMAPSearchFolder, IMAPSearchUnifiedInbox, FetchServerMessage, GetVirtualFolderConversations, GetVirtualFolderCount, GetVirtualFolderCachedView, PrefetchMessageBodies } from '../../../../wailsjs/go/app/App'
   import { toasts } from '$lib/stores/toast'
   import { withShortcut, ariaKeyshortcuts } from '$lib/keyboard/format'
   import ShortcutHint from '$lib/components/shortcuts/ShortcutHint.svelte'
@@ -520,13 +520,34 @@
         default: return undefined
       }
     })()
-    for (const tree of acct.folders) {
-      if (tree.folder?.id === fldId) return tree.folder.type === folderId || tree.folder.path === configuredPath
-      for (const child of tree.children || []) {
-        if (child.folder?.id === fldId) return child.folder.type === folderId || child.folder.path === configuredPath
-      }
+    const fld = accountStore.folderIndex[fldId]
+    if (fld && fld.accountId === acctId) {
+      return fld.type === folderId || fld.path === configuredPath
     }
     return false
+  }
+
+  // Viewport and hover body prefetch to make conversation opening instant.
+  const prefetchedMessages = new Set<string>()
+  let hoverPrefetchTimer: ReturnType<typeof setTimeout> | null = null
+
+  function prefetchConversationBodies(conv: any) {
+    if (!conv) return
+    const targetAccountId = conv.accountId || accountId
+    const targetFolderId = conv.folderId || folderId
+    if (!targetAccountId || !targetFolderId || targetAccountId === 'virtual') return
+    const ids: string[] = (conv.messageIds || conv.messages?.map((m: any) => m.id) || []).filter((id: string) => id && !prefetchedMessages.has(id))
+    if (!ids.length) return
+    for (const id of ids) prefetchedMessages.add(id)
+    void PrefetchMessageBodies(targetAccountId, targetFolderId, ids.slice(0, 10)).catch(() => {})
+  }
+
+  function handleRowHover(conv: any) {
+    if (hoverPrefetchTimer) clearTimeout(hoverPrefetchTimer)
+    hoverPrefetchTimer = setTimeout(() => {
+      hoverPrefetchTimer = null
+      prefetchConversationBodies(conv)
+    }, 150)
   }
 
   // Schedule a debounced reload — coalesces rapid sync events from multiple accounts
@@ -1112,6 +1133,9 @@
 
       if (folderChanged || !selectedThreadId) {
         selectedThreadId = conversations[0].threadId
+      }
+      for (const conv of conversations.slice(0, 5)) {
+        prefetchConversationBodies(conv)
       }
     } catch (err) {
       // Discard stale error — folder was switched while this load was in-flight (#200)
@@ -1933,87 +1957,6 @@
 
   // Reference to the list container for scrolling
   let listContainerRef = $state<HTMLDivElement | null>(null)
-  let prefetchFrame = 0
-  let prefetchResizeObserver: ResizeObserver | null = null
-  const queuedBodyPrefetches = new Set<string>()
-
-  function scheduleVisibleBodyPrefetch() {
-    if (prefetchFrame) return
-    prefetchFrame = requestAnimationFrame(() => {
-      prefetchFrame = 0
-      void prefetchVisibleBodyRows()
-    })
-  }
-
-  function prefetchVisibleBodyRows() {
-    const container = listContainerRef
-    if (!container || conversations.length === 0 || isSearchMode) return
-    const viewport = container.getBoundingClientRect()
-    const rows = Array.from(container.querySelectorAll<HTMLElement>('[data-conversation-row]'))
-    const selectedRows: HTMLElement[] = []
-    let lookaheadRows = 0
-    for (const row of rows) {
-      const rect = row.getBoundingClientRect()
-      if (rect.bottom <= viewport.top) continue
-      if (rect.top >= viewport.bottom) {
-        lookaheadRows++
-        if (lookaheadRows > 2) break
-      }
-      selectedRows.push(row)
-    }
-
-    const byFolder = new Map<string, { accountID: string; folderID: string; ids: string[] }>()
-    const conversationsByRef = new Map(conversations.map((conversation) => {
-      const conversationAccountID = conversation.accountId || accountId || ''
-      const conversationFolderID = conversation.folderId || folderId || ''
-      return [`${conversationAccountID}:${conversationFolderID}:${conversation.threadId}`, conversation] as const
-    }))
-    for (const row of selectedRows) {
-      const rowAccountID = row.dataset.accountId || accountId || ''
-      const rowFolderID = row.dataset.folderId || folderId || ''
-      const threadID = row.dataset.conversationId || ''
-      if (!rowAccountID || !rowFolderID || !threadID) continue
-      const conversation = conversationsByRef.get(`${rowAccountID}:${rowFolderID}:${threadID}`)
-      if (!conversation) continue
-      const key = `${rowAccountID}:${rowFolderID}`
-      const batch = byFolder.get(key) ?? { accountID: rowAccountID, folderID: rowFolderID, ids: [] }
-      for (const messageID of conversation.messageIds || []) {
-        const prefetchedKey = `${rowAccountID}:${messageID}`
-        if (!messageID || queuedBodyPrefetches.has(prefetchedKey)) continue
-        queuedBodyPrefetches.add(prefetchedKey)
-        batch.ids.push(messageID)
-      }
-      byFolder.set(key, batch)
-    }
-
-    for (const batch of byFolder.values()) {
-      if (batch.ids.length === 0) continue
-      void PrefetchMessageBodies(batch.accountID, batch.folderID, batch.ids).then((queued: boolean) => {
-        if (queued) return
-        for (const messageID of batch.ids) queuedBodyPrefetches.delete(`${batch.accountID}:${messageID}`)
-      }).catch((error: unknown) => {
-        for (const messageID of batch.ids) queuedBodyPrefetches.delete(`${batch.accountID}:${messageID}`)
-        console.debug('Visible message body prefetch was skipped:', error)
-      })
-    }
-  }
-
-  $effect(() => {
-    const currentConversations = conversations
-    if (currentConversations.length === 0) return
-    void tick().then(scheduleVisibleBodyPrefetch)
-  })
-
-  onMount(() => {
-    prefetchResizeObserver = new ResizeObserver(scheduleVisibleBodyPrefetch)
-    if (listContainerRef) prefetchResizeObserver.observe(listContainerRef)
-    return () => {
-      prefetchResizeObserver?.disconnect()
-      prefetchResizeObserver = null
-      if (prefetchFrame) cancelAnimationFrame(prefetchFrame)
-      prefetchFrame = 0
-    }
-  })
 
   function loadNextPage() {
     if (loading || conversations.length >= totalCount) return
@@ -2025,7 +1968,6 @@
 
   function handleListScroll(event: Event) {
     const container = event.currentTarget as HTMLDivElement
-    scheduleVisibleBodyPrefetch()
     // Start loading shortly before the user reaches the end so scrolling is
     // continuous rather than stopping at a manual "Load more" control.
     if (container.scrollHeight - container.scrollTop - container.clientHeight < 180) {
@@ -3225,6 +3167,7 @@
                   onActionComplete={handleActionComplete}
                   {onReply}
                   onDelete={(ids) => requestDelete(ids)}
+                  onHover={() => handleRowHover(conv)}
                 />
               {/each}
               {#if !expandedInboxGroups.has(group.id) && getInboxCardVisibleCount(group.category) > 0 && group.conversations.length > getInboxCardVisibleCount(group.category)}
@@ -3268,6 +3211,7 @@
           onActionComplete={handleActionComplete}
           {onReply}
           onDelete={(ids) => requestDelete(ids)}
+          onHover={() => handleRowHover(conv)}
         />
       {/each}
 
