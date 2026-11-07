@@ -17,6 +17,17 @@ import (
 	"golang.org/x/text/encoding/htmlindex"
 )
 
+// charsetMetaRe and charsetContentTypeRe are compiled once at package init
+// instead of being recompiled with regexp.MustCompile on every call to
+// extractCharsetFromHTML. That function runs once per HTML message part
+// during sync parsing (5 call sites in parse.go), so hoisting compilation
+// removes the dominant per-call cost.
+var (
+	charsetMetaRe = regexp.MustCompile(`(?i)<meta[^>]+charset=["']?([^"'\s>]+)`)
+
+	charsetContentTypeRe = regexp.MustCompile(`(?i)<meta[^>]+content=["'][^"']*charset=([^"'\s;]+)`)
+)
+
 // decodeQuotedPrintableIfNeeded detects and decodes quoted-printable content if it wasn't already decoded.
 // This is a safety measure for cases where go-message might not automatically decode it.
 func decodeQuotedPrintableIfNeeded(content []byte) []byte {
@@ -181,17 +192,13 @@ func extractCharsetFromHTML(html []byte) string {
 		searchBytes = html[:1024]
 	}
 
-	// Pattern 1: <meta charset="...">
-	re1 := regexp.MustCompile(`(?i)<meta[^>]+charset=["']?([^"'\s>]+)`)
-	if match := re1.FindSubmatch(searchBytes); len(match) > 1 {
+	if match := charsetMetaRe.FindSubmatch(searchBytes); len(match) > 1 {
 		charset := string(match[1])
 		log.Debug().Str("charset", charset).Msg("Found charset via meta charset attribute")
 		return charset
 	}
 
-	// Pattern 2: <meta http-equiv="Content-Type" content="text/html; charset=...">
-	re2 := regexp.MustCompile(`(?i)<meta[^>]+content=["'][^"']*charset=([^"'\s;]+)`)
-	if match := re2.FindSubmatch(searchBytes); len(match) > 1 {
+	if match := charsetContentTypeRe.FindSubmatch(searchBytes); len(match) > 1 {
 		charset := string(match[1])
 		log.Debug().Str("charset", charset).Msg("Found charset via meta http-equiv")
 		return charset
