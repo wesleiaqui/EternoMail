@@ -113,6 +113,10 @@ func generateSnippet(body string, maxLen int) string {
 // as a plain-text message preview snippet.
 func stripHTMLTags(s string) string {
 	var result strings.Builder
+	// Reserve the full input length as an upper bound so the builder grows at
+	// most once. Email bodies are text-rich, so output is typically close to
+	// the input size and this avoids repeated buffer reallocations.
+	result.Grow(len(s))
 	skipBlock := "" // "script"/"style"/"noscript": skip until its close tag
 
 	i := 0
@@ -144,8 +148,14 @@ func stripHTMLTags(s string) string {
 			i = end
 			continue
 		}
-		result.WriteRune(rune(s[i]))
-		i++
+		// Write a run of literal text in one shot instead of WriteRune per
+		// byte. Text between tags dominates email bodies, so batching avoids
+		// per-byte rune conversion and builder calls for every character.
+		start := i
+		for i < len(s) && s[i] != '<' {
+			i++
+		}
+		result.WriteString(s[start:i])
 	}
 	return html.UnescapeString(result.String())
 }
