@@ -5,6 +5,22 @@ import (
 	"testing"
 )
 
+func BenchmarkGenerateSnippet(b *testing.B) {
+	// Realistic email body: many short lines, a few quoted lines, far more
+	// content than maxLen so the early-stop path is exercised.
+	var lines []string
+	for i := 0; i < 120; i++ {
+		lines = append(lines, "This is a normal line of body content in the email.")
+		lines = append(lines, "> This is a quoted reply line that should be skipped.")
+	}
+	body := strings.Join(lines, "\n") + "\n" + strings.Repeat("trailing filler content ", 80)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = generateSnippet(body, 200)
+	}
+}
+
 func TestGenerateSnippet(t *testing.T) {
 	longText := "This is a long text that should be truncated when it exceeds the maximum length specified by the caller of the generateSnippet function."
 	maxLen := 30

@@ -87,24 +87,58 @@ func addressListToJSON(addrs []imap.Address) string {
 	return sanitizeAddressJSON(string(data))
 }
 
-// generateSnippet creates a preview snippet from message body
+// generateSnippet creates a preview snippet from message body.
+// Optimization: single-pass scan into a strings.Builder that trims whitespace
+// inline, skips quoted (">"-prefixed) lines, and stops early once maxLen
+// characters are collected — avoiding the full-line strings.Split slice,
+// per-line TrimSpace allocations, and a trailing strings.Join over the whole
+// body. Since the result is truncated at maxLen anyway, processing stops as
+// soon as enough characters are gathered instead of scanning the entire body.
 func generateSnippet(body string, maxLen int) string {
-	// Remove excessive whitespace
-	lines := strings.Split(body, "\n")
-	var parts []string
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" && !strings.HasPrefix(line, ">") { // Skip quoted lines
-			parts = append(parts, line)
+	var sb strings.Builder
+	sb.Grow(min(maxLen+16, len(body)))
+	needSpace := false
+	start := 0
+	for start <= len(body) {
+		// Find end of current line (up to '\n' or end of string).
+		end := start
+		for end < len(body) && body[end] != '\n' {
+			end++
 		}
-	}
-	text := strings.Join(parts, " ")
+		line := body[start:end]
 
-	// Truncate
+		// Trim leading and trailing ASCII whitespace inline.
+		ls := 0
+		for ls < len(line) && (line[ls] == ' ' || line[ls] == '\t' || line[ls] == '\r') {
+			ls++
+		}
+		le := len(line)
+		for le > ls && (line[le-1] == ' ' || line[le-1] == '\t' || line[le-1] == '\r') {
+			le--
+		}
+		trimmed := line[ls:le]
+
+		if len(trimmed) > 0 && trimmed[0] != '>' { // Skip blank and quoted lines
+			if needSpace {
+				sb.WriteByte(' ')
+			}
+			sb.WriteString(trimmed)
+			needSpace = true
+			if sb.Len() >= maxLen {
+				break // Enough for the truncated preview; no need to scan further.
+			}
+		}
+
+		if end >= len(body) {
+			break
+		}
+		start = end + 1 // Skip the '\n' and continue to the next line.
+	}
+
+	text := sb.String()
 	if len(text) > maxLen {
 		text = text[:maxLen] + "..."
 	}
-
 	return text
 }
 
