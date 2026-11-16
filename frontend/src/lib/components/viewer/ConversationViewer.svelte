@@ -619,7 +619,17 @@
   })
 
   $effect(() => {
-    if (!isViewerVisible) handleReadOnLeave()
+    if (!isViewerVisible) {
+      handleReadOnLeave()
+      return
+    }
+    // A hidden embedded reader stays mounted to retain its inline draft.
+    // Resume read policy when it becomes visible without reloading the thread.
+    untrack(() => {
+      if (!conversation?.messages) return
+      pendingReadOnLeave.capture(conversation.messages)
+      scheduleMarkAsRead()
+    })
   })
 
   let wasDeferringReadForUnreadView = false

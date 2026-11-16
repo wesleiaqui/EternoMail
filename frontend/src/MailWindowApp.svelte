@@ -29,7 +29,7 @@
   // two-step Undo would move messages back but never restore unread state.
   setUnreadRestorer(ids => MarkAsUnread(ids))
 
-  let { config, embedded = false, readerTab = false, deferMarkAsReadUntilLeave = false, onCloseTab, active = true, onScopeChange, onNewTab, onOpenInTab }: { config: MailScope; embedded?: boolean; readerTab?: boolean; deferMarkAsReadUntilLeave?: boolean; onCloseTab?: () => void; active?: boolean; onScopeChange?: (scope: MailScope) => void; onNewTab?: () => void; onOpenInTab?: (scope: MailScope) => void } = $props()
+  let { config, embedded = false, readerTab = false, deferMarkAsReadUntilLeave = false, onCloseTab, active = true, mailActive = true, onScopeChange, onNewTab, onOpenInTab }: { config: MailScope; embedded?: boolean; readerTab?: boolean; deferMarkAsReadUntilLeave?: boolean; onCloseTab?: () => void; active?: boolean; mailActive?: boolean; onScopeChange?: (scope: MailScope) => void; onNewTab?: () => void; onOpenInTab?: (scope: MailScope) => void } = $props()
   // A process per window gives each component/store its own search, checked
   // rows, scroll memory and reader mode. Primary UI state is never persisted.
   let windowState = $state(createMailWindowState(untrack(() => config)))
@@ -241,7 +241,7 @@
     viewer?.prepareForSuspend()
   }
   function keydown(event: KeyboardEvent) {
-    if (!active || isInputElement(event.target) || isDialogGuardActive() || event.defaultPrevented) return
+    if (!active || !mailActive || isInputElement(event.target) || isDialogGuardActive() || event.defaultPrevented) return
     if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'n') { event.preventDefault(); if (embedded) onNewTab?.(); else void newWindow(); return }
     if (event.ctrlKey || event.metaKey || event.altKey) return
     if (event.key === 'Escape') { closeReader(); return }
@@ -295,7 +295,7 @@
     if (KEY.LIST_TOGGLE_CHECK(event)) { event.preventDefault(); list?.toggleCheck() }
   }
   onMount(()=>{
-    const available=()=>active&&!document.querySelector('[data-composer-root]')
+    const available=()=>active&&mailActive&&!document.querySelector('[data-composer-root]')
     const listActive=()=>available()&&!readerTab&&getFocusedPane()==='messageList'
     const commands:Record<string,()=>unknown>={
       'app.close':Quit,'window.new':newWindow,'app.compose':compose,'app.search':()=>list?.toggleSearchFocus(),
@@ -371,7 +371,7 @@
     {#if !readerTab}
     <section class="mail-list min-h-0 overflow-hidden border-r border-border" role="presentation" onclick={() => setFocusedPane('messageList')}>
       <MessageList bind:this={list} accountId={windowState.scope.accountId} folderId={windowState.scope.folderId} folderName={label(windowState.scope)} folderType={windowState.scope.folderType}
-        isFocused={active && getFocusedPane() === 'messageList'} onConversationSelect={select} onOpenInTab={(accountId, folderId, threadId, folderType, subject) => onOpenInTab?.({ ...windowState.scope, threadId, threadAccountId: accountId, threadFolderId: folderId, folderType, threadSubject: subject })} onReply={reply}
+        isFocused={active && mailActive && getFocusedPane() === 'messageList'} onConversationSelect={select} onOpenInTab={(accountId, folderId, threadId, folderType, subject) => onOpenInTab?.({ ...windowState.scope, threadId, threadAccountId: accountId, threadFolderId: folderId, folderType, threadSubject: subject })} onReply={reply}
         onSearchQueryChange={searchQuery => onScopeChange?.({ ...windowState.scope, searchQuery })}
         onRowActionComplete={auto => { if (auto) windowState = { ...windowState, thread: null } }}
         onBulkMarkRead={ids => void run(() => MarkAsRead(ids))} onBulkAction={bulkAction} enableCommandPalette={false} />
@@ -380,8 +380,8 @@
     <section class="mail-reader flex w-full flex-1 min-w-0 min-h-0" role="presentation" onclick={() => setFocusedPane('viewer')}>
       {#if active && windowState.thread}
         {@const thread = windowState.thread}
-        <ConversationViewer nativeOwnsMailActions={active && getFocusedPane()==='viewer'} bind:this={viewer} threadId={thread.threadId} folderId={thread.folderId} accountId={thread.accountId} folderType={windowState.scope.folderType}
-          isViewerVisible={active} deferMarkAsReadUntilLeave={deferMarkAsReadUntilLeave} isFocused={active && getFocusedPane() === 'viewer'} showBackButton onBack={closeReader} onReply={reply}
+        <ConversationViewer nativeOwnsMailActions={active && mailActive && getFocusedPane()==='viewer'} bind:this={viewer} threadId={thread.threadId} folderId={thread.folderId} accountId={thread.accountId} folderType={windowState.scope.folderType}
+          isViewerVisible={active && mailActive} deferMarkAsReadUntilLeave={deferMarkAsReadUntilLeave} isFocused={active && mailActive && getFocusedPane() === 'viewer'} showBackButton onBack={closeReader} onReply={reply}
           restoreScrollTop={restoreReaderScrollTop}
           onSaveScrollPosition={(threadId, folderId, accountId, top) => { savedReaderPosition = { key: readerPositionKey({ threadId, folderId, accountId }), top } }}
           onEditDraft={draftId => run(() => OpenComposerWindow(thread.accountId, 'new', '', draftId, ''))}

@@ -140,6 +140,7 @@
   let scheduledListMode = $state<ListMode>('off')
   let scheduledDraftState = $state('')
   let poppingOut = $state(false)  // Pop-out in progress
+  let composerRoot = $state<HTMLElement | null>(null)
   let editorElement = $state<HTMLElement | null>(null)
   let editor = $state<Editor | null>(null)
 
@@ -2002,6 +2003,7 @@
 
   // Keyboard shortcuts
   function handleKeyDown(e: KeyboardEvent) {
+    if (!composerRoot?.getClientRects().length || composerRoot.closest('[hidden], [inert], [aria-hidden="true"]')) return
     if (showSendLaterDialog || sending || poppingOut) return
     // Security mode key handling (must be early in handleKeyDown)
     if (securityMode) {
@@ -2403,7 +2405,7 @@
   ondrop={handleDrop}
   role="region"
   aria-label={$_('aria.emailComposer')}
-  data-composer-root
+  data-composer-root bind:this={composerRoot}
 >
   {#if historyPanelOpen}
     <div class="absolute right-2 top-12 z-50 w-72 max-h-80 overflow-auto rounded-lg border border-border bg-popover p-2 shadow-lg" role="dialog" aria-label={$_('composer.history')}>

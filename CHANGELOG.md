@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Hidden mail readers and inline drafts no longer react to mail or Send shortcuts. Switching extensions finalizes read-on-leave or cancels delayed marking; returning resumes the normal read policy.
+
+- Keep unfinished inline replies mounted when switching mail to Calendar or Contacts, while disabling hidden mail commands. Recent edits remain in the same composer when returning to Mail.
+
 - Expand native menus across mail, composer formatting, attachments, folders, scheduled delivery, Calendar and Contacts. Menu actions reuse UI handlers and confirmations, disable ambiguous or unavailable targets, and reject stale selection requests. Existing keyboard bindings are unchanged. Inline replies block background mail commands; nonmodal event details keep Calendar navigation available. Explicit read-state actions include mixed conversations, and detached composers keep native image/rich-text paste.
 
 - Keep message attachments on one line: show up to three as file chips, or a collapsed attachment count and Save All bar for larger sets. Expand to see every full filename and action. No attachment deduplication or data changes.
