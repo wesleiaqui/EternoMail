@@ -1263,6 +1263,11 @@
     "visualMode": "Visuaalinen muokkain"
   },
   "attachment": {
+    "listLabel": "Liitteet",
+    "expand": "Näytä liitteet",
+    "collapse": "Piilota liitteet",
+    "saveAllShort": "Tallenna kaikki",
+    "loading": "Ladataan liitteitä...",
     "open": "Avaa",
     "download": "Lataa",
     "openFile": "Avaa tiedosto",

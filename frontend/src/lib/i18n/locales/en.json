@@ -1263,6 +1263,11 @@
     "visualMode": "Visual Editor"
   },
   "attachment": {
+    "listLabel": "Attachments",
+    "expand": "Expand attachments",
+    "collapse": "Collapse attachments",
+    "saveAllShort": "Save All",
+    "loading": "Loading attachments...",
     "open": "Open",
     "download": "Download",
     "openFile": "Open File",

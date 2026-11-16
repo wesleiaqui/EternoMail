@@ -28,9 +28,27 @@
   let loading = $state(false)
   let downloadingIds = $state<Set<string>>(new Set())
   let savingAll = $state(false)
+  let isEncrypted = $derived(encryptedAttachments != null && encryptedAttachments.length > 0)
+  // Expansion belongs to an account-qualified message, never the next mail.
+  let expandedFor = $state('')
+  const owner = $derived(`${accountId}:${messageId}`)
+  const expanded = $derived(expandedFor === owner)
+  const items = $derived(isEncrypted
+    ? (encryptedAttachments ?? []).map((attachment,index)=>({key:`encrypted:${index}`,attachment,encrypted:true}))
+    : attachments.map(attachment=>({key:attachment.id,attachment,encrypted:false})))
+  function toggleExpanded() { expandedFor = expanded ? '' : owner }
+  function openItem(item: typeof items[number]) {
+    return item.encrypted ? handleEncryptedOpen(item.attachment as DecryptedAttachment) : handleOpen(item.attachment as messageModels.Attachment)
+  }
+  function saveItem(item: typeof items[number]) {
+    return item.encrypted ? handleEncryptedDownload(item.attachment as DecryptedAttachment) : handleDownload(item.attachment as messageModels.Attachment)
+  }
+  function busy(item: typeof items[number]) {
+    return downloadingIds.has(item.encrypted ? item.attachment.filename : (item.attachment as messageModels.Attachment).id)
+  }
 
   // Determine if we're in encrypted mode
-  let isEncrypted = $derived(encryptedAttachments != null && encryptedAttachments.length > 0)
+
 
   // Load attachments when messageId changes (only for non-encrypted)
   $effect(() => {
@@ -39,25 +57,25 @@
       return
     }
     if (messageId) {
-      loadAttachments(messageId)
+      loadAttachments(messageId, accountId)
     } else {
       attachments = []
     }
   })
 
-  async function loadAttachments(msgId: string) {
+  async function loadAttachments(msgId: string, accId: string) {
     attachments = []
     loading = true
     try {
-      const result = await GetMessageAttachments(accountId, msgId)
-      if (messageId !== msgId) return
+      const result = await GetMessageAttachments(accId, msgId)
+      if (messageId !== msgId || accountId !== accId) return
       attachments = result || []
     } catch (err) {
       console.error('Failed to load attachments:', err)
-      if (messageId !== msgId) return
+      if (messageId !== msgId || accountId !== accId) return
       attachments = []
     } finally {
-      if (messageId === msgId) loading = false
+      if (messageId === msgId && accountId === accId) loading = false
     }
   }
 
@@ -136,12 +154,13 @@
   }
 
   async function handleSaveAll() {
+    const count = items.length
     savingAll = true
     try {
       if (isEncrypted) {
         const folder = await SaveAllEncryptedAttachments(messageId)
         if (folder) {
-          toasts.success($_('toast.attachmentsSaved', { values: { count: encryptedAttachments!.length } }), [
+          toasts.success($_('toast.attachmentsSaved', { values: { count } }), [
             {
               label: $_('attachment.openFolder'),
               onClick: () => OpenFolder(folder)
@@ -151,7 +170,7 @@
       } else {
         const folder = await SaveAllAttachmentsForAccount(accountId, messageId)
         if (folder) {
-          toasts.success($_('toast.attachmentsSaved', { values: { count: attachments.length } }), [
+          toasts.success($_('toast.attachmentsSaved', { values: { count } }), [
             {
               label: $_('attachment.openFolder'),
               onClick: () => OpenFolder(folder)
@@ -191,129 +210,61 @@
 </script>
 
 {#if loading && !isEncrypted}
-  <div class="flex items-center gap-2 text-sm text-muted-foreground">
+  <div class="flex items-center gap-2 text-sm text-muted-foreground" role="status">
     <Icon icon="mdi:loading" class="w-4 h-4 animate-spin" />
-    Loading attachments...
+    {$_('attachment.loading')}
   </div>
-{:else if isEncrypted && encryptedAttachments && encryptedAttachments.length > 0}
-  <div class="space-y-2">
-    {#each encryptedAttachments as att (att.filename)}
-      {@const isDownloading = downloadingIds.has(att.filename)}
-      <div class="flex items-center gap-3 p-2 rounded-md border border-border bg-muted/30 hover:bg-muted/50 transition-colors group">
-        <div class="flex-shrink-0 w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center">
-          <Icon icon={getFileIcon(att.contentType)} class="w-5 h-5 text-primary" />
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="font-medium text-sm text-foreground truncate" title={att.filename}>
-            {att.filename}
-          </div>
-          <div class="text-xs text-muted-foreground">
-            {formatSize(att.size)}
-          </div>
-        </div>
-        <div class="flex items-center gap-1 flex-shrink-0">
-          {#if isDownloading}
-            <div class="p-2">
-              <Icon icon="mdi:loading" class="w-4 h-4 animate-spin text-muted-foreground" />
-            </div>
-          {:else}
-            <button
-              class="p-2 rounded-md hover:bg-muted transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              title={$_('attachment.open')}
-              aria-label={$_('attachment.open')}
-              onclick={() => handleEncryptedOpen(att)}
-            >
-              <Icon icon="mdi:open-in-new" class="w-4 h-4 text-muted-foreground" />
-            </button>
-            <button
-              class="p-2 rounded-md hover:bg-muted transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              title={$_('attachment.download')}
-              aria-label={$_('attachment.download')}
-              onclick={() => handleEncryptedDownload(att)}
-            >
-              <Icon icon="mdi:download" class="w-4 h-4 text-muted-foreground" />
-            </button>
-          {/if}
-        </div>
-      </div>
-    {/each}
-
-    {#if encryptedAttachments.length > 1}
-      <button
-        class="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors w-full justify-center border border-dashed border-border"
-        onclick={handleSaveAll}
-        disabled={savingAll}
-      >
-        {#if savingAll}
-          <Icon icon="mdi:loading" class="w-4 h-4 animate-spin" />
-          {$_('attachment.saving')}
-        {:else}
-          <Icon icon="mdi:download-multiple" class="w-4 h-4" />
-          {$_('attachment.saveAll', { values: { count: encryptedAttachments.length } })}
-        {/if}
+{:else if items.length > 0}
+  <section class="attachment-set min-w-0" data-attachment-count={items.length} data-attachment-expanded={expanded} aria-label={$_('attachment.listLabel')}>
+    <div class="attachment-line flex min-w-0 items-center gap-2">
+      <button type="button" onkeydown={(event) => event.stopPropagation()} class="attachment-toggle flex min-w-0 items-center gap-1 rounded-md text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {items.length>3 || expanded ? 'flex-1' : 'shrink-0'}"
+        aria-expanded={expanded} title={$_(expanded?'attachment.collapse':'attachment.expand')} aria-label={$_(expanded?'attachment.collapse':'attachment.expand')}
+        onclick={toggleExpanded}>
+        <Icon icon={expanded?'mdi:chevron-down':'mdi:chevron-right'} class="h-4 w-4 shrink-0" />
+        {#if items.length>3 || expanded}<span class="truncate">{$_('attachment.listLabel')} ({items.length})</span>{/if}
       </button>
-    {/if}
-  </div>
-{:else if attachments.length > 0}
-  <div class="space-y-2">
-    {#each attachments as att (att.id)}
-      {@const isDownloading = downloadingIds.has(att.id)}
-      <div class="flex items-center gap-3 p-2 rounded-md border border-border bg-muted/30 hover:bg-muted/50 transition-colors group">
-        <div class="flex-shrink-0 w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center">
-          <Icon icon={getFileIcon(att.contentType)} class="w-5 h-5 text-primary" />
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="font-medium text-sm text-foreground truncate" title={att.filename}>
-            {att.filename}
-          </div>
-          <div class="text-xs text-muted-foreground">
-            {formatSize(att.size)}
-            {#if att.isInline}
-              <span class="ml-2 text-primary">{$_('attachment.inline')}</span>
-            {/if}
-          </div>
-        </div>
-        <div class="flex items-center gap-1 flex-shrink-0">
-          {#if isDownloading}
-            <div class="p-2">
-              <Icon icon="mdi:loading" class="w-4 h-4 animate-spin text-muted-foreground" />
+      {#if items.length<=3 && !expanded}
+        <div class="attachment-chips flex flex-1 min-w-0 gap-2 overflow-x-auto">
+          {#each items as item (item.key)}
+            <div data-native-row tabindex="-1" class="attachment-chip flex min-w-[8rem] flex-1 items-center rounded-md border border-border bg-muted/30">
+              <button type="button" onkeydown={(event) => event.stopPropagation()} class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md p-1.5 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                title={item.attachment.filename} aria-label={`${$_('attachment.open')}: ${item.attachment.filename}`} data-native-action="attachment.open" disabled={busy(item)} onclick={()=>openItem(item)}>
+                <Icon icon={busy(item)?'mdi:loading':getFileIcon(item.attachment.contentType)} class="h-4 w-4 shrink-0 text-primary" />
+                <span class="min-w-0"><span class="block truncate text-xs font-medium">{item.attachment.filename}</span><span class="block whitespace-nowrap text-[10px] text-muted-foreground">{formatSize(item.attachment.size)}</span></span>
+              </button>
+              <button type="button" onkeydown={(event) => event.stopPropagation()} class="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                title={`${$_('attachment.download')}: ${item.attachment.filename}`} aria-label={`${$_('attachment.download')}: ${item.attachment.filename}`} data-native-action="attachment.save" disabled={busy(item)} onclick={()=>saveItem(item)}>
+                <Icon icon="mdi:download" class="h-3.5 w-3.5" />
+              </button>
             </div>
-          {:else}
-            <button
-              class="p-2 rounded-md hover:bg-muted transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              title={$_('attachment.open')}
-              aria-label={$_('attachment.open')}
-              onclick={() => handleOpen(att)}
-            >
-              <Icon icon="mdi:open-in-new" class="w-4 h-4 text-muted-foreground" />
-            </button>
-            <button
-              class="p-2 rounded-md hover:bg-muted transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              title={$_('attachment.download')}
-              aria-label={$_('attachment.download')}
-              onclick={() => handleDownload(att)}
-            >
-              <Icon icon="mdi:download" class="w-4 h-4 text-muted-foreground" />
-            </button>
-          {/if}
+          {/each}
         </div>
-      </div>
-    {/each}
-
-    {#if attachments.length > 1}
-      <button
-        class="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors w-full justify-center border border-dashed border-border"
-        onclick={handleSaveAll}
-        disabled={savingAll}
-      >
-        {#if savingAll}
-          <Icon icon="mdi:loading" class="w-4 h-4 animate-spin" />
-          {$_('attachment.saving')}
-        {:else}
-          <Icon icon="mdi:download-multiple" class="w-4 h-4" />
-          {$_('attachment.saveAll', { values: { count: attachments.length } })}
-        {/if}
-      </button>
+      {/if}
+      {#if items.length>1}
+        <button type="button" onkeydown={(event) => event.stopPropagation()} class="shrink-0 flex items-center gap-1 rounded-md p-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          title={$_('attachment.saveAll',{values:{count:items.length}})} aria-label={$_('attachment.saveAll',{values:{count:items.length}})} data-native-action="attachment.saveAll" onclick={handleSaveAll} disabled={savingAll}>
+          {#if items.length>3 || expanded}<span class="whitespace-nowrap">{$_('attachment.saveAllShort')}</span>{/if}
+          <Icon icon={savingAll?'mdi:loading':'mdi:download-multiple'} class="h-4 w-4" />
+        </button>
+      {/if}
+    </div>
+    {#if expanded}
+      <ul class="mt-2 space-y-1" aria-label={$_('attachment.listLabel')}>
+        {#each items as item (item.key)}
+          <li data-native-row tabindex="-1" class="flex min-w-0 items-center gap-2 rounded-md border border-border bg-muted/20 p-2">
+            <Icon icon={getFileIcon(item.attachment.contentType)} class="h-5 w-5 shrink-0 text-primary" />
+            <div class="min-w-0 flex-1"><span class="block break-all text-sm">{item.attachment.filename}</span><span class="text-xs text-muted-foreground">{formatSize(item.attachment.size)} {item.attachment.isInline?$_('attachment.inline'):''}</span></div>
+            <button type="button" onkeydown={(event) => event.stopPropagation()} class="shrink-0 rounded-md p-2 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={`${$_('attachment.open')}: ${item.attachment.filename}`} title={$_('attachment.open')} data-native-action="attachment.open" disabled={busy(item)} onclick={()=>openItem(item)}><Icon icon={busy(item)?'mdi:loading':'mdi:open-in-new'} class="h-4 w-4" /></button>
+            <button type="button" onkeydown={(event) => event.stopPropagation()} class="shrink-0 rounded-md p-2 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={`${$_('attachment.download')}: ${item.attachment.filename}`} title={$_('attachment.download')} data-native-action="attachment.save" disabled={busy(item)} onclick={()=>saveItem(item)}><Icon icon="mdi:download" class="h-4 w-4" /></button>
+          </li>
+        {/each}
+      </ul>
     {/if}
-  </div>
+  </section>
 {/if}
+
+<style>
+  .attachment-chips { scrollbar-width: thin; scrollbar-color: hsl(var(--border)) transparent; }
+</style>
