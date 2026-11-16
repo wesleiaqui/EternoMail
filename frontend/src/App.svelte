@@ -121,7 +121,6 @@
   let contextPaneRevealed = $state(true)
   let contextPaneHideTimer: ReturnType<typeof setTimeout> | null = null
   const CONTEXT_PANE_AUTO_HIDE_KEY = 'postilaatikko:context-pane-auto-hide'
-  const contextPaneVisible = $derived(!contextPaneAutoHide || contextPaneRevealed)
   let triageStatus = $state<'all' | 'unread' | 'readLater' | 'replyLater'>('all')
   // Quick-filter applied to the folder list while the Kaikki kansiot panel is
   // open; the same four buttons then prune folders instead of messages.
@@ -184,7 +183,7 @@
       triageStatus = visit.triageStatus
       contextPaneMode = 'messages'
       hideSidebar()
-      showViewer()
+      if (getLayoutMode() === 'narrow') showViewer()
       if (workspace) {
         updateWorkspaceScope(workspace.id, { ...scope })
         mailWindowTabInstances[workspace.id]?.restoreMessageVisit(scope)
@@ -438,6 +437,8 @@
 
   // Selected conversation state
   let selectedThreadId = $state<string | null>(null)
+  // An opened desktop conversation must not make its message index disappear.
+  const contextPaneVisible = $derived(!contextPaneAutoHide || contextPaneRevealed || (getLayoutMode() !== 'narrow' && !!selectedThreadId))
   let selectedConversationFolderId = $state<string | null>(null)
   let selectedConversationAccountId = $state<string | null>(null)
   // Read-state changes are intentionally excluded from the backend's global
@@ -465,7 +466,7 @@
   // Always resets on conversation change, on Esc, on back-arrow, and on app reload.
   let focusMode = $state<'off' | 'thread' | 'message'>('off')
   let focusedMessageIdInFocus = $state<string | null>(null)
-  const viewerIsOverlay = $derived(isResponsive() || focusMode !== 'off')
+  const viewerIsOverlay = $derived(getLayoutMode() === 'narrow' || focusMode !== 'off')
   const viewerIsVisible = $derived(getResponsiveView() === 'viewer' || focusMode !== 'off')
 
   function toggleThreadFocus() {
@@ -1337,7 +1338,7 @@
         threadSubject: subject || undefined,
       })
     }
-    showViewer()
+    if (getLayoutMode() === 'narrow') showViewer()
     recordMessageVisit()
 
     // Persist state
@@ -1943,7 +1944,7 @@
       // and extensions).
       if (KEY.PANE_FOCUS_PREV(e)) {
         e.preventDefault()
-        if (isResponsive()) {
+        if (getLayoutMode() === 'narrow') {
           const view = getResponsiveView()
           const mode = getLayoutMode()
           if (view === 'viewer') {
@@ -1960,7 +1961,7 @@
       }
       if (KEY.PANE_FOCUS_NEXT(e)) {
         e.preventDefault()
-        if (isResponsive()) {
+        if (getLayoutMode() === 'narrow') {
           const view = getResponsiveView()
           const mode = getLayoutMode()
           if (mode === 'narrow' && view === 'sidebar') {
@@ -2565,7 +2566,7 @@
          the main thread on the second mount. display:contents keeps the flex
          children as direct flex items so the layout doesn't shift. -->
     <div style:display={getActiveExtension() === 'mail' ? 'contents' : 'none'}>
-    <div class="flex min-h-0 min-w-0 flex-col" style:width={getLayoutMode() === 'full' ? `${listWidth}px` : undefined} class:flex-1={isResponsive()} style:display={contextPaneVisible ? 'flex' : 'none'} onmouseenter={revealContextPane} onmouseleave={scheduleContextPaneHide} role="presentation">
+    <div class="flex min-h-0 min-w-0 flex-col" style:width={getLayoutMode() !== 'narrow' ? `${listWidth}px` : undefined} style:max-width={getLayoutMode() === 'medium' ? '45%' : undefined} class:flex-1={getLayoutMode() === 'narrow'} style:display={contextPaneVisible ? 'flex' : 'none'} onmouseenter={revealContextPane} onmouseleave={scheduleContextPaneHide} role="presentation">
       <div class="flex flex-1 min-h-0 min-w-0">
     <!-- Sidebar (Folder List) -->
     <aside
@@ -2743,9 +2744,9 @@
         onActionComplete={(autoSelectNext) => messageListRef?.handleActionComplete(autoSelectNext)}
         isFocused={activeMailWorkspace === 'primary' && getFocusedPane() === 'viewer'}
         isFlashing={isPaneFlashing('viewer')}
-        showBackButton={isResponsive()}
+        showBackButton={getLayoutMode() === 'narrow'}
         onBack={() => { focusMode = 'off'; focusedMessageIdInFocus = null; hideViewer() }}
-        isViewerVisible={activeMailWorkspace === 'primary' && getActiveExtension() === 'mail' && (focusMode !== 'off' || !isResponsive() || getResponsiveView() === 'viewer')}
+        isViewerVisible={activeMailWorkspace === 'primary' && getActiveExtension() === 'mail' && (focusMode !== 'off' || getLayoutMode() !== 'narrow' || getResponsiveView() === 'viewer')}
         deferMarkAsReadUntilLeave={triageStatus === 'unread' || (selectedFolderType === 'virtual' && virtualFoldersStore.folders.find(item => item.id === selectedFolderId)?.readStatus === 'unread')}
         inFocusMode={focusMode !== 'off'}
         focusModeKind={focusMode === 'off' ? null : focusMode}

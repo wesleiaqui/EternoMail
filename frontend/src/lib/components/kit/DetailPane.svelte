@@ -12,8 +12,8 @@
   // store directly so consumers (extension panes) never forward responsive
   // props. At medium (≤1024px) and narrow (≤767px) the detail pane renders
   // as an overlay AND a back-arrow button is injected at the start of the
-  // header (calls hideViewer to return to the list). Matches mail's
-  // ConversationViewer pattern at App.svelte:1488 1-for-1.
+  // header (calls hideViewer to return to the list). Mail instead keeps
+  // its index beside the reader at medium widths; this kit stays overlaid.
   import { isResponsive, getResponsiveView, hideViewer } from '$lib/stores/layout.svelte'
 
   interface Props {
@@ -50,8 +50,7 @@
 
 <section class="flex-1 min-w-0 flex flex-col bg-background {flashing ? 'pane-focus-flash' : ''} {overlay ? 'responsive-viewer-overlay' : ''} {overlay && visible ? 'responsive-viewer-visible' : ''}">
   <!--
-    Header rendering rules — matched 1-for-1 with mail's ConversationViewer
-    pattern at App.svelte:1488 (showBackButton={isResponsive()}):
+    Header rendering rules for extension detail overlays:
 
       - Full (>1024px): render header bar ONLY when the consumer provided a
         `header` snippet AND we're not in the empty state. No back button.

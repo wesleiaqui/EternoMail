@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep the message index visible beside opened mail in desktop windows, including 768-1024px tiled windows and with context auto-hide enabled. Phone drill-down and explicit focus mode are unchanged.
+
 - Send Later can repeat (every N days, weeks or months; never, after N sends or until a date) and has a mailing-list mode that puts you in To and everyone else in one identical Cc or Bcc message. The Studio queues each run only after the previous one was accepted by the provider; a failed or uncertain run stops the series, missed runs are skipped, and every run gets its own Message-ID and Date. No unsubscribe link, per-recipient copies or merge fields. Go tests pass; the desktop app package and native Studio delivery were not compiled or run here.
 
 - Clearly label paused Undo Send recovery with a persistent action-needed message in Finnish and English.
