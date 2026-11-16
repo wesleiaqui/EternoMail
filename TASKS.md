@@ -523,6 +523,12 @@ README review follow-up: qualify checksum instructions because tagged releases d
 | REMOTE-CRYPTO-DESIGN-001 | Large | Define S/MIME/PGP parity custody and retry boundaries before removing remote crypto gates. | Instinct / `agent/REMOTE-CRYPTO-DESIGN-001` / `/tmp/pl-remote-crypto` | Design for review; docs-only verification: `git diff --check` passed; implementation `71525a3c`; no behavior change. Proposed device-local crypto avoids automatic private-key export. Custody decided 2026-11-13: device-local by default, helper-held keys only as an explicit opt-in with a security warning (later slice). Implementation and native acceptance remain open. See `docs/plans/2026-11-13-remote-crypto-parity.md`. |
 | SEND-LATER-REPEAT-001 | Medium | Owner request: Send Later can repeat (day/week/month; never, N sends or until a date) and offers mailing-list mode (To = sender, others in one identical Cc or Bcc message). No saved lists, per-recipient copies, merge fields or unsubscribe tooling. | Instinct / `feat/recurring-send-later` / `/tmp/pkd` | Review; PR opened. `go test ./internal/scheduledsend/` and frontend tests pass locally; the `app` package and native Studio delivery were not compiled or run here. No merge. |
 
+## Draft build shell compatibility (2026-11-15)
+
+| ID | Effort | Task | Owner | Status |
+| --- | --- | --- | --- | --- |
+| DRAFT-SOURCE-GUARD-001 | Small | Reject malformed main SHA under macOS Bash 3.2 as well as modern Bash. | Instinct / `agent/draft-source-guard` / `/tmp/posti-source-guard` | Review; explicit malformed-SHA rejection fixes the Bash 3.2 errexit gap. Red test reproduced on compiled GNU Bash 3.2; all 1,061 frontend tests now pass with Bash 3.2, and the workflow tests pass with Bash 5.1. Native macOS packaging and Studio/client installation acceptance remain unverified. Execution status removed from ROADMAP.md per AGENTS.md; no product scope/priority change. |
+
 ## Attachment refetch idempotency (2026-11-16)
 
 | ID | Effort | Task | Owner | Status |

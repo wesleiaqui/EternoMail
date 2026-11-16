@@ -49,12 +49,13 @@ test('actual source guard accepts latest main and rejects stale SHA, invalid SHA
     const script = step('Resolve latest merged main').run
     assert.equal(step('Resolve latest merged main').env.EXPECTED_SHA, '${{ inputs.source_sha }}')
     assert.equal(step('Resolve latest merged main').env.REQUESTED_ARCH, '${{ inputs.architecture }}')
-    for (const [expected, main, arch, success] of [['', sha, 'arm64', true], [sha, sha, 'arm64', true], ['b'.repeat(40), sha, 'arm64', false], ['', 'bad-sha', 'arm64', false], ['', sha, 'amd64', false]]) {
+    for (const [expected, main, arch, success] of [['', sha, 'arm64', true], [sha, sha, 'arm64', true], ['b'.repeat(40), sha, 'arm64', false], ['', 'bad-sha', 'arm64', false], ['', '', 'arm64', false], ['', 'a'.repeat(39), 'arm64', false], ['', 'a'.repeat(41), 'arm64', false], ['', 'g'.repeat(40), 'arm64', false], ['', `${sha}\n${sha}`, 'arm64', false], ['', sha, 'amd64', false]]) {
       const out = path.join(temp, 'out')
       writeFileSync(out, '')
       const result = spawnSync('bash', ['-c', script], { encoding: 'utf8', env: { ...process.env, PATH: `${temp}:${process.env.PATH}`, EXPECTED_SHA: expected, MOCK_MAIN: main, REQUESTED_ARCH: arch, GH_REPO: 'owner/repo', GITHUB_OUTPUT: out, GITHUB_ENV: out } })
       assert.equal(result.status === 0, success, `${expected}/${main}/${arch}: ${result.stderr}`)
       if (success) assert.match(readFileSync(out, 'utf8'), new RegExp(`BUILD_SHA=${sha}`))
+      if (!success) assert.equal(readFileSync(out, 'utf8'), '', 'rejected source must not be exported')
     }
   } finally { rmSync(temp, { recursive: true, force: true }) }
 })

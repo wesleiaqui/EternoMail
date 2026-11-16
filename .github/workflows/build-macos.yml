@@ -162,7 +162,11 @@ jobs:
           set -euo pipefail
           test "$REQUESTED_ARCH" = arm64
           SHA=$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)
-          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          # macOS Bash 3.2 does not apply errexit to a standalone [[ ... ]].
+          if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'GitHub returned an invalid main SHA; refusing to build.' >&2
+            exit 1
+          fi
           if [[ -n "$EXPECTED_SHA" && "$EXPECTED_SHA" != "$SHA" ]]; then
             echo 'Main changed after dispatch; request a fresh build.' >&2
             exit 1
