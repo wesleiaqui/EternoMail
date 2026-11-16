@@ -1,0 +1,905 @@
+[
+  {
+    "label": "File",
+    "children": [
+      {
+        "label": "New Message",
+        "id": "app.compose",
+        "key": "⌘N"
+      },
+      {
+        "label": "New Event…",
+        "id": "calendar.new",
+        "key": "⌘N"
+      },
+      {
+        "label": "New Contact…",
+        "id": "contacts.new",
+        "key": "⌘N"
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Send",
+        "id": "composer.send",
+        "key": "⌘↩"
+      },
+      {
+        "label": "Send Later…",
+        "id": "composer.sendLater"
+      },
+      {
+        "label": "Scheduled Messages",
+        "id": "view.scheduled"
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Attach Files…",
+        "id": "composer.attach",
+        "key": "⌥A"
+      },
+      {
+        "label": "Attachments",
+        "children": [
+          {
+            "label": "Open Selected Attachment",
+            "id": "attachment.open"
+          },
+          {
+            "label": "Save Selected Attachment…",
+            "id": "attachment.save"
+          },
+          {
+            "label": "Save All Attachments…",
+            "id": "attachment.saveAll"
+          },
+          {
+            "label": "Remove Selected Attachment",
+            "id": "attachment.remove"
+          }
+        ]
+      },
+      {
+        "label": "Print…",
+        "id": "viewer.print"
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Detach Composer",
+        "id": "composer.detach",
+        "key": "⌘⇧D"
+      },
+      {
+        "label": "Close Tab / Composer",
+        "id": "app.close",
+        "key": "⌘W"
+      },
+      {
+        "label": "New Mail Window…",
+        "id": "window.new",
+        "key": "⌘⇧N"
+      }
+    ]
+  },
+  {
+    "label": "Edit",
+    "children": [
+      {
+        "label": "Undo",
+        "id": "edit.undo",
+        "key": "⌘Z"
+      },
+      {
+        "label": "Redo",
+        "id": "composer.redo",
+        "key": "⌘⇧Z"
+      },
+      {
+        "label": "Undo History…",
+        "id": "edit.history"
+      },
+      {
+        "label": "Draft History…",
+        "id": "composer.history"
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Cut",
+        "id": "edit.cut",
+        "key": "⌘X"
+      },
+      {
+        "label": "Copy",
+        "id": "edit.copy",
+        "key": "⌘C"
+      },
+      {
+        "label": "Paste",
+        "id": "edit.paste",
+        "key": "⌘V"
+      },
+      {
+        "label": "Select All",
+        "id": "edit.selectAll",
+        "key": "⌘A"
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Search…",
+        "id": "app.search",
+        "key": "⌘F"
+      }
+    ]
+  },
+  {
+    "label": "View",
+    "children": [
+      {
+        "label": "Mail",
+        "id": "view.mail"
+      },
+      {
+        "label": "Calendar",
+        "id": "view.calendar"
+      },
+      {
+        "label": "Contacts",
+        "id": "view.contacts"
+      },
+      {
+        "label": "Scheduled Messages",
+        "id": "view.scheduled"
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Folder Tree / Message List",
+        "id": "app.folders",
+        "key": "⌘D"
+      },
+      {
+        "label": "Conversation Focus",
+        "id": "viewer.focus",
+        "key": "⇧F"
+      },
+      {
+        "label": "Expand All Messages",
+        "id": "viewer.expand"
+      },
+      {
+        "label": "Collapse All Messages",
+        "id": "viewer.collapse"
+      },
+      {
+        "label": "Reader Mode",
+        "id": "viewer.readerMode"
+      },
+      {
+        "label": "Toggle Message Light / Dark",
+        "id": "viewer.messageTheme"
+      },
+      {
+        "label": "Toggle App Light / Dark",
+        "id": "theme.toggle"
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Filter",
+        "children": [
+          {
+            "label": "All Messages",
+            "id": "filter.all",
+            "key": "⌘⌥1"
+          },
+          {
+            "label": "Unread",
+            "id": "filter.unread",
+            "key": "⌘⌥2"
+          },
+          {
+            "label": "Reply Later",
+            "id": "filter.replyLater",
+            "key": "⌘⌥3"
+          },
+          {
+            "label": "Read Later",
+            "id": "filter.readLater",
+            "key": "⌘⌥4"
+          },
+          {
+            "label": "More Filters…",
+            "id": "list.filters"
+          }
+        ]
+      },
+      {
+        "label": "Sort Newest / Oldest",
+        "id": "list.sort"
+      },
+      {
+        "label": "Inbox Display…",
+        "id": "list.group"
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Calendar Layout",
+        "children": [
+          {
+            "label": "Month",
+            "id": "calendar.month",
+            "key": "⌥M"
+          },
+          {
+            "label": "Week",
+            "id": "calendar.week",
+            "key": "⌥W"
+          },
+          {
+            "label": "Day",
+            "id": "calendar.day",
+            "key": "⌥D"
+          },
+          {
+            "label": "Agenda",
+            "id": "calendar.agenda",
+            "key": "⌥A"
+          },
+          {
+            "label": "Event Focus",
+            "id": "calendar.focus",
+            "key": "F"
+          }
+        ]
+      },
+      {
+        "label": "Command Palette…",
+        "id": "app.palette",
+        "key": "⌘K"
+      }
+    ]
+  },
+  {
+    "label": "Message",
+    "children": [
+      {
+        "label": "Reply",
+        "id": "mail.reply",
+        "key": "⌘R"
+      },
+      {
+        "label": "Reply All",
+        "id": "mail.replyAll",
+        "key": "⌘⇧R"
+      },
+      {
+        "label": "Forward",
+        "id": "mail.forward",
+        "key": "⌘L"
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Archive",
+        "id": "mail.archive"
+      },
+      {
+        "label": "Archive and Mark Read",
+        "id": "mail.archiveAndMarkRead",
+        "key": "⌘E"
+      },
+      {
+        "label": "Read Later",
+        "id": "mail.readLater",
+        "key": "⌘U"
+      },
+      {
+        "label": "Reply Later",
+        "id": "mail.replyLater",
+        "key": "⌘I"
+      },
+      {
+        "label": "Snooze…",
+        "id": "mail.snooze",
+        "key": "H"
+      },
+      {
+        "label": "Unsnooze",
+        "id": "mail.unsnooze"
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Mark as Read",
+        "id": "mail.markRead",
+        "key": "⇧I"
+      },
+      {
+        "label": "Mark as Unread",
+        "id": "mail.markUnread",
+        "key": "⌘⇧U"
+      },
+      {
+        "label": "Toggle Read / Unread",
+        "id": "mail.toggleRead",
+        "key": "M"
+      },
+      {
+        "label": "Star / Unstar",
+        "id": "mail.star",
+        "key": "S"
+      },
+      {
+        "label": "Spam / Not Spam",
+        "id": "mail.spam",
+        "key": "⌘J"
+      },
+      {
+        "label": "Move to Trash",
+        "id": "mail.trash",
+        "key": "⌫"
+      },
+      {
+        "label": "Delete Permanently…",
+        "id": "mail.deletePermanently",
+        "key": "⇧⌫"
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Move to Inbox",
+        "id": "mail.inbox"
+      },
+      {
+        "label": "Move to Folder…",
+        "id": "mail.moveTo",
+        "key": "⌥M"
+      },
+      {
+        "label": "Copy to Folder…",
+        "id": "mail.copyTo",
+        "key": "⌥C"
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Load Remote Images",
+        "id": "viewer.loadImages",
+        "key": "⌘⌥L"
+      },
+      {
+        "label": "Always Load Images From…",
+        "id": "viewer.alwaysLoadImages",
+        "key": "⌘⇧⌥L"
+      },
+      {
+        "label": "Message Details",
+        "id": "viewer.details"
+      },
+      {
+        "label": "View Source",
+        "id": "viewer.source"
+      },
+      {
+        "label": "Copy Source",
+        "id": "viewer.copySource"
+      },
+      {
+        "label": "Copy Email Address",
+        "id": "viewer.copyAddress"
+      },
+      {
+        "label": "Edit Draft",
+        "id": "viewer.editDraft"
+      },
+      {
+        "label": "Add to Calendar…",
+        "id": "viewer.addToCalendar"
+      },
+      {
+        "label": "Send Read Receipt",
+        "id": "viewer.receipt"
+      },
+      {
+        "label": "Ignore Read Receipt",
+        "id": "viewer.ignoreReceipt"
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Event",
+        "children": [
+          {
+            "label": "New Event…",
+            "id": "calendar.new",
+            "key": "⌘N"
+          },
+          {
+            "label": "Edit Event…",
+            "id": "calendar.edit"
+          },
+          {
+            "label": "Delete Event…",
+            "id": "calendar.delete"
+          },
+          {
+            "label": "Find a Time…",
+            "id": "calendar.findTime"
+          },
+          {
+            "label": "Invitation Response",
+            "children": [
+              {
+                "label": "Accept",
+                "id": "calendar.accept"
+              },
+              {
+                "label": "Maybe",
+                "id": "calendar.tentative"
+              },
+              {
+                "label": "Decline",
+                "id": "calendar.decline"
+              }
+            ]
+          },
+          {
+            "label": "Calendar Visibility and Sources…",
+            "id": "calendar.settings"
+          }
+        ]
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Contact",
+        "children": [
+          {
+            "label": "New Contact…",
+            "id": "contacts.new",
+            "key": "⌘N"
+          },
+          {
+            "label": "Edit Contact…",
+            "id": "contacts.edit",
+            "key": "E"
+          },
+          {
+            "label": "Delete Contact…",
+            "id": "contacts.delete",
+            "key": "⌫"
+          },
+          {
+            "label": "Sync All Sources",
+            "id": "contacts.syncAll",
+            "key": "⌘⇧A"
+          },
+          {
+            "label": "Sync Selected Source",
+            "id": "contacts.syncFocused",
+            "key": "⌘⇧S"
+          },
+          {
+            "label": "Sources and Write Access…",
+            "id": "contacts.settings"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Mailbox",
+    "children": [
+      {
+        "label": "Sync All Accounts / Cancel",
+        "id": "app.syncAll",
+        "key": "⌘⇧A"
+      },
+      {
+        "label": "Sync Current Folder / Cancel",
+        "id": "app.syncFolder",
+        "key": "⌘⇧S"
+      },
+      {
+        "label": "Refresh Search / Virtual Folder",
+        "id": "list.refresh"
+      },
+      {
+        "label": "Save Search as Folder…",
+        "id": "list.saveSearch"
+      },
+      {
+        "label": "Add Virtual Folder…",
+        "id": "folder.addVirtual"
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Mark All as Read",
+        "id": "folder.read"
+      },
+      {
+        "label": "Mark All as Unread",
+        "id": "folder.unread"
+      },
+      {
+        "label": "Pin / Unpin Folder",
+        "id": "folder.pin"
+      },
+      {
+        "label": "Download Content Automatically",
+        "id": "folder.download"
+      },
+      {
+        "label": "Use Default Download Policy",
+        "id": "folder.defaultDownload"
+      },
+      {
+        "label": "Empty Trash…",
+        "id": "folder.emptyTrash"
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Accounts and Settings…",
+        "id": "app.preferences",
+        "key": "⌘,"
+      },
+      {
+        "label": "Calendar Sources…",
+        "id": "calendar.settings"
+      },
+      {
+        "label": "Contact Sources…",
+        "id": "contacts.settings"
+      },
+      {
+        "label": "Scheduled Delivery",
+        "children": [
+          {
+            "label": "Connection…",
+            "id": "scheduled.connection"
+          },
+          {
+            "label": "Refresh Selected",
+            "id": "scheduled.refresh"
+          },
+          {
+            "label": "Retry Selected",
+            "id": "scheduled.retry"
+          },
+          {
+            "label": "Reschedule Selected…",
+            "id": "scheduled.reschedule"
+          },
+          {
+            "label": "Cancel Selected Delivery…",
+            "id": "scheduled.cancel"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Format",
+    "children": [
+      {
+        "label": "Bold",
+        "id": "format.bold",
+        "key": "⌘B"
+      },
+      {
+        "label": "Italic",
+        "id": "format.italic",
+        "key": "⌘I"
+      },
+      {
+        "label": "Underline",
+        "id": "format.underline",
+        "key": "⌘U"
+      },
+      {
+        "label": "Strikethrough",
+        "id": "format.strike"
+      },
+      {
+        "label": "Text Color…",
+        "id": "format.color"
+      },
+      {
+        "label": "Font Size…",
+        "id": "format.size"
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Align Left",
+        "id": "format.left"
+      },
+      {
+        "label": "Align Center",
+        "id": "format.center"
+      },
+      {
+        "label": "Align Right",
+        "id": "format.right"
+      },
+      {
+        "label": "Bullet List",
+        "id": "format.bullets"
+      },
+      {
+        "label": "Numbered List",
+        "id": "format.numbers"
+      },
+      {
+        "label": "Quote",
+        "id": "format.quote"
+      },
+      {
+        "label": "Insert Link…",
+        "id": "format.link"
+      },
+      {
+        "label": "Insert Image…",
+        "id": "format.image"
+      },
+      {
+        "label": "Rich / Plain Text",
+        "id": "format.mode"
+      },
+      {
+        "label": "Formatting Toolbar",
+        "id": "composer.toolbar",
+        "key": "⌥T"
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Show Cc",
+        "id": "composer.cc"
+      },
+      {
+        "label": "Show Bcc",
+        "id": "composer.bcc"
+      },
+      {
+        "label": "Quick Replies…",
+        "id": "composer.quickReplies"
+      },
+      {
+        "label": "Sending Identity…",
+        "id": "composer.identity"
+      },
+      {
+        "label": "Request Read Receipt",
+        "id": "composer.receipt"
+      },
+      {
+        "label": "Security",
+        "children": [
+          {
+            "label": "PGP Sign",
+            "id": "composer.pgpSign"
+          },
+          {
+            "label": "PGP Encrypt",
+            "id": "composer.pgpEncrypt"
+          },
+          {
+            "label": "S/MIME Sign",
+            "id": "composer.smimeSign"
+          },
+          {
+            "label": "S/MIME Encrypt",
+            "id": "composer.smimeEncrypt"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "label": "Go",
+    "children": [
+      {
+        "label": "Back",
+        "id": "nav.back",
+        "key": "⌘←"
+      },
+      {
+        "label": "Forward",
+        "id": "nav.forward",
+        "key": "⌘→"
+      },
+      {
+        "label": "Next Message",
+        "id": "nav.next",
+        "key": "⌘⇧]"
+      },
+      {
+        "label": "Previous Message",
+        "id": "nav.prev",
+        "key": "⌘⇧["
+      },
+      {
+        "label": "First Item",
+        "id": "nav.first",
+        "key": "G"
+      },
+      {
+        "label": "Last Item",
+        "id": "nav.last",
+        "key": "⇧G"
+      },
+      {
+        "label": "Open Item",
+        "id": "nav.open",
+        "key": "↩"
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Next Pane",
+        "id": "nav.paneNext",
+        "key": "⌥→"
+      },
+      {
+        "label": "Previous Pane",
+        "id": "nav.panePrev",
+        "key": "⌥←"
+      },
+      {
+        "label": "Next Folder",
+        "id": "nav.folderNext",
+        "key": "⌥↓"
+      },
+      {
+        "label": "Previous Folder",
+        "id": "nav.folderPrev",
+        "key": "⌥↑"
+      },
+      {
+        "label": "Previous Account",
+        "id": "nav.accountPrev",
+        "key": "⌘⌥←"
+      },
+      {
+        "label": "Next Account",
+        "id": "nav.accountNext",
+        "key": "⌘⌥→"
+      },
+      {
+        "label": "Next View",
+        "id": "nav.nextView",
+        "key": "⌃⇥"
+      },
+      {
+        "label": "Previous View",
+        "id": "nav.prevView",
+        "key": "⌃`"
+      },
+      {
+        "label": "-"
+      },
+      {
+        "label": "Calendar Today",
+        "id": "calendar.today",
+        "key": "T"
+      },
+      {
+        "label": "Previous Calendar Period",
+        "id": "calendar.prev",
+        "key": "←"
+      },
+      {
+        "label": "Next Calendar Period",
+        "id": "calendar.next",
+        "key": "→"
+      },
+      {
+        "label": "First Folder",
+        "id": "nav.folderFirst",
+        "key": "⌥G"
+      },
+      {
+        "label": "Last Folder",
+        "id": "nav.folderLast",
+        "key": "⌥⇧G"
+      },
+      {
+        "label": "Expand / Collapse Account",
+        "id": "nav.toggleAccount",
+        "key": "⌥↩"
+      },
+      {
+        "label": "Folder Actions…",
+        "id": "nav.folderMenu"
+      },
+      {
+        "label": "Message Actions…",
+        "id": "nav.messageMenu"
+      },
+      {
+        "label": "Next Item and Check",
+        "id": "nav.nextCheck",
+        "key": "⇧↓"
+      },
+      {
+        "label": "Previous Item and Check",
+        "id": "nav.prevCheck",
+        "key": "⇧↑"
+      },
+      {
+        "label": "Check / Uncheck Item",
+        "id": "nav.toggleCheck",
+        "key": "Space"
+      },
+      {
+        "label": "Check / Uncheck All Messages",
+        "id": "nav.checkAll",
+        "key": "⌘A"
+      },
+      {
+        "label": "Back to Message List",
+        "id": "nav.escape",
+        "key": "Esc"
+      },
+      {
+        "label": "Scroll Message Up",
+        "id": "viewer.scrollUp",
+        "key": "K"
+      },
+      {
+        "label": "Scroll Message Down",
+        "id": "viewer.scrollDown",
+        "key": "J"
+      }
+    ]
+  },
+  {
+    "label": "Window"
+  },
+  {
+    "label": "Help",
+    "children": [
+      {
+        "label": "Keyboard Shortcuts…",
+        "id": "app.shortcuts",
+        "key": "⌘/"
+      },
+      {
+        "label": "Command Palette…",
+        "id": "app.palette",
+        "key": "⌘K"
+      },
+      {
+        "label": "What's New…",
+        "id": "app.whatsNew"
+      }
+    ]
+  }
+]

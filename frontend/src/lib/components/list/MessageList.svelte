@@ -2840,7 +2840,7 @@
   }
 </script>
 
-<div class="spark-message-list relative flex flex-col h-full {isFlashing ? 'pane-focus-flash' : ''}">
+<div data-native-context={JSON.stringify([accountId,folderId,selectedThreadId,[...checkedThreadIds]])} class="spark-message-list relative flex flex-col h-full {isFlashing ? 'pane-focus-flash' : ''}">
   <!-- Header -->
   <div class="spark-list-header flex items-center justify-between px-4 py-3 border-b border-border">
     <div class="flex items-center gap-2">
@@ -2886,7 +2886,7 @@
           {#if searchQuery.trim()}
             <button
               class="p-0.5 hover:bg-muted-foreground/20 rounded"
-              title="Refresh search"
+              data-native-action="list.refresh" title="Refresh search"
               aria-label="Refresh search"
               onclick={refreshActiveSearch}
               disabled={isSearching || isServerSearching}
@@ -2897,7 +2897,7 @@
           {#if searchQuery.trim() && !isVirtualFolderView}
             <button
               class="p-0.5 hover:bg-muted-foreground/20 rounded"
-              title={$_('search.saveAsVirtualFolder')}
+              data-native-action="list.saveSearch" title={$_('search.saveAsVirtualFolder')}
               aria-label={$_('search.saveAsVirtualFolder')}
               onclick={() => virtualFoldersStore.requestSaveSearch(searchQuery.trim(), isUnifiedView ? null : folderId)}
             >
@@ -2914,7 +2914,7 @@
             class="group -ml-2 rounded-lg px-2 py-1 text-left transition-colors hover:bg-muted/70"
             onclick={() => (showInboxDisplayPicker = true)}
             aria-haspopup="dialog"
-            aria-label={$_('inbox.chooseDisplay')}
+            data-native-action="list.group" aria-label={$_('inbox.chooseDisplay')}
           >
             <span class="flex items-center gap-1 text-base font-semibold text-foreground whitespace-nowrap">
               {$_('sidebar.inbox')}
@@ -2936,7 +2936,7 @@
       {#if isVirtualFolderView && !isSearchMode}
         <button
           class="p-2 rounded-md hover:bg-muted transition-colors disabled:opacity-50"
-          title={$_('messageList.refreshVirtualFolder')}
+          data-native-action="list.refresh" title={$_('messageList.refreshVirtualFolder')}
           aria-label={$_('messageList.refreshVirtualFolder')}
           aria-busy={manualSyncing}
           disabled={manualSyncing || loading}
@@ -3017,7 +3017,7 @@
       <DropdownMenu.Root>
         <DropdownMenu.Trigger
           class="p-2 rounded-md hover:bg-muted transition-colors {filterMode ? 'bg-muted' : ''}"
-          title={$_('messageList.filter')}
+          data-native-action="list.filters" title={$_('messageList.filter')}
           aria-label={filterMode ? `${$_('messageList.filter')}: ${filterLabel}` : $_('messageList.filter')}
         >
           <Icon
@@ -3056,7 +3056,7 @@
       {/if}
       <button
         class="p-2 rounded-md hover:bg-muted transition-colors"
-        title={getMessageListSortOrder() === 'newest' ? $_('messageList.showingNewest') : $_('messageList.showingOldest')}
+        data-native-action="list.sort" title={getMessageListSortOrder() === 'newest' ? $_('messageList.showingNewest') : $_('messageList.showingOldest')}
         aria-label={getMessageListSortOrder() === 'newest' ? $_('messageList.showingNewest') : $_('messageList.showingOldest')}
         onclick={toggleSortOrder}
       >
@@ -3217,7 +3217,7 @@
         size="sm"
         variant="outline"
         class="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/50 bg-muted/50"
-        onclick={() => { showEmptyTrashConfirm = true }}
+        data-native-action="folder.emptyTrash" onclick={() => { showEmptyTrashConfirm = true }}
       >
         <Icon icon="mdi:delete-sweep-outline" class="w-4 h-4 mr-1.5" />
         {$_('messageList.emptyTrash')}

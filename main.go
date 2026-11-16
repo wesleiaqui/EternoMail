@@ -12,11 +12,10 @@ import (
 	"strings"
 
 	"github.com/hkdb/aerion/app"
+	"github.com/hkdb/aerion/internal/nativemenu"
 	"github.com/hkdb/aerion/internal/platform"
 	"github.com/hkdb/aerion/internal/settings"
 	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/menu"
-	"github.com/wailsapp/wails/v2/pkg/menu/keys"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/linux"
@@ -147,24 +146,8 @@ func runMainMode(mailtoData *app.MailtoData, rawMailtoArg string) {
 	application.SingleInstanceLock = lock
 	application.WindowDecorationStatus = platform.NewWindowDecorationStatus(preference, effectiveMode, capabilities)
 
-	editMenu := menu.NewMenuFromItems(
-		menu.Text("Undo", nil, func(*menu.CallbackData) { application.RequestUndoFromMenu() }),
-		menu.Separator(),
-		menu.Text("Undo History…", nil, func(*menu.CallbackData) { application.RequestUndoHistoryFromMenu() }),
-		menu.Separator(),
-		menu.Text("Cut", keys.CmdOrCtrl("x"), func(*menu.CallbackData) { application.RunEditMenuCommand("cut") }),
-		menu.Text("Copy", keys.CmdOrCtrl("c"), func(*menu.CallbackData) { application.RunEditMenuCommand("copy") }),
-		menu.Text("Paste", keys.CmdOrCtrl("v"), func(*menu.CallbackData) { application.RunEditMenuCommand("paste") }),
-		menu.Separator(),
-		menu.Text("Select All", keys.CmdOrCtrl("a"), func(*menu.CallbackData) { application.RunEditMenuCommand("selectAll") }),
-	)
-	helpMenu := menu.NewMenuFromItems(
-		menu.Text("What's New…", nil, func(*menu.CallbackData) { application.RequestWhatsNewFromMenu() }),
-	)
-	applicationMenu := menu.NewMenuFromItems(menu.AppMenu(), menu.SubMenu("Edit", editMenu), menu.SubMenu("Help", helpMenu))
-	if effectiveMode == platform.TitleBarModeNative {
-		applicationMenu.Append(menu.WindowMenu())
-	}
+	nativeMenus := nativemenu.New()
+	applicationMenu := nativeMenus.Menu()
 
 	// Store mailto data if provided (will be used after startup)
 	if mailtoData != nil {
@@ -199,7 +182,7 @@ func runMainMode(mailtoData *app.MailtoData, rawMailtoArg string) {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
-		OnStartup:        application.Startup,
+		OnStartup:        func(ctx context.Context) { nativeMenus.Start(ctx); application.Startup(ctx) },
 		OnShutdown:       application.Shutdown,
 		OnBeforeClose:    application.BeforeClose,
 		Bind: []interface{}{
@@ -280,6 +263,7 @@ func runComposerMode() {
 	// Create a custom asset handler that serves composer.html instead of index.html
 	composerAssetHandler := &composerAssetHandler{assets: assets}
 
+	nativeMenus := nativemenu.NewComposer()
 	// Run Wails application for composer window
 	err := wails.Run(&options.App{
 		Title:                    title,
@@ -296,7 +280,8 @@ func runComposerMode() {
 			Handler: composerAssetHandler,
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
-		OnStartup:        composerApp.Startup,
+		Menu:             nativeMenus.Menu(),
+		OnStartup:        func(ctx context.Context) { nativeMenus.Start(ctx); composerApp.Startup(ctx) },
 		OnShutdown:       composerApp.Shutdown,
 		OnBeforeClose:    composerApp.BeforeClose,
 		Bind: []interface{}{
@@ -367,11 +352,13 @@ func runReaderMode() {
 		entry = "/mail-window.html"
 		width = 1280
 	}
+	nativeMenus := nativemenu.New()
 	err := wails.Run(&options.App{
+		Menu:  nativeMenus.Menu(),
 		Title: "Postilaatikko", Width: width, Height: 800, MinWidth: 480, MinHeight: 400,
 		AssetServer:      &assetserver.Options{Handler: &composerAssetHandler{assets: assets, entry: entry}},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
-		OnStartup:        func(ctx context.Context) { app.StartReader(reader, ctx) },
+		OnStartup:        func(ctx context.Context) { nativeMenus.Start(ctx); app.StartReader(reader, ctx) },
 		OnShutdown:       func(context.Context) { app.ShutdownReader(reader) },
 		Bind:             []interface{}{reader},
 		Linux:            &linux.Options{WebviewGpuPolicy: linux.WebviewGpuPolicyOnDemand, ProgramName: "io.github.wesleiaqui.eternomail", Icon: appIcon},

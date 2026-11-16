@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { registerMenuAction } from '$lib/nativeMenu'
   import { onMount, onDestroy, getContext, setContext, untrack, tick } from 'svelte'
   import Icon from '@iconify/svelte'
   import type { Editor } from '@tiptap/core'
@@ -1649,6 +1650,18 @@
     return true
   }
 
+  $effect(() => {
+    const available = () => !sending && !poppingOut
+    const cleanups = [
+      registerMenuAction('composer.toolbar',focusFormattingToolbar,available),
+      registerMenuAction('composer.pgpSign',()=>{pgpSignMessage=!pgpSignMessage;if(pgpSignMessage)signMessage=false},()=>available()&&showPGPSignOption),
+      registerMenuAction('composer.pgpEncrypt',()=>{pgpEncryptMessage=!pgpEncryptMessage;if(pgpEncryptMessage)encryptMessage=false},()=>available()&&showPGPEncryptOption),
+      registerMenuAction('composer.smimeSign',()=>{signMessage=!signMessage;if(signMessage)pgpSignMessage=false},()=>available()&&showSignOption),
+      registerMenuAction('composer.smimeEncrypt',()=>{encryptMessage=!encryptMessage;if(encryptMessage)pgpEncryptMessage=false},()=>available()&&showEncryptOption),
+    ]
+    return ()=>cleanups.forEach(remove=>remove())
+  })
+
   async function handleSend() {
     scheduledDue = null
     scheduledRepeat = { ...NO_REPEAT }
@@ -1978,6 +1991,15 @@
     scheduleDraftSave()
   }
 
+  function focusFormattingToolbar() {
+    if (isCompact && !showFormatting) {
+      showFormatting = true
+      void tick().then(() => toolbarRef?.focus())
+    } else {
+      toolbarRef?.focus()
+    }
+  }
+
   // Keyboard shortcuts
   function handleKeyDown(e: KeyboardEvent) {
     if (showSendLaterDialog || sending || poppingOut) return
@@ -2025,12 +2047,7 @@
     // Alt+T to focus toolbar (hint mode)
     if (e.key === 't' && e.altKey) {
       e.preventDefault()
-      if (isCompact && !showFormatting) {
-        showFormatting = true
-        void tick().then(() => toolbarRef?.focus())
-      } else {
-        toolbarRef?.focus()
-      }
+      focusFormattingToolbar()
     }
     // Alt+A to attach files
     if (e.key === 'a' && e.altKey) {
@@ -2438,7 +2455,7 @@
     <div class="flex items-center gap-2">
       <!-- Branching undo controls -->
       <button
-        onclick={() => void historyUndo()}
+        data-native-action="edit.undo" onclick={() => void historyUndo()}
         disabled={!historyCanUndo}
         class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         title={$_('composer.undo')}
@@ -2447,7 +2464,7 @@
         <Icon icon="mdi:undo" class="w-4 h-4" />
       </button>
       <button
-        onclick={() => void historyRedo()}
+        data-native-action="composer.redo" onclick={() => void historyRedo()}
         disabled={!historyCanRedo}
         class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         title={$_('composer.redo')}
@@ -2456,7 +2473,7 @@
         <Icon icon="mdi:redo" class="w-4 h-4" />
       </button>
       <button
-        onclick={() => void historyTogglePanel()}
+        data-native-action="composer.history" onclick={() => void historyTogglePanel()}
         class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
         title={$_('composer.history')}
         aria-label={$_('composer.history')}
@@ -2467,7 +2484,7 @@
       <!-- Pop-out button (only shown in main window, not detached) -->
       {#if !isDetached && api.openComposerWindow}
         <button
-          onclick={handlePopOut}
+          data-native-action="composer.detach" onclick={handlePopOut}
           disabled={poppingOut || sending}
           class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           title={withShortcut($_('composer.openInNewWindow'), 'composer.detach')}
@@ -2482,7 +2499,7 @@
         </button>
       {/if}
       <button
-        onclick={handleClose}
+        data-native-action="app.close" onclick={handleClose}
         disabled={poppingOut}
         class="{isCompact ? 'p-1.5' : 'px-3 py-1.5 text-sm'} text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors disabled:opacity-50"
         title={withShortcut($_('composer.close'), 'composer.close')}
@@ -2496,12 +2513,12 @@
       </button>
       {#if !isCompact}
         <button
-          onclick={() => showSendLaterDialog = true}
+          data-native-action="composer.sendLater" onclick={() => showSendLaterDialog = true}
           disabled={sending || poppingOut}
           class="px-3 py-1.5 text-sm rounded-md border border-border hover:bg-muted disabled:opacity-50"
         >{$_('sendLater.title')}</button>
         <button
-        onclick={handleSend}
+        data-native-action="composer.send" onclick={handleSend}
         disabled={sending || poppingOut || toRecipients.length === 0}
         title={withShortcut($_('composer.send'), 'composer.send')}
         aria-keyshortcuts={ariaKeyshortcuts('composer.send')}
@@ -2533,7 +2550,7 @@
       <span class="text-sm text-muted-foreground w-16">{$_('composer.from')}:</span>
       <div class="flex-1">
         <Select.Root value={selectedIdentityId} onValueChange={handleIdentityChange}>
-          <Select.Trigger class="h-8 px-0 border-0 bg-transparent shadow-none focus:ring-0">
+          <Select.Trigger data-native-action="composer.identity" class="h-8 px-0 border-0 bg-transparent shadow-none focus:ring-0">
             <Select.Value placeholder={$_('composer.selectIdentity')}>
               {#if selectedIdentityId}
                 {@const identity = identities.find(i => i.id === selectedIdentityId)}
@@ -2589,10 +2606,10 @@
       {#if !showCc || !showBcc}
         <div class="flex items-center gap-1 text-sm text-muted-foreground">
           {#if !showCc}
-            <button onclick={() => showCc = true} class="hover:text-foreground">{$_('composer.cc')}</button>
+            <button data-native-action="composer.cc" onclick={() => showCc = true} class="hover:text-foreground">{$_('composer.cc')}</button>
           {/if}
           {#if !showBcc}
-            <button onclick={() => showBcc = true} class="hover:text-foreground">{$_('composer.bcc')}</button>
+            <button data-native-action="composer.bcc" onclick={() => showBcc = true} class="hover:text-foreground">{$_('composer.bcc')}</button>
           {/if}
         </div>
       {/if}
@@ -2791,7 +2808,7 @@
     <!-- Footer -->
     <div class="flex items-center gap-2 px-4 py-2 border-t border-border text-sm text-muted-foreground {isCompact ? 'compact-footer' : ''}">
       <button
-        onclick={handleAttachFiles}
+        data-native-action="composer.attach" onclick={handleAttachFiles}
         class="{isCompact ? 'p-1.5 rounded-md' : 'flex items-center gap-1'} hover:text-foreground hover:bg-muted transition-colors"
         title={withShortcut($_('composer.attachFiles'), 'composer.attach')}
         aria-keyshortcuts={ariaKeyshortcuts('composer.attach')}
@@ -2826,7 +2843,7 @@
       {#if isCompact}
         <div class="max-w-[180px] min-w-0">
           <Select.Root value={selectedIdentityId} onValueChange={handleIdentityChange}>
-            <Select.Trigger class="h-7 max-w-full px-1 border-0 bg-transparent shadow-none focus:ring-0 text-xs text-muted-foreground">
+            <Select.Trigger data-native-action="composer.identity" class="h-7 max-w-full px-1 border-0 bg-transparent shadow-none focus:ring-0 text-xs text-muted-foreground">
               <Select.Value placeholder={$_('composer.selectIdentity')}>
                 {#if selectedIdentityId}
                   {@const identity = identities.find(i => i.id === selectedIdentityId)}
@@ -2859,7 +2876,7 @@
         <label class="flex items-center gap-1.5 text-xs cursor-pointer hover:text-foreground transition-colors">
           <input
             type="checkbox"
-            bind:checked={requestReadReceipt}
+            data-native-action="composer.receipt" bind:checked={requestReadReceipt}
             class="w-3.5 h-3.5 rounded border-border accent-primary"
           />
           {$_('composer.requestReadReceipt')}
@@ -2867,13 +2884,13 @@
       {/if}
       {#if !isCompact}<span class="text-xs">{$_('composer.ctrlEnterToSend')}</span>{/if}
       {#if isCompact}
-        <button type="button" onclick={() => showSendLaterDialog = true} disabled={sending || poppingOut}
+        <button type="button" data-native-action="composer.sendLater" onclick={() => showSendLaterDialog = true} disabled={sending || poppingOut}
           class="w-9 h-9 shrink-0 inline-flex items-center justify-center rounded-full hover:bg-muted disabled:opacity-50"
           title={$_('sendLater.title')} aria-label={$_('sendLater.title')}>
           <Icon icon="mdi:clock-outline" class="w-4 h-4" />
         </button>
         <button
-          onclick={handleSend}
+          data-native-action="composer.send" onclick={handleSend}
           disabled={sending || poppingOut || toRecipients.length === 0}
           class="w-9 h-9 shrink-0 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           title={`${$_('composer.send')} — ${$_('composer.ctrlEnterToSend')}`}

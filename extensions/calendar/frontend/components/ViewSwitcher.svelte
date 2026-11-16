@@ -126,7 +126,7 @@
       <Button
         size="sm"
         variant="outline"
-        onclick={() => calendarView.requestNewEvent()}
+        data-native-action="calendar.new" onclick={() => calendarView.requestNewEvent()}
       >
         <Icon icon="mdi:plus" class="w-4 h-4 mr-1" />
         {$_('calendar.viewSwitcher.newEvent')}

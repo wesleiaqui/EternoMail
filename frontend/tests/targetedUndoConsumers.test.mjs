@@ -167,7 +167,7 @@ test('remaining explicit row, list, and viewer mutations use the shared guard', 
   assert.match(extractFunction(rowSource, 'handleQuickToggleRead'), /runMessageMutation\(ownMessageIds,/)
   assert.match(extractFunction(messageListSource, 'handleConfirmPermanentDelete'), /runMessageMutation\(messageIds,/)
   assert.match(extractFunction(viewerSource, 'handleStar'), /runMessageMutation\(messageIds,/)
-  assert.match(extractFunction(viewerSource, 'handleMarkRead'), /runMessageMutation\(messageIds,/)
+  assert.match(extractFunction(viewerSource, 'setReadState'), /runMessageMutation\(messageIds,/)
 
   const readOnLeave = extractFunction(viewerSource, 'finalizeReadOnLeave')
   assert.doesNotMatch(readOnLeave, /runMessageMutation\(/)

@@ -21,9 +21,10 @@
 
   interface Props {
     children: Snippet
+    nativeContext?: string
   }
 
-  const { children }: Props = $props()
+  const { children, nativeContext }: Props = $props()
 </script>
 
 <!--
@@ -34,7 +35,7 @@
   hidden sidebar's leftward-translated hit area intercepts rail clicks. Mail
   gets the same clipping for free via App.svelte's outer container.
 -->
-<div class="flex flex-1 min-w-0 h-full relative overflow-hidden">
+<div data-native-context={nativeContext} class="flex flex-1 min-w-0 h-full relative overflow-hidden">
   {@render children()}
 
   {#if getLayoutMode() === 'narrow'}

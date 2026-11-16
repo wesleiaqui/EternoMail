@@ -97,7 +97,7 @@
         </button>
         <button
           class="p-1 rounded hover:bg-muted/40"
-          title={$_('contacts.sidebar.settings')}
+          data-native-action="contacts.settings" title={$_('contacts.sidebar.settings')}
           onclick={() => onOpenSettings?.()}
           type="button"
           aria-label={$_('contacts.sidebar.settings')}

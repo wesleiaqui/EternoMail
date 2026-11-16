@@ -226,7 +226,7 @@
       {#if items.length<=3 && !expanded}
         <div class="attachment-chips flex flex-1 min-w-0 gap-2 overflow-x-auto">
           {#each items as item (item.key)}
-            <div data-native-row tabindex="-1" class="attachment-chip flex min-w-[8rem] flex-1 items-center rounded-md border border-border bg-muted/30">
+            <div data-native-row role="group" tabindex="-1" class="attachment-chip flex min-w-[8rem] flex-1 items-center rounded-md border border-border bg-muted/30">
               <button type="button" onkeydown={(event) => event.stopPropagation()} class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md p-1.5 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 title={item.attachment.filename} aria-label={`${$_('attachment.open')}: ${item.attachment.filename}`} data-native-action="attachment.open" disabled={busy(item)} onclick={()=>openItem(item)}>
                 <Icon icon={busy(item)?'mdi:loading':getFileIcon(item.attachment.contentType)} class="h-4 w-4 shrink-0 text-primary" />

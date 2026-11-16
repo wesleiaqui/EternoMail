@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { registerMenuAction } from '$lib/nativeMenu'
   import { onMount, onDestroy, tick, untrack } from 'svelte'
   import Icon from '@iconify/svelte'
   // @ts-ignore - wailsjs bindings
@@ -49,6 +50,7 @@
   setUnreadRestorer(ids => MarkAsUnread(ids))
 
   interface Props {
+    nativeOwnsMailActions?: boolean
     threadId?: string | null
     folderId?: string | null
     folderType?: string | null
@@ -79,6 +81,7 @@
 
 
   let {
+    nativeOwnsMailActions = false,
     threadId = null,
     folderId = null,
     folderType = null,
@@ -1540,10 +1543,12 @@
   }
 
   async function handleMarkRead() {
+    return setReadState(!conversation?.messages?.every(message=>message.isRead))
+  }
+
+  async function setReadState(read: boolean) {
     if (!conversation?.messages) return
 
-    // Toggle based on current state
-    const allRead = conversation.messages.every(m => m.isRead)
     let messageIds = conversation.messages.map(m => m.id)
 
     try {
@@ -1551,11 +1556,11 @@
       await runMessageMutation(messageIds, async () => {
         // Explicit actions supersede the leave snapshot and remain immediate.
         pendingReadOnLeave.cancel(messageIds)
-        if (allRead) {
+        if (!read) {
           await MarkAsUnread(messageIds)
           toasts.success($_('toast.markedAsUnread'))
         }
-        if (!allRead) {
+        if (read) {
           await MarkAsRead(messageIds)
           toasts.success($_('toast.markedAsRead'))
         }
@@ -1854,6 +1859,22 @@
     handleStar()
   }
 
+  export function requestReadState(read: boolean) {
+    return setReadState(read)
+  }
+
+  export function nativeMailReady() {
+    return isViewerVisible && !!conversation?.messages?.length && !loading && !moveMutationInFlight
+  }
+
+  export function requestTrash() {
+    return handleDelete()
+  }
+
+  export function requestPermanentDelete() {
+    if (conversation?.messages?.length) showDeleteConfirm = true
+  }
+
   export function markRead() {
     handleMarkRead()
   }
@@ -1917,6 +1938,26 @@
     // Dispatch custom event that EmailBody components listen to
     window.dispatchEvent(new CustomEvent('open-always-load-dropdown'))
   }
+
+
+  $effect(() => {
+    const available=()=>nativeOwnsMailActions&&nativeMailReady()&&!document.querySelector('[data-composer-root]')
+    const commands:Record<string,()=>unknown>={
+      'mail.reply':handleReply,'mail.replyAll':handleReplyAll,'mail.forward':handleForward,
+      'mail.archive':handleArchive,'mail.archiveAndMarkRead':handleArchiveAndMarkRead,'mail.trash':requestTrash,
+      'mail.deletePermanently':requestPermanentDelete,'mail.spam':handleSpam,'mail.star':handleStar,
+      'mail.markRead':()=>requestReadState(true),'mail.markUnread':()=>requestReadState(false),
+      'mail.toggleRead':handleMarkRead,'mail.moveTo':()=>toggleFolderPicker('move'),'mail.copyTo':()=>toggleFolderPicker('copy'),
+      'viewer.scrollUp':scrollUp,'viewer.scrollDown':scrollDown,
+    }
+    const removes = [
+      ...Object.entries(commands).map(([id,run])=>registerMenuAction(id,run,available)),
+      registerMenuAction('viewer.loadImages',loadImages,()=>!!conversation && !loading && !!contentContainerRef?.getClientRects().length && !document.querySelector('[data-composer-root]')),
+      registerMenuAction('viewer.alwaysLoadImages',openAlwaysLoadDropdown,()=>!!conversation && !loading && !!contentContainerRef?.getClientRects().length && !document.querySelector('[data-composer-root]')),
+      registerMenuAction('viewer.readerMode',()=>switchReaderMode(readerMode==='conversation'?'traditional':'conversation'),()=>!!conversation && !loading && !!contentContainerRef?.getClientRects().length && !document.querySelector('[data-composer-root]')),
+    ]
+    return ()=>removes.forEach(remove=>remove())
+  })
 
   // Open context menu for the focused (or last) message
   export function openContextMenu() {
@@ -1999,7 +2040,7 @@
 
 </script>
 
-<div class="flex flex-col h-full {isFlashing ? 'pane-focus-flash' : ''}">
+<div data-native-context={JSON.stringify([accountId,folderId,threadId,focusedMessageId,isViewerVisible,nativeOwnsMailActions])} class="flex flex-col h-full {isFlashing ? 'pane-focus-flash' : ''}">
   {#if !threadId}
     <!-- No conversation selected -->
     <div class="flex flex-col items-center justify-center h-full text-muted-foreground">
@@ -2080,7 +2121,7 @@
 
         <div class="w-px h-5 bg-border mx-1"></div>
         {#if isTrashFolder}
-          <button class="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-muted" onclick={handleMoveToInbox} disabled={moveMutationInFlight}>
+          <button class="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-muted" data-native-action="mail.inbox" onclick={handleMoveToInbox} disabled={moveMutationInFlight}>
             <Icon icon="mdi:inbox-arrow-down-outline" class="w-5 h-5" />
             {$_('viewer.moveToInbox')}
           </button>
@@ -2135,16 +2176,16 @@
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
-        <LaterQueueButton accountId={conversation.messages?.[0]?.accountId || accountId || ''} conversationId={threadId || ''} kind="readLater" />
-        <LaterQueueButton accountId={conversation.messages?.[0]?.accountId || accountId || ''} conversationId={threadId || ''} kind="replyLater" />
-        {#if folderType !== 'snoozed'}<SnoozeButton accountId={conversation.messages?.[0]?.accountId || accountId || ''} conversationId={threadId || ''} />{/if}
+        <LaterQueueButton nativeMenu={nativeOwnsMailActions && isFocused} accountId={conversation.messages?.[0]?.accountId || accountId || ''} conversationId={threadId || ''} kind="readLater" />
+        <LaterQueueButton nativeMenu={nativeOwnsMailActions && isFocused} accountId={conversation.messages?.[0]?.accountId || accountId || ''} conversationId={threadId || ''} kind="replyLater" />
+        {#if folderType !== 'snoozed'}<SnoozeButton nativeMenu={nativeOwnsMailActions && isFocused} accountId={conversation.messages?.[0]?.accountId || accountId || ''} conversationId={threadId || ''} />{/if}
         <ReaderModeToggle mode={readerMode} onChange={switchReaderMode} />
         {#if readerMode === 'traditional' && conversation.messages && conversation.messages.length > 1}
           <button
             class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95"
             data-tooltip={$_('viewer.expandAll')}
             aria-label={$_('viewer.expandAll')}
-            onclick={expandAll}
+            data-native-action="viewer.expand" onclick={expandAll}
           >
             <Icon icon="mdi:unfold-more-horizontal" class="w-5 h-5 text-muted-foreground" />
           </button>
@@ -2152,7 +2193,7 @@
             class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95"
             data-tooltip={$_('viewer.collapseAll')}
             aria-label={$_('viewer.collapseAll')}
-            onclick={collapseAll}
+            data-native-action="viewer.collapse" onclick={collapseAll}
           >
             <Icon icon="mdi:unfold-less-horizontal" class="w-5 h-5 text-muted-foreground" />
           </button>
@@ -2161,7 +2202,7 @@
           class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95"
           data-tooltip={withShortcut(inFocusMode && focusModeKind === 'thread' ? $_('viewer.exitFocus') : $_('viewer.focusThread'), 'viewer.threadFocus')}
           aria-label={inFocusMode && focusModeKind === 'thread' ? $_('viewer.exitFocus') : $_('viewer.focusThread')}
-          onclick={onToggleThreadFocus}
+          data-native-action="viewer.focus" onclick={onToggleThreadFocus}
         >
           <Icon icon={inFocusMode && focusModeKind === 'thread' ? 'mdi:fullscreen-exit' : 'mdi:fullscreen'} class="w-5 h-5 text-muted-foreground" />
         </button>
@@ -2169,7 +2210,7 @@
           class="viewer-toolbar-action p-2 rounded-md hover:bg-muted transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95"
           data-tooltip={$_('viewer.print')}
           aria-label={$_('viewer.print')}
-          onclick={handlePrint}
+          data-native-action="viewer.print" onclick={handlePrint}
         >
           <Icon icon="mdi:printer-outline" class="w-5 h-5 text-muted-foreground" />
         </button>
@@ -2192,7 +2233,7 @@
                 class="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-3 py-1 text-sm text-foreground hover:bg-muted transition-colors"
                 data-tooltip={$_('viewer.addToCalendar')}
                 aria-label={`${$_('viewer.addToCalendar')}: ${mention.formatted}`}
-                onclick={() => addToCalendar(mention)}
+                data-native-action="viewer.addToCalendar" onclick={() => addToCalendar(mention)}
               >
                 <Icon icon="mdi:calendar-plus" class="w-4 h-4 text-muted-foreground" />
                 {mention.formatted}
@@ -2218,6 +2259,7 @@
 
               <!-- Wrap each message in its own context menu -->
               <MessageContextMenu
+                nativeActive={isViewerVisible && isFocused && msg.id===(focusedMessageId??getLastMessageId())}
                 messageIds={(msg as any).matched === false ? [] : [msg.id]}
                 accountId={msg.accountId || accountId || ''}
                 conversationId={msg.threadId || threadId || ''}
@@ -2245,7 +2287,7 @@
                   <div
                     class="spark-message-card border rounded-lg overflow-hidden transition-all {readerMode === 'conversation' ? 'conversation-bubble ' + (bubble?.side === 'right' ? 'bubble-right' : 'bubble-left') : ''} {focusedMessageId === msg.id ? 'border-primary ring-2 ring-primary/20' : 'border-border'}"
                     style={readerMode === 'conversation' ? `--bubble-accent: ${bubble?.accent || 'hsl(var(--primary))'}` : undefined}
-                    data-message-id={msg.id}
+                    data-native-row data-message-id={msg.id}
                     tabindex="-1"
                     role="button"
                     aria-expanded={readerMode === 'conversation' || isExpanded}
@@ -2260,14 +2302,14 @@
                   >
                 {#if readerMode === 'conversation'}
                   <div class="bubble-heading flex items-center gap-2 px-4 pt-2 pb-1 text-xs text-muted-foreground">
-                    <LaterQueueButton accountId={msg.accountId || accountId || ''} conversationId={msg.threadId || threadId || ''} kind="readLater" variant="row" />
-                    <LaterQueueButton accountId={msg.accountId || accountId || ''} conversationId={msg.threadId || threadId || ''} kind="replyLater" variant="row" />
-                    <button type="button" class="flex min-w-0 flex-1 items-center justify-between gap-3 text-left" aria-expanded={expandedHeaders.has(msg.id)} title={$_('viewer.messageDetails')} onkeydown={(event) => event.stopPropagation()} onclick={() => toggleHeader(msg.id)}>
+                    <LaterQueueButton nativeMenu={nativeOwnsMailActions && isFocused} accountId={msg.accountId || accountId || ''} conversationId={msg.threadId || threadId || ''} kind="readLater" variant="row" />
+                    <LaterQueueButton nativeMenu={nativeOwnsMailActions && isFocused} accountId={msg.accountId || accountId || ''} conversationId={msg.threadId || threadId || ''} kind="replyLater" variant="row" />
+                    <button type="button" class="flex min-w-0 flex-1 items-center justify-between gap-3 text-left" aria-expanded={expandedHeaders.has(msg.id)} data-native-action="viewer.details" title={$_('viewer.messageDetails')} onkeydown={(event) => event.stopPropagation()} onclick={() => toggleHeader(msg.id)}>
                       <span class="truncate font-medium text-foreground">{bubble?.showSender ? (msg.fromName || msg.fromEmail) : ''}</span>
                       <span class="whitespace-nowrap">{formatDate(msg.date)} <span aria-hidden="true">⌄</span></span>
                     </button>
                     {#if msg.isDraft}
-                      <button type="button" class="inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 text-primary hover:bg-muted" title={$_('viewer.editDraft')} aria-label={$_('viewer.editDraft')} onkeydown={(event) => event.stopPropagation()} onclick={(event) => { event.stopPropagation(); onEditDraft?.(msg.id) }}>
+                      <button type="button" class="inline-flex shrink-0 items-center gap-1 rounded px-2 py-1 text-primary hover:bg-muted" data-native-action="viewer.editDraft" title={$_('viewer.editDraft')} aria-label={$_('viewer.editDraft')} onkeydown={(event) => event.stopPropagation()} onclick={(event) => { event.stopPropagation(); onEditDraft?.(msg.id) }}>
                         <Icon icon="mdi:pencil" class="h-3.5 w-3.5" />{$_('viewer.editDraft')}
                       </button>
                     {/if}
@@ -2304,7 +2346,7 @@
                         role="button"
                         tabindex="0"
                         class="text-sm text-muted-foreground hover:text-primary hover:underline cursor-pointer"
-                        title={$_('viewer.copyEmail')}
+                        data-native-action="viewer.copyAddress" title={$_('viewer.copyEmail')}
                         onclick={(e) => { e.stopPropagation(); copyToClipboard(formatEmailForCopy(msg.fromName, msg.fromEmail), $_('viewer.from')) }}
                         onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); copyToClipboard(formatEmailForCopy(msg.fromName, msg.fromEmail), $_('viewer.from')) }}}
                       >&lt;{msg.fromEmail}&gt;</span>
@@ -2322,7 +2364,7 @@
                           role="button"
                           tabindex="0"
                           class="hover:text-primary hover:underline cursor-pointer text-muted-foreground"
-                          title={$_('viewer.copyEmail')}
+                          data-native-action="viewer.copyAddress" title={$_('viewer.copyEmail')}
                           onclick={(e) => { e.stopPropagation(); copyToClipboard(msg.replyTo!, $_('viewer.replyTo')) }}
                           onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); copyToClipboard(msg.replyTo!, $_('viewer.replyTo')) }}}
                         >{msg.replyTo}</span>
@@ -2338,7 +2380,7 @@
                             role="button"
                             tabindex="0"
                             class="hover:text-primary hover:underline cursor-pointer text-muted-foreground"
-                            title={$_('viewer.copyEmail')}
+                            data-native-action="viewer.copyAddress" title={$_('viewer.copyEmail')}
                             onclick={(e) => { e.stopPropagation(); copyToClipboard(formatEmailForCopy(recipient.name, recipient.email), $_('viewer.to')) }}
                             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); copyToClipboard(formatEmailForCopy(recipient.name, recipient.email), $_('viewer.to')) }}}
                           >{recipient.name || recipient.email}{i < recipients.length - 1 ? ',' : ''}</span>
@@ -2356,7 +2398,7 @@
                               role="button"
                               tabindex="0"
                               class="hover:text-primary hover:underline cursor-pointer text-muted-foreground"
-                              title={$_('viewer.copyEmail')}
+                              data-native-action="viewer.copyAddress" title={$_('viewer.copyEmail')}
                               onclick={(e) => { e.stopPropagation(); copyToClipboard(formatEmailForCopy(recipient.name, recipient.email), $_('viewer.cc')) }}
                               onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); copyToClipboard(formatEmailForCopy(recipient.name, recipient.email), $_('viewer.cc')) }}}
                             >{recipient.name || recipient.email}{i < ccRecipients.length - 1 ? ',' : ''}</span>
@@ -2375,7 +2417,7 @@
                               role="button"
                               tabindex="0"
                               class="hover:text-primary hover:underline cursor-pointer text-muted-foreground"
-                              title={$_('viewer.copyEmail')}
+                              data-native-action="viewer.copyAddress" title={$_('viewer.copyEmail')}
                               onclick={(e) => { e.stopPropagation(); copyToClipboard(formatEmailForCopy(recipient.name, recipient.email), $_('viewer.bcc')) }}
                               onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); copyToClipboard(formatEmailForCopy(recipient.name, recipient.email), $_('viewer.bcc')) }}}
                             >{recipient.name || recipient.email}{i < bccRecipients.length - 1 ? ',' : ''}</span>
@@ -2393,8 +2435,8 @@
                   </div>
 
                   <div class="flex shrink-0 items-center gap-1" role="group" aria-label={$_('shortcuts.group.messageActions')}>
-                    <LaterQueueButton accountId={msg.accountId || accountId || ''} conversationId={msg.threadId || threadId || ''} kind="readLater" />
-                    <LaterQueueButton accountId={msg.accountId || accountId || ''} conversationId={msg.threadId || threadId || ''} kind="replyLater" />
+                    <LaterQueueButton nativeMenu={nativeOwnsMailActions && isFocused} accountId={msg.accountId || accountId || ''} conversationId={msg.threadId || threadId || ''} kind="readLater" />
+                    <LaterQueueButton nativeMenu={nativeOwnsMailActions && isFocused} accountId={msg.accountId || accountId || ''} conversationId={msg.threadId || threadId || ''} kind="replyLater" />
                   </div>
                   <!-- Date, edit button (drafts), and expand icon -->
                   <div class="flex flex-col items-end gap-1 flex-shrink-0">
@@ -2405,7 +2447,7 @@
                       {#if msg.isDraft}
                         <button
                           class="p-1 rounded hover:bg-muted transition-colors"
-                          title={$_('viewer.editDraft')}
+                          data-native-action="viewer.editDraft" title={$_('viewer.editDraft')}
                           onclick={(e) => { e.stopPropagation(); onEditDraft?.(msg.id) }}
                         >
                           <Icon icon="mdi:pencil" class="w-4 h-4 text-muted-foreground" />
@@ -2426,7 +2468,7 @@
                     {#if getDarkMailContent() && getIsDarkActive()}
                       <button
                         class="text-xs leading-none px-1.5 py-0.5 rounded hover:bg-muted transition-colors"
-                        title={shouldDarkenMessage(msg.id) ? $_('viewer.darkMailToLight') : $_('viewer.darkMailToDark')}
+                        data-native-action="viewer.messageTheme" title={shouldDarkenMessage(msg.id) ? $_('viewer.darkMailToLight') : $_('viewer.darkMailToDark')}
                         onclick={(e) => { e.stopPropagation(); toggleDarkMailOverride(msg.id) }}
                       >
                         {shouldDarkenMessage(msg.id) ? '☀️' : '🌛'}
@@ -2449,7 +2491,7 @@
                           </div>
                           <div class="flex items-center gap-2">
                             <button
-                              onclick={() => handleSendReadReceipt(msg.id, msg.accountId)}
+                              data-native-action="viewer.receipt" onclick={() => handleSendReadReceipt(msg.id, msg.accountId)}
                               disabled={sendingReadReceipt.has(msg.id)}
                               class="px-3 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors disabled:opacity-50"
                             >
@@ -2460,7 +2502,7 @@
                               {/if}
                             </button>
                             <button
-                              onclick={() => handleIgnoreReadReceipt(msg.id, msg.accountId)}
+                              data-native-action="viewer.ignoreReceipt" onclick={() => handleIgnoreReadReceipt(msg.id, msg.accountId)}
                               class="px-3 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded transition-colors"
                             >
                               {$_('viewer.ignoreReceipt')}
@@ -2642,7 +2684,7 @@
                       <!-- View Source Button -->
                       <div class="border-t border-border pt-4 mt-4">
                         <button
-                          onclick={() => toggleViewSource(msg.id)}
+                          data-native-action="viewer.source" onclick={() => toggleViewSource(msg.id)}
                           class="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
                         >
                           <Icon icon={viewingSourceMessageId === msg.id ? 'mdi:code-tags' : 'mdi:code-tags'} class="w-4 h-4" />
@@ -2659,7 +2701,7 @@
                             {:else if messageSource}
                               <div class="relative">
                                 <button
-                                  onclick={() => copyToClipboard(messageSource || '', $_('viewer.viewSource'))}
+                                  data-native-action="viewer.copySource" onclick={() => copyToClipboard(messageSource || '', $_('viewer.viewSource'))}
                                   class="absolute top-2 right-2 p-1.5 rounded bg-muted hover:bg-muted/80 transition-colors"
                                   title={$_('viewer.copySource')}
                                 >

@@ -102,7 +102,7 @@
 <DropdownMenu.Root bind:open={menuOpen} onOpenChange={(o) => { if (o) void load() }}>
   <DropdownMenu.Trigger
     class="{compact ? 'p-1.5 rounded-md' : 'flex items-center gap-1'} hover:text-foreground hover:bg-muted transition-colors"
-    title={$_('composer.quickReplies')}
+    data-native-action="composer.quickReplies" title={$_('composer.quickReplies')}
     aria-label={$_('composer.quickReplies')}
   >
     <Icon icon="mdi:message-reply-text-outline" class="w-4 h-4" />

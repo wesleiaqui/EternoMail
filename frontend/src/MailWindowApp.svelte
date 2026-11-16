@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { registerMenuAction } from './lib/nativeMenu'
   import { onMount, untrack } from 'svelte'
   import Icon from '@iconify/svelte'
   import MessageList from './lib/components/list/MessageList.svelte'
@@ -21,7 +22,7 @@
   import { runMessageMutation } from './lib/components/list/mutationInFlight'
   import type { virtualfolder } from '../wailsjs/go/models'
   import { GetAccounts, GetFolders, GetFolderTree, GetMessage, OpenMailWindow, OpenComposerWindow, MarkAsRead, MarkAsUnread, Star, Unstar, MarkAsSpamWithUndo, MarkAsNotSpamWithUndo, ArchiveWithUndo, ArchiveAndMarkReadWithUndo, UndoOperation } from '../wailsjs/go/app/App'
-  import { EventsEmit, WindowSetTitle } from '../wailsjs/runtime/runtime'
+  import { EventsEmit, WindowSetTitle, Quit } from '../wailsjs/runtime/runtime'
 
   // Standalone windows host neither App.svelte nor always a viewer, so the
   // module-level unread restorer may be unset here; without it a legacy
@@ -186,8 +187,8 @@
       list?.handleActionComplete(true)
     }))
   }
-  async function bulkAction(id: string, options?: { permanent?: boolean }) {
-    const ids = list?.getCheckedMessageIds() ?? []
+  async function bulkAction(id: string, options?: { permanent?: boolean }, menuIds?: string[]) {
+    const ids = menuIds ?? list?.getCheckedMessageIds() ?? []
     if (!ids.length) return
     if (id === 'mail.archiveAndMarkRead') { await archiveAndMarkRead(ids); return }
     if (id === 'mail.archive') { await archive(ids); return }
@@ -202,7 +203,7 @@
       return
     }
     if (id === 'mail.star') {
-      const shouldStar = list?.getCheckedHasUnstarred() ?? true
+      const shouldStar = list?.hasCheckedMessages() ? list.getCheckedHasUnstarred() : !list?.isSelectedStarred()
       await run(() => runMessageMutation(ids, async () => {
         if (shouldStar) await Star(ids)
         else await Unstar(ids)
@@ -293,6 +294,28 @@
     if (KEY.LIST_OPEN(event)) { event.preventDefault(); list?.openSelected(); setFocusedPane('viewer'); return }
     if (KEY.LIST_TOGGLE_CHECK(event)) { event.preventDefault(); list?.toggleCheck() }
   }
+  onMount(()=>{
+    const available=()=>active&&!document.querySelector('[data-composer-root]')
+    const listActive=()=>available()&&!readerTab&&getFocusedPane()==='messageList'
+    const commands:Record<string,()=>unknown>={
+      'app.close':Quit,'window.new':newWindow,'app.compose':compose,'app.search':()=>list?.toggleSearchFocus(),
+      'nav.next':()=>list?.selectNext(),'nav.prev':()=>list?.selectPrevious(),'nav.first':()=>list?.selectFirst(),'nav.last':()=>list?.selectLast(),
+      'nav.open':()=>list?.openSelected(),'nav.toggleCheck':()=>list?.toggleCheck(),'nav.checkAll':()=>list?.selectAll(),
+      'nav.nextCheck':()=>list?.selectNextWithCheck(),'nav.prevCheck':()=>list?.selectPreviousWithCheck(),
+      'nav.messageMenu':()=>list?.openContextMenu(),
+    }
+    const removes=Object.entries(commands).map(([id,run])=>registerMenuAction(id,run,()=>id.startsWith('nav.')?listActive():available()&&!embedded))
+    const ids=()=>list?.hasCheckedMessages()?list.getCheckedMessageIds():list?.getSelectedMessageIds()??[]
+    for(const id of ['mail.archive','mail.archiveAndMarkRead','mail.trash','mail.markRead','mail.markUnread','mail.star','mail.spam']) {
+      removes.push(registerMenuAction(id,()=>bulkAction(id,undefined,ids()),()=>listActive()&&ids().length>0))
+    }
+    removes.push(registerMenuAction('mail.deletePermanently',()=>bulkAction('mail.trash',{permanent:true},ids()),()=>listActive()&&ids().length>0))
+    removes.push(registerMenuAction('mail.moveTo',()=>list?.toggleMoveToDialog(),()=>listActive()&&ids().length>0))
+    removes.push(registerMenuAction('mail.copyTo',()=>list?.toggleCopyToDialog(),()=>listActive()&&ids().length>0))
+    removes.push(registerMenuAction('mail.snooze',()=>list?.snoozeSelection(),()=>listActive()&&ids().length>0))
+
+    return ()=>removes.forEach(remove=>remove())
+  })
   onMount(() => {
     setFocusedPane(readerTab ? 'viewer' : 'messageList')
     if (!readerTab) void loadNavigation()
@@ -310,7 +333,7 @@
 </script>
 
 <svelte:window onkeydown={keydown} onfocus={() => { if (active) { refresh(); if (!readerTab) void loadNavigation() } }} />
-<div class="mail-window {embedded ? 'h-full' : 'h-screen'} flex w-full flex-col overflow-hidden bg-background text-foreground">
+<div data-native-context={JSON.stringify([active,windowState.scope,windowState.thread,getFocusedPane()])} class="mail-window {embedded ? 'h-full' : 'h-screen'} flex w-full flex-col overflow-hidden bg-background text-foreground">
   {#if !readerTab}
   <header class="flex items-center gap-2 border-b border-border p-2">
     {#if embedded}
@@ -357,7 +380,7 @@
     <section class="mail-reader flex w-full flex-1 min-w-0 min-h-0" role="presentation" onclick={() => setFocusedPane('viewer')}>
       {#if active && windowState.thread}
         {@const thread = windowState.thread}
-        <ConversationViewer bind:this={viewer} threadId={thread.threadId} folderId={thread.folderId} accountId={thread.accountId} folderType={windowState.scope.folderType}
+        <ConversationViewer nativeOwnsMailActions={active && getFocusedPane()==='viewer'} bind:this={viewer} threadId={thread.threadId} folderId={thread.folderId} accountId={thread.accountId} folderType={windowState.scope.folderType}
           isViewerVisible={active} deferMarkAsReadUntilLeave={deferMarkAsReadUntilLeave} isFocused={active && getFocusedPane() === 'viewer'} showBackButton onBack={closeReader} onReply={reply}
           restoreScrollTop={restoreReaderScrollTop}
           onSaveScrollPosition={(threadId, folderId, accountId, top) => { savedReaderPosition = { key: readerPositionKey({ threadId, folderId, accountId }), top } }}

@@ -1,3 +1,4 @@
+import { installNativeMenu } from './lib/nativeMenu'
 import './app.css'
 import './lib/iconify-offline'
 import { mount } from 'svelte'
@@ -31,6 +32,7 @@ async function bootstrap() {
   const theme = await loadSettings()
   await Promise.all([loadUIState(), loadImageAllowlist()])
   await initTheme(theme, GetSystemTheme)
+  installNativeMenu()
   mount(MailWindowApp, { target: document.getElementById('app')!, props: { config } })
   document.getElementById('boot-status')?.remove()
 }

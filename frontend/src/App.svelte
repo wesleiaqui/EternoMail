@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { registerMenuAction } from './lib/nativeMenu'
   import Icon from '@iconify/svelte'
   import PendingSendToast from './lib/components/common/PendingSendToast.svelte'
   import MailWindowApp from './MailWindowApp.svelte'
@@ -1221,6 +1222,67 @@
     }
   })
 
+
+  onMount(() => {
+    const removers: (() => void)[] = []
+    const noComposer = () => !showComposer && ![...document.querySelectorAll<HTMLElement>('[data-composer-root]')].some(element=>element.getClientRects().length>0)
+    const mail = () => noComposer() && getActiveExtension() === 'mail' && activeMailWorkspace === 'primary'
+    const add = (id: string, run: () => unknown, available = noComposer) => removers.push(registerMenuAction(id, run, available))
+    for (const id of ['app.compose','app.search','app.folders','app.syncAll','app.syncFolder','app.preferences','app.shortcuts','theme.toggle','view.mail','view.calendar','view.contacts'] as const) {
+      add(id, () => executeCommand(id), () => noComposer() && (id==='app.search' ? mail() || !!getPaneNav('messageList')?.focusSearch : id.startsWith('view.') || ['app.preferences','app.shortcuts','theme.toggle'].includes(id) || mail()))
+    }
+    add('view.scheduled', () => setActiveExtension('scheduled'))
+    add('window.new',()=>OpenMailWindow(selectedAccountId || '', selectedFolderId || '', selectedFolderName, selectedFolderType || 'inbox', selectedThreadId || '', selectedConversationAccountId || '', selectedConversationFolderId || '', messageListRef?.getSearchQuery() || ''),mail)
+    add('nav.folderFirst',()=>sidebarRef?.selectFirstFolder(),mail)
+    add('nav.folderLast',()=>sidebarRef?.selectLastFolder(),mail)
+    add('nav.toggleAccount',()=>sidebarRef?.toggleFocusedAccount(),mail)
+    add('nav.folderMenu',()=>openSelectedFolderMenu(),mail)
+    add('nav.messageMenu',()=>getFocusedPane()==='viewer'?viewerRef?.openContextMenu():messageListRef?.openContextMenu(),mail)
+    add('nav.nextCheck',()=>messageListRef?.selectNextWithCheck(),mail)
+    add('nav.prevCheck',()=>messageListRef?.selectPreviousWithCheck(),mail)
+    add('nav.toggleCheck',()=>messageListRef?.toggleCheck(),mail)
+    add('nav.checkAll',()=>messageListRef?.selectAll(),mail)
+    add('nav.escape',()=>KEY_HANDLERS['list.escape'](),()=>mail()&&!!selectedThreadId)
+    add('viewer.scrollUp',()=>viewerRef?.scrollUp(),()=>mail()&&!!selectedThreadId)
+    add('viewer.scrollDown',()=>viewerRef?.scrollDown(),()=>mail()&&!!selectedThreadId)
+
+    add('app.palette', openCommandPalette)
+    add('app.whatsNew', () => { whatsNewHistory = true; showWhatsNewDialog = true })
+    add('edit.undo', handleGlobalUndo, mail)
+    add('edit.history', () => { showUndoHistory = true }, mail)
+    add('app.close', () => closeWorkspaceTab(activeMailWorkspace), () => noComposer() && getActiveExtension()==='mail' && activeMailWorkspace !== 'primary')
+    for (const id of ['mail.archive','mail.archiveAndMarkRead','mail.spam','mail.trash','mail.star','mail.markRead','mail.markUnread','mail.toggleRead','mail.deletePermanently','mail.moveTo','mail.copyTo','mail.readLater','mail.replyLater','mail.snooze','mail.reply','mail.replyAll','mail.forward'] as const) {
+      add(id, () => {
+        if (getFocusedPane()==='viewer' && selectedThreadId && viewerRef) {
+          if (id==='mail.markRead'||id==='mail.markUnread') return viewerRef.requestReadState(id==='mail.markRead')
+          if (id==='mail.deletePermanently') return viewerRef.requestPermanentDelete()
+          if (id==='mail.archive') return viewerRef.archive()
+          if (id==='mail.trash') return viewerRef.requestTrash()
+        }
+        return KEY_HANDLERS[id] ? KEY_HANDLERS[id]() : executeCommand(id)
+      }, () => mail() && ((getFocusedPane()==='viewer' && !!viewerRef?.nativeMailReady()) || (id==='mail.deletePermanently' ? listActionAvailable('mail.trash') : id.startsWith('mail.') && ['mail.archive','mail.archiveAndMarkRead','mail.spam','mail.trash','mail.star','mail.markRead','mail.markUnread','mail.toggleRead'].includes(id) ? listActionAvailable(id) : selectedThreadId!==null)))
+    }
+    for (const [id,key] of Object.entries({'filter.all':'list.filterAll','filter.unread':'list.filterUnread','filter.replyLater':'list.filterReplyLater','filter.readLater':'list.filterReadLater','nav.accountPrev':'nav.accountPrev','nav.accountNext':'nav.accountNext'})) {
+      add(id, () => KEY_HANDLERS[key](), mail)
+    }
+    add('nav.back', () => navigateMessageHistory(-1), mail)
+    add('nav.forward', () => navigateMessageHistory(1), mail)
+    add('nav.next', () => getActiveExtension()==='mail' ? messageListRef?.selectNext() : getPaneNav('messageList')?.navigateNext?.(), () => noComposer() && (mail() || getActiveExtension()!=='mail'&&!!getPaneNav('messageList')?.navigateNext))
+    add('nav.prev', () => getActiveExtension()==='mail' ? messageListRef?.selectPrevious() : getPaneNav('messageList')?.navigatePrev?.(), () => noComposer() && (mail() || getActiveExtension()!=='mail'&&!!getPaneNav('messageList')?.navigatePrev))
+    add('nav.first', () => messageListRef?.selectFirst(), mail)
+    add('nav.last', () => messageListRef?.selectLast(), mail)
+    add('nav.open', () => messageListRef?.openSelected(), mail)
+    add('nav.folderNext', () => sidebarRef?.selectNextFolder(), mail)
+    add('nav.folderPrev', () => sidebarRef?.selectPreviousFolder(), mail)
+    add('nav.paneNext', () => focusNextPane(), mail)
+    add('nav.panePrev', () => focusPreviousPane(), mail)
+    const cycleView=(step:number)=>{const order=['mail',...getRailTabs().map(tab=>tab.extensionId)];const index=Math.max(0,order.indexOf(getActiveExtension()));setActiveExtension(order[(index+step+order.length)%order.length])}
+    add('nav.nextView',()=>cycleView(1))
+    add('nav.prevView',()=>cycleView(-1))
+
+    return () => removers.forEach(remove => remove())
+  })
+
   // Handle folder selection from sidebar (account tree)
   function handleFolderSelect(
     accountId: string,
@@ -1538,6 +1600,22 @@
 
   // After a synthetic contextmenu event, bits-ui mounts the portal asynchronously.
   // Poll until [role="menu"] appears, then focus the first menuitem.
+  function openSelectedFolderMenu() {
+    if (!selectedFolderId) return
+    const folderEl = document.querySelector(
+      `[data-sidebar-item="folder"][data-folder-id="${selectedFolderId}"], ` +
+          `[data-sidebar-item="unified-account"][data-folder-id="${selectedFolderId}"]`
+    ) as HTMLElement | null
+    if (!folderEl) return
+    const rect = folderEl.getBoundingClientRect()
+    folderEl.dispatchEvent(new MouseEvent('contextmenu', {
+      bubbles: true,
+      clientX: rect.right,
+      clientY: rect.top + rect.height / 2,
+    }))
+    focusContextMenu()
+  }
+
   function focusContextMenu() {
     let attempts = 0
     const tryFocus = () => {
@@ -1586,7 +1664,7 @@
     }
     void executeCommand(commandId)
   }
-  const KEY_HANDLERS: Record<string, (e: KeyboardEvent) => void> = {
+  const KEY_HANDLERS: Record<string, () => void> = {
     'app.folders': () => void executeCommand('app.folders'),
     'app.compose': () => void executeCommand('app.compose'),
     'app.search': () => void executeCommand('app.search'),
@@ -1652,7 +1730,7 @@
     if (needsThread.includes(def.id) && selectedThreadId === null) return false
     if (def.id === 'list.escape' && selectedThreadId === null) return false
     e.preventDefault()
-    KEY_HANDLERS[def.id](e)
+    KEY_HANDLERS[def.id]()
     return true
   }
 
@@ -1903,19 +1981,7 @@
 
       // Left Alt + Right Alt combo: always target the selected folder
       if (leftAltHeld || focusedPane === 'sidebar') {
-        if (!selectedFolderId) return
-        const folderEl = document.querySelector(
-          `[data-sidebar-item="folder"][data-folder-id="${selectedFolderId}"], ` +
-          `[data-sidebar-item="unified-account"][data-folder-id="${selectedFolderId}"]`
-        ) as HTMLElement | null
-        if (!folderEl) return
-        const rect = folderEl.getBoundingClientRect()
-        folderEl.dispatchEvent(new MouseEvent('contextmenu', {
-          bubbles: true,
-          clientX: rect.right,
-          clientY: rect.top + rect.height / 2,
-        }))
-        focusContextMenu()
+        openSelectedFolderMenu()
         return
       }
 
@@ -2543,7 +2609,7 @@
 
 <svelte:window onmousemove={handleMouseMove} onmouseup={handleMouseUp} onkeydown={handleGlobalKeyDown} onkeyup={handleGlobalKeyUp} />
 
-<div class="flex flex-col h-full w-full overflow-hidden bg-background">
+<div data-native-view={getActiveExtension()} data-native-mail-primary={getActiveExtension()==='mail' && activeMailWorkspace==='primary'} data-native-context={JSON.stringify([getActiveExtension(),activeMailWorkspace,selectedAccountId,selectedFolderId,selectedThreadId,getFocusedPane(),showComposer])} class="flex flex-col h-full w-full overflow-hidden bg-background">
   <!-- Main Content -->
   <div class="flex flex-1 min-h-0 overflow-hidden relative">
     <ExtensionRail windowControls={getShowTitleBar() && !getNativeTitleBar() && effectiveTitleBarMode === 'custom'} onCloseWindow={handleClose} onRevealContext={revealContextPane} onHideContext={scheduleContextPaneHide} foldersOpen={contextPaneMode === 'folders' && getActiveExtension() === 'mail'} />
@@ -2757,7 +2823,7 @@
       {:else}
         {#each mailWorkspaceTabs.filter(tab => tab.kind === 'reader') as tab (tab.id)}
           <div class="flex w-full flex-1 min-w-0 min-h-0 overflow-hidden" style:display={activeMailWorkspace === tab.id ? 'flex' : 'none'}>
-            <MailWindowApp bind:this={mailWindowTabInstances[tab.id]} config={tab.scope} embedded readerTab deferMarkAsReadUntilLeave={triageStatus === 'unread' || (tab.scope.folderType === 'virtual' && virtualFoldersStore.folders.find(item => item.id === tab.scope.folderId)?.readStatus === 'unread')} onCloseTab={() => closeWorkspaceTab(tab.id)} active={activeMailWorkspace === tab.id} onScopeChange={scope => updateWorkspaceScope(tab.id, scope)} onNewTab={openWorkspaceTab} onOpenInTab={openReaderScope} />
+            <MailWindowApp bind:this={mailWindowTabInstances[tab.id]} config={tab.scope} embedded readerTab deferMarkAsReadUntilLeave={triageStatus === 'unread' || (tab.scope.folderType === 'virtual' && virtualFoldersStore.folders.find(item => item.id === tab.scope.folderId)?.readStatus === 'unread')} onCloseTab={() => closeWorkspaceTab(tab.id)} active={getActiveExtension()==='mail' && activeMailWorkspace === tab.id} onScopeChange={scope => updateWorkspaceScope(tab.id, scope)} onNewTab={openWorkspaceTab} onOpenInTab={openReaderScope} />
           </div>
         {/each}
       {/if}

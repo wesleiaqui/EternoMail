@@ -251,7 +251,7 @@
       class:opacity-50={isPlainTextMode}
       disabled={isPlainTextMode}
       tabindex="-1"
-      title={$_('editor.bold')}
+      data-native-action="format.bold" title={$_('editor.bold')}
     >
       <Icon icon="mdi:format-bold" class="w-5 h-5" />
     </button>
@@ -267,7 +267,7 @@
       class:opacity-50={isPlainTextMode}
       disabled={isPlainTextMode}
       tabindex="-1"
-      title={$_('editor.italic')}
+      data-native-action="format.italic" title={$_('editor.italic')}
     >
       <Icon icon="mdi:format-italic" class="w-5 h-5" />
     </button>
@@ -283,7 +283,7 @@
       class:opacity-50={isPlainTextMode}
       disabled={isPlainTextMode}
       tabindex="-1"
-      title={$_('editor.underline')}
+      data-native-action="format.underline" title={$_('editor.underline')}
     >
       <Icon icon="mdi:format-underline" class="w-5 h-5" />
     </button>
@@ -299,7 +299,7 @@
       class:opacity-50={isPlainTextMode}
       disabled={isPlainTextMode}
       tabindex="-1"
-      title={$_('editor.strikethrough')}
+      data-native-action="format.strike" title={$_('editor.strikethrough')}
     >
       <Icon icon="mdi:format-strikethrough" class="w-5 h-5" />
     </button>
@@ -319,7 +319,7 @@
       class:opacity-50={isPlainTextMode}
       disabled={isPlainTextMode}
       tabindex="-1"
-      title={$_('editor.textColor')}
+      data-native-action="format.color" title={$_('editor.textColor')}
     >
       <Icon icon="mdi:format-color-text" class="w-5 h-5" />
       <div
@@ -371,7 +371,7 @@
       class:opacity-50={isPlainTextMode}
       disabled={isPlainTextMode}
       tabindex="-1"
-      title={$_('editor.fontSize')}
+      data-native-action="format.size" title={$_('editor.fontSize')}
     >
       {currentFontSize || '14px'}
     </button>
@@ -405,7 +405,7 @@
       class:opacity-50={isPlainTextMode}
       disabled={isPlainTextMode}
       tabindex="-1"
-      title={$_('editor.alignLeft')}
+      data-native-action="format.left" title={$_('editor.alignLeft')}
     >
       <Icon icon="mdi:format-align-left" class="w-5 h-5" />
     </button>
@@ -421,7 +421,7 @@
       class:opacity-50={isPlainTextMode}
       disabled={isPlainTextMode}
       tabindex="-1"
-      title={$_('editor.alignCenter')}
+      data-native-action="format.center" title={$_('editor.alignCenter')}
     >
       <Icon icon="mdi:format-align-center" class="w-5 h-5" />
     </button>
@@ -437,7 +437,7 @@
       class:opacity-50={isPlainTextMode}
       disabled={isPlainTextMode}
       tabindex="-1"
-      title={$_('editor.alignRight')}
+      data-native-action="format.right" title={$_('editor.alignRight')}
     >
       <Icon icon="mdi:format-align-right" class="w-5 h-5" />
     </button>
@@ -456,7 +456,7 @@
       class:opacity-50={isPlainTextMode}
       disabled={isPlainTextMode}
       tabindex="-1"
-      title={$_('editor.bulletList')}
+      data-native-action="format.bullets" title={$_('editor.bulletList')}
     >
       <Icon icon="mdi:format-list-bulleted" class="w-5 h-5" />
     </button>
@@ -472,7 +472,7 @@
       class:opacity-50={isPlainTextMode}
       disabled={isPlainTextMode}
       tabindex="-1"
-      title={$_('editor.numberedList')}
+      data-native-action="format.numbers" title={$_('editor.numberedList')}
     >
       <Icon icon="mdi:format-list-numbered" class="w-5 h-5" />
     </button>
@@ -489,7 +489,7 @@
       class:opacity-50={isPlainTextMode}
       disabled={isPlainTextMode}
       tabindex="-1"
-      title={$_('editor.quote')}
+      data-native-action="format.quote" title={$_('editor.quote')}
     >
       <Icon icon="mdi:format-quote-close" class="w-5 h-5" />
     </button>
@@ -502,7 +502,7 @@
       onclick={insertLink}
       class="p-1.5 rounded hover:bg-muted transition-colors"
       class:bg-muted={activeStates.link}
-      title={$_('editor.insertLink')}
+      data-native-action="format.link" title={$_('editor.insertLink')}
       disabled={isPlainTextMode}
       class:opacity-50={isPlainTextMode}
       tabindex="-1"
@@ -517,7 +517,7 @@
     <button
       onclick={onInsertImage}
       class="p-1.5 rounded hover:bg-muted transition-colors"
-      title={$_('editor.insertImage')}
+      data-native-action="format.image" title={$_('editor.insertImage')}
       disabled={isPlainTextMode}
       class:opacity-50={isPlainTextMode}
       tabindex="-1"
@@ -539,7 +539,7 @@
       class="p-1.5 rounded hover:bg-muted transition-colors flex items-center gap-1.5 text-xs"
       class:bg-muted={isPlainTextMode}
       tabindex="-1"
-      title={isPlainTextMode ? $_('editor.switchToRichText') : $_('editor.switchToPlainText')}
+      data-native-action="format.mode" title={isPlainTextMode ? $_('editor.switchToRichText') : $_('editor.switchToPlainText')}
     >
       <Icon icon={isPlainTextMode ? 'mdi:format-text' : 'mdi:text'} class="w-5 h-5" />
       <span class="hidden sm:inline">{isPlainTextMode ? $_('editor.richText') : $_('editor.plainText')}</span>

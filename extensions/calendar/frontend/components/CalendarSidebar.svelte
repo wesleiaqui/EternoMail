@@ -188,7 +188,7 @@
         </button>
         <button
           class="p-1 rounded hover:bg-muted/40"
-          title={$_('calendar.sidebar.settings')}
+          data-native-action="calendar.settings" title={$_('calendar.sidebar.settings')}
           onclick={() => onOpenSettings?.()}
           type="button"
           aria-label={$_('calendar.sidebar.settings')}

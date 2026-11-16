@@ -100,7 +100,7 @@
       </h1>
       {#if isWritable}
         <div class="flex items-center gap-1 flex-shrink-0">
-          <Button variant="outline" size="sm" onclick={() => { if (contact) onEdit?.(contact) }}>
+          <Button variant="outline" size="sm" data-native-action="contacts.edit" onclick={() => { if (contact) onEdit?.(contact) }}>
             <Icon icon="mdi:pencil" class="w-4 h-4 mr-1" />
             {$_('contacts.detail.edit')}
           </Button>
@@ -108,7 +108,7 @@
             variant="outline"
             size="sm"
             class="text-destructive hover:text-destructive"
-            onclick={() => { showDeleteConfirm = true }}
+            data-native-action="contacts.delete" onclick={() => { showDeleteConfirm = true }}
           >
             <Icon icon="mdi:delete-outline" class="w-4 h-4 mr-1" />
             {$_('contacts.common.delete')}

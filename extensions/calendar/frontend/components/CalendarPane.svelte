@@ -31,7 +31,8 @@
   import { consumePendingDeepLink } from '$lib/stores/extensionDeepLink.svelte'
   import { KEY } from '$extensions/calendar/frontend/keyboard/shortcuts'
   import { toasts } from '$lib/stores/toast'
-  import { setActiveExtension } from '$lib/stores/uiState.svelte'
+  import { registerMenuAction } from '$lib/nativeMenu'
+  import { getActiveExtension, setActiveExtension } from '$lib/stores/uiState.svelte'
   // @ts-ignore - wailsjs bindings
   import { EventsOn } from '$wailsjs/runtime/runtime.js'
 
@@ -95,6 +96,19 @@
       void events.fetchRange(ids, range.fromUnix, range.toUnix)
     }, 120)
     return () => clearTimeout(t)
+  })
+
+  onMount(()=>{
+    const active=()=>getActiveExtension()==='calendar'&&!document.querySelector('[data-composer-root]')
+    const commands:Record<string,()=>unknown>={
+      'calendar.today':()=>calendarView.goToday(),'calendar.prev':()=>calendarView.goPrev(),'calendar.next':()=>calendarView.goNext(),
+      'calendar.month':()=>calendarView.setViewKind('month'),'calendar.week':()=>calendarView.setViewKind('week'),
+      'calendar.day':()=>calendarView.setViewKind('day'),'calendar.agenda':()=>calendarView.setViewKind('agenda'),
+      'calendar.focus':()=>calendarView.toggleEventFocus(),
+      'app.syncAll':()=>calendarSources.syncAll(),
+    }
+    const removes=Object.entries(commands).map(([id,run])=>registerMenuAction(id,run,()=>active()&&(id!=='calendar.focus'||!!calendarView.selectedEventId)))
+    return ()=>removes.forEach(remove=>remove())
   })
 
   // Keyboard shortcuts registered via the extension-shortcut registry. The
@@ -177,7 +191,7 @@
   })
 </script>
 
-<PaneLayout>
+<PaneLayout nativeContext={JSON.stringify([calendarView.selectedEventId,calendarView.viewKind,calendarView.visibleRange])}>
   <CalendarSidebar onOpenSettings={openSettings} onReturnToMail={() => setActiveExtension('mail')} />
   <div class="flex-1 flex flex-col min-w-0 bg-background">
     <ViewSwitcher />

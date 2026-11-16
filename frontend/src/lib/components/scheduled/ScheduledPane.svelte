@@ -155,7 +155,7 @@
       <button type="button" aria-pressed={history} onclick={() => chooseHistory(true)} class="rounded-md px-3 py-2 text-sm {history ? 'bg-muted font-medium' : 'hover:bg-muted'}">{$_('sendLater.history')}</button>
     </div>
     <button type="button" onclick={() => load(undefined, true)} disabled={loading} class="rounded-md border border-border px-3 py-2 text-sm disabled:opacity-50">{$_('sendLater.refresh')}</button>
-    <button type="button" onclick={() => setupOpen = true} disabled={!accountId} title={!accountId ? $_('sendLater.chooseSetupAccount') : undefined} class="rounded-md border border-border px-3 py-2 text-sm disabled:opacity-50">{$_('sendLater.connection')}</button>
+    <button type="button" data-native-action="scheduled.connection" onclick={() => setupOpen = true} disabled={!accountId} title={!accountId ? $_('sendLater.chooseSetupAccount') : undefined} class="rounded-md border border-border px-3 py-2 text-sm disabled:opacity-50">{$_('sendLater.connection')}</button>
   </header>
   <div class="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-xs text-muted-foreground">
     <p>{$_('sendLater.lastConfirmed')}</p>
@@ -173,7 +173,7 @@
         <thead><tr class="border-b border-border text-left text-xs text-muted-foreground"><th class="py-3 pr-4">{$_('sendLater.message')}</th><th class="py-3 pr-4">{$_('sendLater.deliveryTime')}</th><th class="py-3 pr-4">{$_('sendLater.deliveryStatus')}</th><th class="py-3">{$_('sendLater.actions')}</th></tr></thead>
         <tbody>
           {#each page.jobs as job (job.id)}
-            <tr class="border-b border-border align-top">
+            <tr data-native-row tabindex="-1" class="border-b border-border align-top">
               <td class="max-w-xs py-4 pr-4">
                 <p class="truncate font-medium" title={job.subject}>{job.previewAvailable ? job.subject || $_('sendLater.noSubject') : $_('sendLater.previewUnavailable')}</p>
                 <p class="mt-1 truncate text-xs text-muted-foreground">{accountName(job)}</p>
@@ -187,10 +187,10 @@
                 {#if job.state === 'sent'}<p class="mt-1 text-xs text-muted-foreground">{$_(`sendLater.cleanup.${job.draftCleanup || 'pending'}`)}</p>{/if}
               </td>
               <td class="py-4"><div class="flex flex-wrap gap-3 text-xs">
-                <button type="button" onclick={() => update(job, 'refresh')} disabled={!page.keyAvailable || busyIds.includes(job.id)} class="underline disabled:opacity-50">{busyIds.includes(job.id) ? $_('sendLater.updating') : $_('sendLater.refresh')}</button>
-                {#if ['awaiting_ack', 'cancellation_awaiting_ack', 'reschedule_awaiting_ack'].includes(job.state)}<button type="button" onclick={() => update(job, 'retry')} disabled={!page.keyAvailable || busyIds.includes(job.id)} class="underline disabled:opacity-50">{$_('sendLater.retry')}</button>{/if}
-                {#if ['queued', 'retry', 'awaiting_ack', 'failed'].includes(job.state)}<button type="button" onclick={() => startReschedule(job)} disabled={!page.keyAvailable || busyIds.includes(job.id)} class="underline disabled:opacity-50">{$_('sendLater.reschedule')}</button>{/if}
-                {#if ['queued', 'retry', 'awaiting_ack', 'reschedule_awaiting_ack'].includes(job.state)}<button type="button" onclick={() => update(job, 'cancel')} disabled={!page.keyAvailable || busyIds.includes(job.id)} class="underline disabled:opacity-50">{$_('sendLater.cancelDelivery')}</button>{/if}
+                <button type="button" data-native-action="scheduled.refresh" onclick={() => update(job, 'refresh')} disabled={!page.keyAvailable || busyIds.includes(job.id)} class="underline disabled:opacity-50">{busyIds.includes(job.id) ? $_('sendLater.updating') : $_('sendLater.refresh')}</button>
+                {#if ['awaiting_ack', 'cancellation_awaiting_ack', 'reschedule_awaiting_ack'].includes(job.state)}<button type="button" data-native-action="scheduled.retry" onclick={() => update(job, 'retry')} disabled={!page.keyAvailable || busyIds.includes(job.id)} class="underline disabled:opacity-50">{$_('sendLater.retry')}</button>{/if}
+                {#if ['queued', 'retry', 'awaiting_ack', 'failed'].includes(job.state)}<button type="button" data-native-action="scheduled.reschedule" onclick={() => startReschedule(job)} disabled={!page.keyAvailable || busyIds.includes(job.id)} class="underline disabled:opacity-50">{$_('sendLater.reschedule')}</button>{/if}
+                {#if ['queued', 'retry', 'awaiting_ack', 'reschedule_awaiting_ack'].includes(job.state)}<button type="button" data-native-action="scheduled.cancel" onclick={() => update(job, 'cancel')} disabled={!page.keyAvailable || busyIds.includes(job.id)} class="underline disabled:opacity-50">{$_('sendLater.cancelDelivery')}</button>{/if}
               </div></td>
             </tr>
             {#if rescheduleId === job.id}

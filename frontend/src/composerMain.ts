@@ -1,3 +1,4 @@
+import { installNativeMenu } from './lib/nativeMenu'
 import './app.css'
 import { initI18n } from './lib/i18n'
 import ComposerApp from './ComposerApp.svelte'
@@ -20,6 +21,7 @@ async function bootstrap() {
     }
   })
   await initI18n()
+  installNativeMenu()
   mount(ComposerApp, { target: document.getElementById('app')! })
 }
 

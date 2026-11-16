@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
+  import { registerMenuAction } from '$lib/nativeMenu'
   import Icon from '@iconify/svelte'
   import { ContextMenu as ContextMenuPrimitive } from 'bits-ui'
   import {
@@ -18,6 +20,7 @@
   import { _ } from '$lib/i18n'
 
   interface Props {
+    active?: boolean
     folderId: string
     // Set together to offer pinning the folder to the sidebar (P-007).
     accountId?: string
@@ -26,12 +29,22 @@
   }
 
   let {
+    active=false,
     folderId,
     accountId,
     folder,
     children,
   }: Props = $props()
 
+  onMount(()=>{
+    const valid=()=>active&&!!document.querySelector('[data-native-mail-primary="true"]')&&!document.querySelector('[data-composer-root]')
+    const removes=[
+      registerMenuAction('folder.read',handleMarkAllRead,valid),registerMenuAction('folder.unread',handleMarkAllUnread,valid),
+      registerMenuAction('folder.pin',handleTogglePin,()=>valid()&&!!accountId&&!!folder),
+      registerMenuAction('folder.download',async()=>{await loadContentPolicy();if(policy)await setContentPolicy(policy.bodyPrefetch?'disabled':'enabled')},()=>valid()&&!!accountId&&!!folder&&!policySaving),
+      registerMenuAction('folder.defaultDownload',()=>setContentPolicy('inherit'),()=>valid()&&!!accountId&&!!folder&&!policySaving),
+    ];return ()=>removes.forEach(remove=>remove())
+  })
   let pinned = $derived(accountId !== undefined && sidebarPins.has(accountId, folderId))
   let policy = $state<{ bodyPrefetch: boolean; explicit: boolean; source: string } | null>(null)
   let policyLoading = $state(false)

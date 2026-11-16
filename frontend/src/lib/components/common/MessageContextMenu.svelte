@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
+  import { registerMenuAction } from '$lib/nativeMenu'
   import Icon from '@iconify/svelte'
   import { replyLaterQueue } from '$lib/stores/replyLater.svelte'
   import { readLaterQueue } from '$lib/stores/readLater.svelte'
@@ -40,6 +42,7 @@
   import { publishUndoOperationCompleted, publishUndoOperationCreated } from '$lib/components/list/undoMutationEvents'
 
   interface Props {
+    nativeActive?: boolean
     laterActionsEnabled?: boolean
     laterTargets?: { accountId: string; conversationId: string }[]
     conversationId?: string
@@ -57,6 +60,7 @@
   }
 
   let {
+    nativeActive = false,
     laterActionsEnabled = true,
     laterTargets,
     conversationId,
@@ -223,6 +227,8 @@
       onActionComplete?.(true)
     } catch (err) { toasts.error(`${$_('snooze.failed')}: ${String(err)}`) }
   }
+
+  onMount(()=>registerMenuAction('mail.unsnooze',handleUnsnooze,()=>nativeActive&&folderType==='snoozed'&&!!conversationId&&!document.querySelector('[data-composer-root]')))
 
   // Action handlers
   async function handleReply() {

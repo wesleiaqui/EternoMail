@@ -20,10 +20,10 @@
 </script>
 
 {#if attachments.length > 0}
-  <div class="px-4 py-2 border-t border-border bg-muted/30 {compact ? 'px-6 bg-transparent' : ''}">
+  <div data-native-context={JSON.stringify(attachments.map(item=>[item.filename,item.size]))} class="px-4 py-2 border-t border-border bg-muted/30 {compact ? 'px-6 bg-transparent' : ''}">
     <div class="flex flex-wrap gap-2">
       {#each attachments as attachment, index (index)}
-        <div class="flex items-center gap-2 px-3 py-1.5 bg-background border border-border rounded-md text-sm group {compact ? 'rounded-lg py-1' : ''}">
+        <div data-native-row class="flex items-center gap-2 px-3 py-1.5 bg-background border border-border rounded-md text-sm group {compact ? 'rounded-lg py-1' : ''}">
           <Icon icon={getFileIcon(attachment.contentType)} class="w-4 h-4 text-muted-foreground" />
           <span class="max-w-[150px] truncate" title={attachment.filename}>
             {attachment.filename}
@@ -34,7 +34,7 @@
           <button
             onclick={() => onRemove(index)}
             class="ml-1 p-0.5 text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
-            title={$_('attachment.removeAttachment')}
+            data-native-action="attachment.remove" title={$_('attachment.removeAttachment')}
             aria-label={$_('attachment.removeAttachment')}
           >
             <Icon icon="mdi:close" class="w-3.5 h-3.5" />

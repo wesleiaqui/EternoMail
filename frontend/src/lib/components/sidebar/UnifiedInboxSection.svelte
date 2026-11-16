@@ -121,7 +121,7 @@
         {#each accounts as acc (acc.account.id)}
           {#if acc.inbox}
             {@const avatarPhoto = contactPhotos.get(acc.account.email)}
-            <FolderContextMenu folderId={acc.inbox.id} accountId={acc.account.id} folder={acc.inbox}>
+            <FolderContextMenu active={isAccountInboxSelected(acc.account.id, acc.inbox.id)} folderId={acc.inbox.id} accountId={acc.account.id} folder={acc.inbox}>
               <button
                 class="sidebar-inbox-account w-full flex items-center gap-2 rounded-lg text-sm transition-colors {isAccountInboxSelected(acc.account.id, acc.inbox.id)
                   ? 'bg-primary/10 text-primary'

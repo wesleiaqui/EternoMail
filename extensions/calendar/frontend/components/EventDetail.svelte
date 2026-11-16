@@ -398,7 +398,7 @@
 
       {#if isWritable}
         <div class="flex items-center gap-2 mt-3">
-          <Button variant="outline" size="sm" onclick={startEdit}>
+          <Button variant="outline" size="sm" data-native-action="calendar.edit" onclick={startEdit}>
             <Icon icon="mdi:pencil" class="w-3.5 h-3.5 mr-1" />
             {$_('calendar.detail.editButton')}
           </Button>
@@ -406,7 +406,7 @@
             variant="ghost"
             size="sm"
             class="text-destructive hover:text-destructive"
-            onclick={startDelete}
+            data-native-action="calendar.delete" onclick={startDelete}
           >
             <Icon icon="mdi:delete-outline" class="w-3.5 h-3.5 mr-1" />
             {$_('calendar.detail.deleteButton')}

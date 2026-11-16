@@ -54,7 +54,7 @@
     variant={current === 'ACCEPTED' ? 'default' : 'outline'}
     size="sm"
     disabled={disabled || working}
-    onclick={() => rsvp('ACCEPTED')}
+    data-native-action="calendar.accept" onclick={() => rsvp('ACCEPTED')}
   >
     <Icon icon="mdi:check" class="w-4 h-4 mr-1" />
     {$_('calendar.attendees.accept')}
@@ -63,7 +63,7 @@
     variant={current === 'TENTATIVE' ? 'default' : 'outline'}
     size="sm"
     disabled={disabled || working}
-    onclick={() => rsvp('TENTATIVE')}
+    data-native-action="calendar.tentative" onclick={() => rsvp('TENTATIVE')}
   >
     <Icon icon="mdi:help" class="w-4 h-4 mr-1" />
     {$_('calendar.attendees.tentative')}
@@ -72,7 +72,7 @@
     variant={current === 'DECLINED' ? 'default' : 'outline'}
     size="sm"
     disabled={disabled || working}
-    onclick={() => rsvp('DECLINED')}
+    data-native-action="calendar.decline" onclick={() => rsvp('DECLINED')}
   >
     <Icon icon="mdi:close" class="w-4 h-4 mr-1" />
     {$_('calendar.attendees.decline')}

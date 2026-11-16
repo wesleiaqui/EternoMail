@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Expand native menus across mail, composer formatting, attachments, folders, scheduled delivery, Calendar and Contacts. Menu actions reuse UI handlers and confirmations, disable ambiguous or unavailable targets, and reject stale selection requests. Existing keyboard bindings are unchanged. Inline replies block background mail commands; nonmodal event details keep Calendar navigation available. Explicit read-state actions include mixed conversations, and detached composers keep native image/rich-text paste.
+
 - Keep message attachments on one line: show up to three as file chips, or a collapsed attachment count and Save All bar for larger sets. Expand to see every full filename and action. No attachment deduplication or data changes.
 
 - Attachment cache repair leaves attached multipart files untouched rather than losing their named attachment during parsing. Move reconciliation and fallback cleanup protect repaired attachment rows, exact payloads and undo history; conflicts keep both local messages for explicit reconciliation.

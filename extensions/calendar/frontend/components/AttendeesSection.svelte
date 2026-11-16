@@ -83,7 +83,7 @@
         type="button"
         variant="outline"
         size="sm"
-        onclick={() => (findATimeOpen = true)}
+        data-native-action="calendar.findTime" onclick={() => (findATimeOpen = true)}
         disabled={disabled}
       >
         <Icon icon="mdi:clock-outline" class="w-4 h-4 mr-1" />

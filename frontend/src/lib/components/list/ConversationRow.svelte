@@ -19,6 +19,7 @@
 </script>
 
 <script lang="ts">
+  import { getFocusedPane } from '$lib/stores/keyboard.svelte'
   import { onDestroy } from 'svelte'
   import Icon from '@iconify/svelte'
   import { formatRelativeDate } from '$lib/utils/date'
@@ -544,6 +545,7 @@
 </script>
 
 <MessageContextMenu
+  nativeActive={selected && !useMultiSelect && getFocusedPane()!=='viewer'}
   bind:this={contextMenuRef}
   messageIds={contextMenuMessageIds}
   replyMessageId={useMultiSelect ? undefined : (ownMessageIds.at(-1) || undefined)}

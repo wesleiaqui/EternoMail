@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { registerMenuAction } from '$lib/nativeMenu'
+  import { getActiveExtension } from '$lib/stores/uiState.svelte'
   import { onMount, onDestroy } from 'svelte'
   import { _ } from 'svelte-i18n'
   import ContactsSidebar from './ContactsSidebar.svelte'
@@ -89,6 +91,17 @@
     await activateContact(id)
   }
 
+  onMount(()=>{
+    const active=()=>getActiveExtension()==='contacts'&&!document.querySelector('[data-composer-root]')
+    const removes=[
+      registerMenuAction('contacts.new',openAdd,active),
+      registerMenuAction('contacts.syncAll',runSyncAll,active),
+      registerMenuAction('contacts.syncFocused',runSyncFocused,()=>active()&&!!contactsView.selectedSourceId&&!['local','local:manual','local:collected'].includes(contactsView.selectedSourceId)),
+      registerMenuAction('app.syncAll',runSyncAll,active),
+    ]
+    return ()=>removes.forEach(remove=>remove())
+  })
+
   // 'e' opens the edit dialog for the currently-selected contact. Wired via
   // the extension-shortcut registry: App.svelte's global key handler calls
   // dispatchExtensionShortcut, which only invokes this when the Contacts
@@ -153,7 +166,7 @@
   onDestroy(unregSyncFocused)
 </script>
 
-<PaneLayout>
+<PaneLayout nativeContext={JSON.stringify([contactsView.selectedSourceId,contactsView.selectedContactId])}>
   <ContactsSidebar onSelect={handleSourceSelected} onOpenSettings={() => { showSettings = true }} />
   <ContactList onAdd={openAdd} />
   <ContactDetail onEdit={openEdit} />

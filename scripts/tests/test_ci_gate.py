@@ -37,11 +37,13 @@ class GateTests(unittest.TestCase):
         ]
         keys = ['VERSION_RESULT', 'FRONTEND_REQUIRED', 'FRONTEND_RESULT',
                 'BACKEND_REQUIRED', 'BACKEND_RESULT']
+        # A failed native bridge compile cannot hide behind a passing Linux job.
+        cases.append(('success', 'true', 'success', 'true', 'success', False))
         for *values, expected in cases:
             with self.subTest(values=values):
                 result = subprocess.run(
                     ['bash', '--noprofile', '--norc', '-e', '-o', 'pipefail', '-c', shell],
-                    env={**os.environ, **dict(zip(keys, values))}, capture_output=True,
+                    env={**os.environ, **dict(zip(keys, values)), 'NATIVE_MENU_RESULT': 'failure' if tuple(values) == ('success', 'true', 'success', 'true', 'success') and not expected else ('success' if values[3] == 'true' else 'skipped')}, capture_output=True,
                 )
                 self.assertEqual(result.returncode == 0, expected, result.stderr)
 

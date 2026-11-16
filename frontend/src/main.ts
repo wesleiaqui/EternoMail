@@ -1,3 +1,4 @@
+import { installNativeMenu } from './lib/nativeMenu'
 import './app.css'
 import './sidebar-polish.css'
 import './sidebar-polish-final.css'
@@ -23,6 +24,7 @@ async function bootstrap(): Promise<void> {
   EventsOn('native:paste-text', (text: string) => insertClipboardTextAtFocus(text))
   await initI18n()
   await waitForBackendReady()
+  installNativeMenu()
   mount(App, { target: document.getElementById('app')! })
 }
 

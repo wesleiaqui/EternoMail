@@ -1,3 +1,4 @@
+import { installNativeMenu } from './lib/nativeMenu'
 import './app.css'
 import './lib/iconify-offline'
 import { mount } from 'svelte'
@@ -40,6 +41,7 @@ async function bootstrap() {
   const accounts = await GetAccounts()
   accountStore.accounts = (accounts || []).map(account => ({ account, folders: [], loading: false, syncing: false, error: null, lastSync: null }))
   await initTheme(theme, GetSystemTheme)
+  installNativeMenu()
   mount(ReaderApp, { target: document.getElementById('app')!, props: { config } })
   document.getElementById('boot-status')?.remove()
 }
