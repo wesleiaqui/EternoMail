@@ -368,7 +368,10 @@ func (r *SyncRuntime) replyAttachments(original *message.Message, mode, quotedHT
 	}
 	downloader := email.NewAttachmentDownloader("")
 	for _, item := range regular {
-		content, err := downloader.ExtractAttachmentContent(raw, item.Filename)
+		content, repaired, err := r.attachments.RepairedContent(item.ID)
+		if err == nil && !repaired {
+			content, err = downloader.ExtractAttachmentContent(raw, item.Filename)
+		}
 		if err != nil {
 			continue
 		}

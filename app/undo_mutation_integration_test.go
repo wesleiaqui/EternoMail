@@ -1263,3 +1263,89 @@ func TestMoveOfMissingMessagesReturnsErrorInsteadOfEmptySuccess(t *testing.T) {
 		t.Fatalf("missing-message move registered operation %q", operationID)
 	}
 }
+
+func TestAttachmentRepairMoveCollisionDoesNotScheduleDestructiveFallback(t *testing.T) {
+	for _, repairedMoving := range []bool{true, false} {
+		t.Run(fmt.Sprint(repairedMoving), func(t *testing.T) {
+			a, db, moving, server := undoMutationFixtureWithServer(t, true)
+			a.attachmentStore = message.NewAttachmentStore(db)
+			protected := moving
+			if !repairedMoving {
+				protected = "sync-repaired"
+			}
+			repair := func() error {
+				_, err := a.attachmentStore.RepairFromMIME("account", protected, "snapshot", []message.RepairPart{{Metadata: message.Attachment{ID: "exact", MessageID: protected, Filename: "x", Size: 3}, Payload: []byte("one")}}, "")
+				return err
+			}
+			if repairedMoving {
+				if err := repair(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			event := make(chan struct{}, 1)
+			a.runtimeEventEmitter = func(name string, _ ...interface{}) {
+				if name == "folder:syncError" {
+					select {
+					case event <- struct{}{}:
+					default:
+					}
+				}
+			}
+			hookErr := make(chan error, 1)
+			server.mu.Lock()
+			server.afterCopy = func(uids []uint32) {
+				err := a.messageStore.Upsert(&message.Message{ID: "sync-repaired", AccountID: "account", FolderID: "archive", InboxCategory: "primary", UID: uids[0], MessageID: "<old-search-result@example.com>", Date: time.Now()})
+				if err == nil && !repairedMoving {
+					err = repair()
+				}
+				hookErr <- err
+			}
+			server.mu.Unlock()
+			result, err := a.RemoveFromInboxWithUndo([]string{moving})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = <-hookErr; err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-event:
+			case <-time.After(500 * time.Millisecond):
+				t.Fatal("no terminal conflict event")
+			}
+			// Wait beyond the fallback scheduling window: generic-error behavior would
+			// queue synchronization here instead of reporting a terminal conflict.
+			time.Sleep(2 * moveDestinationSyncDelay)
+			a.moveSyncMu.Lock()
+			pending := len(a.moveSyncTimers) + len(a.moveSyncWaiters)
+			a.moveSyncMu.Unlock()
+			if pending != 0 {
+				t.Fatal("repair collision scheduled fallback")
+			}
+			for _, id := range []string{moving, "sync-repaired"} {
+				if got, err := a.messageStore.Get(id); err != nil || got == nil {
+					t.Fatal("collision deleted message", id, err)
+				}
+			}
+			if content, ok, err := a.attachmentStore.RepairedContent("exact"); err != nil || !ok || string(content) != "one" {
+				t.Fatal("exact repair bytes lost")
+			}
+			if !a.undoStack.ContainsOperation(result.OperationID) {
+				t.Fatal("move undo token lost")
+			}
+			// Even unrelated/no-COPYUID fallback cleanup cannot discard repaired temp rows.
+			if repairedMoving {
+				if err = a.messageStore.DeleteTempUIDs("archive"); err == nil {
+					t.Fatal("fallback silently discarded repaired temp row")
+				}
+			}
+			token, err := a.attachmentStore.RepairBackupID(protected)
+			if err != nil || token == "" {
+				t.Fatal("backup lost")
+			}
+			if err = a.attachmentStore.RestoreRepair("account", protected, token); err != nil {
+				t.Fatal("repair undo lost", err)
+			}
+		})
+	}
+}

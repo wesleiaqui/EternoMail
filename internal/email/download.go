@@ -301,7 +301,39 @@ func sanitizeFilename(name string) string {
 // SaveAttachmentToDirectory saves an attachment inside a user-selected directory.
 // Sanitize before joining: filepath.Join would erase evidence of traversal.
 func (d *AttachmentDownloader) SaveAttachmentToDirectory(att *message.Attachment, content []byte, directory string) (string, error) {
-	return d.SaveAttachment(att, content, filepath.Join(directory, sanitizeFilename(att.Filename)))
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return "", err
+	}
+	defer root.Close()
+	filename := sanitizeFilename(att.Filename)
+	extension := filepath.Ext(filename)
+	stem := strings.TrimSuffix(filename, extension)
+	for n := 0; n < 10000; n++ {
+		name := filename
+		if n > 0 {
+			name = fmt.Sprintf("%s (%d)%s", stem, n+1, extension)
+		}
+		file, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if os.IsExist(err) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		_, writeErr := file.Write(content)
+		closeErr := file.Close()
+		if writeErr != nil {
+			_ = root.Remove(name)
+			return "", writeErr
+		}
+		if closeErr != nil {
+			_ = root.Remove(name)
+			return "", closeErr
+		}
+		return filepath.Join(directory, name), nil
+	}
+	return "", fmt.Errorf("no unused attachment filename available")
 }
 
 // SaveAttachment saves attachment content to disk. Custom paths are destinations

@@ -40,6 +40,23 @@ func (a *App) GetAttachments(messageID string) ([]*message.Attachment, error) {
 // desktop is connected directly to a remote mailbox helper.
 func (a *App) GetMessageAttachments(accountID, messageID string) ([]*message.Attachment, error) {
 	if !a.remoteServiceMode {
+		// Repair only on the mailbox-owning app. A failed strict fetch/parse
+		// leaves every old row intact; never hide attachments on a repair error.
+		if a.attachmentStore != nil {
+			items, err := a.attachmentStore.GetByMessage(messageID)
+			if err != nil {
+				return nil, err
+			}
+			if hasRepeatedAttachmentMetadata(items) {
+				_, attempted := a.attachmentRepairAttempts.LoadOrStore(accountID+"\x00"+messageID, true)
+				if !attempted {
+					if _, err := a.RepairMessageAttachments(accountID, messageID); err != nil {
+						log := logging.WithComponent("attachment_repair")
+						log.Warn().Err(err).Msg("Attachment cache repair deferred; original cache retained")
+					}
+				}
+			}
+		}
 		return a.GetAttachments(messageID)
 	}
 	client, err := a.remoteAttachmentClient(a.accountContext())
@@ -251,7 +268,7 @@ func (a *App) DownloadAttachment(attachmentID, savePath string) (string, error) 
 		log.Debug().Int("rawSize", len(raw)).Msg("Fetched raw message from IMAP")
 
 		// Extract attachment content
-		content, err = downloader.ExtractAttachmentContent(raw, att.Filename)
+		content, err = a.storedAttachmentContent(downloader, raw, att)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to extract attachment content")
 			return "", fmt.Errorf("failed to extract attachment: %w", err)
@@ -729,7 +746,7 @@ func (a *App) SaveAllAttachments(messageID string) (string, error) {
 	savedCount := 0
 
 	for _, att := range attachments {
-		content, err := downloader.ExtractAttachmentContent(raw, att.Filename)
+		content, err := a.storedAttachmentContent(downloader, raw, att)
 		if err != nil {
 			log.Warn().Err(err).Str("filename", att.Filename).Msg("Failed to extract attachment")
 			continue
@@ -1026,7 +1043,7 @@ func (a *App) saveAllAttachmentsViaPortal(messageID string, attachments []*messa
 			break
 		}
 
-		content, err := downloader.ExtractAttachmentContent(raw, att.Filename)
+		content, err := a.storedAttachmentContent(downloader, raw, att)
 		if err != nil {
 			log.Warn().Err(err).Str("filename", att.Filename).Msg("Failed to extract attachment")
 			continue

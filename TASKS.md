@@ -523,6 +523,12 @@ README review follow-up: qualify checksum instructions because tagged releases d
 | REMOTE-CRYPTO-DESIGN-001 | Large | Define S/MIME/PGP parity custody and retry boundaries before removing remote crypto gates. | Instinct / `agent/REMOTE-CRYPTO-DESIGN-001` / `/tmp/pl-remote-crypto` | Design for review; docs-only verification: `git diff --check` passed; implementation `71525a3c`; no behavior change. Proposed device-local crypto avoids automatic private-key export. Custody decided 2026-11-13: device-local by default, helper-held keys only as an explicit opt-in with a security warning (later slice). Implementation and native acceptance remain open. See `docs/plans/2026-11-13-remote-crypto-parity.md`. |
 | SEND-LATER-REPEAT-001 | Medium | Owner request: Send Later can repeat (day/week/month; never, N sends or until a date) and offers mailing-list mode (To = sender, others in one identical Cc or Bcc message). No saved lists, per-recipient copies, merge fields or unsubscribe tooling. | Instinct / `feat/recurring-send-later` / `/tmp/pkd` | Review; PR opened. `go test ./internal/scheduledsend/` and frontend tests pass locally; the `app` package and native Studio delivery were not compiled or run here. No merge. |
 
+## Attachment refetch idempotency (2026-11-16)
+
+| ID | Effort | Task | Owner | Status |
+| --- | --- | --- | --- | --- |
+| ATTACHMENT-REFETCH-001 | Medium | Repair repeated local IMAP attachment cache rows from complete authoritative MIME, with exact per-part content and reversible old-row backup. | Instinct / `fix/authoritative-attachment-repair` / `/tmp/posti-attachments` | Review; repair pushed to PR #257, supersedes prevention-only scope. Strict fetch/parser, transactional backup/restore, cache-path verification, refetch guards and exact-part downloads implemented. Source/UIDVALIDITY, charset and moved-row collision safety guards covered; move collision requires explicit reconciliation. Devin findings fixed: terminal move conflict + fallback cleanup guard, attached-multipart rejection; full mock-IMAP move regression covers both collision directions. Tests on fixture DBs pass; native/live IMAP/remote Studio not verified. No production cache mutation run. |
+
 ## Message index visibility (2026-11-16)
 
 | ID | Effort | Task | Owner | Status |

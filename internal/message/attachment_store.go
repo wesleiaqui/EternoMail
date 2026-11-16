@@ -52,14 +52,14 @@ func (s *AttachmentStore) ensureContentColumn() {
 func (s *AttachmentStore) Create(a *Attachment) error {
 	query := `
 		INSERT INTO attachments (id, message_id, filename, content_type, size, content_id, is_inline, local_path, content)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM attachment_repairs WHERE message_id = ?)
 	`
 	// Only store content for inline attachments to save space
 	var content []byte
 	if a.IsInline && len(a.Content) > 0 {
 		content = a.Content
 	}
-	_, err := s.db.Exec(query, a.ID, a.MessageID, a.Filename, a.ContentType, a.Size, nullString(a.ContentID), boolToInt(a.IsInline), nullString(a.LocalPath), content)
+	_, err := s.db.Exec(query, a.ID, a.MessageID, a.Filename, a.ContentType, a.Size, nullString(a.ContentID), boolToInt(a.IsInline), nullString(a.LocalPath), content, a.MessageID)
 	if err != nil {
 		return fmt.Errorf("failed to create attachment: %w", err)
 	}
@@ -149,7 +149,7 @@ func (s *AttachmentStore) UpdateLocalPath(id, localPath string) error {
 
 // DeleteByMessage deletes all attachments for a message
 func (s *AttachmentStore) DeleteByMessage(messageID string) error {
-	_, err := s.db.Exec("DELETE FROM attachments WHERE message_id = ?", messageID)
+	_, err := s.db.Exec("DELETE FROM attachments WHERE message_id = ? AND NOT EXISTS (SELECT 1 FROM attachment_repairs WHERE message_id=?)", messageID, messageID)
 	if err != nil {
 		return fmt.Errorf("failed to delete attachments: %w", err)
 	}
@@ -204,7 +204,7 @@ func (s *AttachmentStore) CreateBatch(attachments []*Attachment) error {
 
 	stmt, err := tx.Prepare(`
 		INSERT INTO attachments (id, message_id, filename, content_type, size, content_id, is_inline, local_path, content)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM attachment_repairs WHERE message_id = ?)
 	`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare statement: %w", err)
@@ -218,7 +218,7 @@ func (s *AttachmentStore) CreateBatch(attachments []*Attachment) error {
 		if a.IsInline && len(a.Content) > 0 {
 			content = a.Content
 		}
-		_, err := stmt.Exec(a.ID, a.MessageID, a.Filename, a.ContentType, a.Size, nullString(a.ContentID), boolToInt(a.IsInline), nullString(a.LocalPath), content)
+		_, err := stmt.Exec(a.ID, a.MessageID, a.Filename, a.ContentType, a.Size, nullString(a.ContentID), boolToInt(a.IsInline), nullString(a.LocalPath), content, a.MessageID)
 		if err != nil {
 			log.Debug().Err(err).Str("filename", a.Filename).Msg("Failed to create attachment in batch")
 			// Continue with other attachments
@@ -242,6 +242,7 @@ func (s *AttachmentStore) DeleteAttachmentsForFolder(folderID string) (int64, er
 		DELETE FROM attachments
 		WHERE message_id IN (
 			SELECT id FROM messages WHERE folder_id = ?
+        ) AND NOT EXISTS (SELECT 1 FROM attachment_repairs r WHERE r.message_id=attachments.message_id
 		)
 	`
 	result, err := s.db.Exec(query, folderID)

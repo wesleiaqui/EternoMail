@@ -891,7 +891,20 @@ func (e *Engine) FetchBodiesInBackground(ctx context.Context, accountID, folderI
 // FetchRawMessage fetches the raw RFC822 content of a message from the IMAP server.
 // Uses streaming fetch to avoid blocking on .Collect().
 func (e *Engine) FetchRawMessage(ctx context.Context, accountID, folderID string, uid uint32) ([]byte, error) {
+	return e.fetchRawMessage(ctx, accountID, folderID, uid, false)
+}
+
+// FetchRawMessageForRepair requires current IMAP UID, exact RFC822.SIZE and a
+// successful command completion. Partial results may render but may not repair.
+func (e *Engine) FetchRawMessageForRepair(ctx context.Context, accountID, folderID string, uid uint32) ([]byte, error) {
+	return e.fetchRawMessage(ctx, accountID, folderID, uid, true)
+}
+
+func (e *Engine) fetchRawMessage(ctx context.Context, accountID, folderID string, uid uint32, strict bool) ([]byte, error) {
 	if c, err := e.GmailClient(ctx, accountID); err == nil {
+		if strict {
+			return nil, fmt.Errorf("Gmail-native repair unsupported")
+		}
 		m, err := e.messageStore.GmailMessageByCacheKey(accountID, folderID, uid)
 		if err == nil && m == nil {
 			m, err = e.messageStore.GetByUID(folderID, uid)
@@ -922,6 +935,9 @@ func (e *Engine) FetchRawMessage(ctx context.Context, accountID, folderID string
 	if f == nil {
 		return nil, fmt.Errorf("folder not found: %s", folderID)
 	}
+	if f.AccountID != accountID {
+		return nil, fmt.Errorf("raw message folder account mismatch")
+	}
 
 	// Get a connection from the pool
 	conn, err := e.pool.GetConnection(ctx, accountID)
@@ -931,9 +947,13 @@ func (e *Engine) FetchRawMessage(ctx context.Context, accountID, folderID string
 	defer e.pool.Release(conn)
 
 	// Select the mailbox
-	_, err = conn.Client().SelectMailbox(ctx, f.Path)
+	selected, err := conn.Client().SelectMailbox(ctx, f.Path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to select mailbox: %w", err)
+	}
+
+	if strict && (selected == nil || f.UIDValidity == 0 || selected.UIDValidity != f.UIDValidity) {
+		return nil, fmt.Errorf("repair requires matching known UIDVALIDITY")
 	}
 
 	// Fetch the raw message
@@ -941,6 +961,7 @@ func (e *Engine) FetchRawMessage(ctx context.Context, accountID, folderID string
 	uidSet.AddNum(imap.UID(uid))
 
 	fetchOptions := &imap.FetchOptions{
+		UID: true, RFC822Size: true,
 		BodySection: []*imap.FetchItemBodySection{
 			{
 				Specifier: imap.PartSpecifierNone,
@@ -953,6 +974,8 @@ func (e *Engine) FetchRawMessage(ctx context.Context, accountID, folderID string
 
 	// Stream the single message instead of blocking on Collect()
 	var rawBytes []byte
+	var fetchedUID uint32
+	var reportedSize int64
 
 	msg := fetchCmd.Next()
 	if msg == nil {
@@ -967,20 +990,30 @@ func (e *Engine) FetchRawMessage(ctx context.Context, accountID, folderID string
 			break
 		}
 
+		switch data := item.(type) {
+		case imapclient.FetchItemDataUID:
+			fetchedUID = uint32(data.UID)
+		case imapclient.FetchItemDataRFC822Size:
+			reportedSize = data.Size
+		}
 		if data, ok := item.(imapclient.FetchItemDataBodySection); ok {
 			if data.Literal != nil {
-				lr := io.LimitReader(data.Literal, maxMessageSize)
+				lr := io.LimitReader(data.Literal, maxMessageSize+1)
 				rawBytes, err = io.ReadAll(lr)
 				if err != nil {
 					fetchCmd.Close()
 					return nil, fmt.Errorf("failed to read message body: %w", err)
 				}
-				break
 			}
 		}
 	}
 
-	fetchCmd.Close()
+	closeErr := fetchCmd.Close()
+	if strict {
+		if err := validateRepairFetch(uid, fetchedUID, reportedSize, len(rawBytes), closeErr); err != nil {
+			return nil, err
+		}
+	}
 
 	if len(rawBytes) == 0 {
 		return nil, fmt.Errorf("message body not found: UID %d", uid)

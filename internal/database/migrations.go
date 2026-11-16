@@ -1891,4 +1891,21 @@ var migrations = []Migration{
 		-- upgraded database that missed it in the initial schema would error.
 		CREATE INDEX IF NOT EXISTS idx_messages_message_id ON messages(message_id);
 	`},
+	{Version: 79, SQL: `
+ CREATE TABLE attachment_repair_backups (
+  id TEXT PRIMARY KEY,
+  message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  rows_json BLOB NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+ );
+ CREATE TABLE attachment_repairs (
+  message_id TEXT PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+  backup_id TEXT NOT NULL REFERENCES attachment_repair_backups(id),
+  snapshot_digest TEXT NOT NULL
+ );
+ CREATE TABLE attachment_repair_payloads (
+  attachment_id TEXT PRIMARY KEY REFERENCES attachments(id) ON DELETE CASCADE,
+  content BLOB NOT NULL
+ );
+ `},
 }

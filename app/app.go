@@ -182,9 +182,10 @@ func isValidEmail(email string) bool {
 
 // App struct holds the application state and dependencies
 type App struct {
-	shutdownOnce  goSync.Once
-	preflightOnce goSync.Once
-	preflightErr  error
+	attachmentRepairAttempts goSync.Map
+	shutdownOnce             goSync.Once
+	preflightOnce            goSync.Once
+	preflightErr             error
 	// Embedded extension bridges. Each extension contributes its Wails-bound
 	// surface via a Bridge struct embedded here; Go's method promotion makes
 	// those bridge methods appear on App so Wails reflection picks them up.
