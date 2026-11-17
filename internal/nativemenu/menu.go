@@ -38,12 +38,14 @@ type State struct {
 }
 type Controller struct {
 	mu        sync.Mutex
+	updateMu  sync.Mutex
 	ctx       context.Context
 	items     map[string][]*menu.MenuItem
 	epoch     uint64
 	menu      *menu.Menu
 	taskMenu  *menu.MenuItem
 	taskViews map[string]*menu.Menu
+	hints     map[*menu.MenuItem]string
 }
 
 // New creates disabled native menus until a frontend publishes valid state.
@@ -53,7 +55,7 @@ func New() *Controller { return newController(false) }
 func NewComposer() *Controller { return newController(true) }
 
 func newController(nativeEdit bool) *Controller {
-	c := &Controller{items: map[string][]*menu.MenuItem{}}
+	c := &Controller{items: map[string][]*menu.MenuItem{}, hints: map[*menu.MenuItem]string{}}
 	var build func([]Item) *menu.Menu
 	build = func(items []Item) *menu.Menu {
 		result := menu.NewMenu()
@@ -71,12 +73,6 @@ func newController(nativeEdit bool) *Controller {
 				continue
 			}
 			id := def.ID
-			label := def.Label
-			// Display existing shortcuts without registering a second global key
-			// handler. Native accelerators otherwise steal editor/extension chords.
-			if def.Key != "" {
-				label += "\t" + def.Key
-			}
 			var accelerator *keys.Accelerator
 			switch id {
 			case "edit.cut":
@@ -88,10 +84,7 @@ func newController(nativeEdit bool) *Controller {
 			case "edit.selectAll":
 				accelerator = keys.CmdOrCtrl("a")
 			}
-			if accelerator != nil {
-				label = def.Label
-			}
-			item := menu.Text(label, accelerator, func(*menu.CallbackData) {
+			item := menu.Text(menuLabel(def.Label, def.Key, accelerator != nil), accelerator, func(*menu.CallbackData) {
 				c.mu.Lock()
 				ctx, epoch, enabled := c.ctx, c.epoch, !c.items[id][0].Disabled
 				c.mu.Unlock()
@@ -102,6 +95,7 @@ func newController(nativeEdit bool) *Controller {
 					wr.EventsEmit(ctx, "native-menu:invoke", map[string]interface{}{"id": id, "epoch": epoch})
 				}
 			})
+			c.hints[item] = def.Key
 			item.Disabled = true
 			c.items[id] = append(c.items[id], item)
 			result.Append(item)
@@ -145,6 +139,7 @@ func (c *Controller) Start(ctx context.Context) {
 	c.mu.Lock()
 	c.ctx = ctx
 	c.mu.Unlock()
+	c.refreshNativeHints()
 	wr.EventsOn(ctx, "native-menu:state", func(args ...interface{}) {
 		if len(args) != 1 {
 			return
@@ -157,9 +152,13 @@ func (c *Controller) Start(ctx context.Context) {
 		if json.Unmarshal(raw, &state) != nil {
 			return
 		}
+		// Keep each framework rebuild and its native hint snapshot ordered.
+		c.updateMu.Lock()
+		defer c.updateMu.Unlock()
 		changed := c.applyState(state)
 		if changed {
 			wr.MenuUpdateApplicationMenu(ctx)
+			c.refreshNativeHints()
 		}
 	})
 }

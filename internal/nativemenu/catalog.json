@@ -5,17 +5,20 @@
       {
         "label": "New Message",
         "id": "app.compose",
-        "key": "⌘N"
+        "key": "c",
+        "shortcutId": "app.compose"
       },
       {
         "label": "New Event…",
         "id": "calendar.new",
-        "key": "⌘N"
+        "key": "⌘N",
+        "shortcutId": "calendar.newEvent"
       },
       {
         "label": "New Contact…",
         "id": "contacts.new",
-        "key": "⌘N"
+        "key": "⌘N",
+        "shortcutId": "contacts.new"
       },
       {
         "label": "-"
@@ -23,7 +26,8 @@
       {
         "label": "Send",
         "id": "composer.send",
-        "key": "⌘↩"
+        "key": "⌘↩",
+        "shortcutId": "composer.send"
       },
       {
         "label": "Send Later…",
@@ -39,7 +43,8 @@
       {
         "label": "Attach Files…",
         "id": "composer.attach",
-        "key": "⌥A"
+        "key": "⌥A",
+        "shortcutId": "composer.attach"
       },
       {
         "label": "Attachments",
@@ -72,12 +77,14 @@
       {
         "label": "Detach Composer",
         "id": "composer.detach",
-        "key": "⌘⇧D"
+        "key": "⌘⇧D",
+        "shortcutId": "composer.detach"
       },
       {
         "label": "Close Tab / Composer",
         "id": "app.close",
-        "key": "⌘W"
+        "key": "⌘W",
+        "shortcutId": "app.closeTab"
       },
       {
         "label": "New Mail Window…",
@@ -92,12 +99,14 @@
       {
         "label": "Undo",
         "id": "edit.undo",
-        "key": "⌘Z"
+        "key": "⌘Z",
+        "shortcutId": "composer.undo"
       },
       {
         "label": "Redo",
         "id": "composer.redo",
-        "key": "⌘⇧Z"
+        "key": "⌘⇧Z",
+        "shortcutId": "composer.redo"
       },
       {
         "label": "Undo History…",
@@ -165,12 +174,14 @@
       {
         "label": "Folder Tree / Message List",
         "id": "app.folders",
-        "key": "⌘D"
+        "key": "⌘D",
+        "shortcutId": "app.folders"
       },
       {
         "label": "Conversation Focus",
         "id": "viewer.focus",
-        "key": "⇧F"
+        "key": "⇧F",
+        "shortcutId": "viewer.threadFocus"
       },
       {
         "label": "Expand All Messages",
@@ -201,22 +212,26 @@
           {
             "label": "All Messages",
             "id": "filter.all",
-            "key": "⌘⌥1"
+            "key": "⌘⌥1",
+            "shortcutId": "list.filterAll"
           },
           {
             "label": "Unread",
             "id": "filter.unread",
-            "key": "⌘⌥2"
+            "key": "⌘⌥2",
+            "shortcutId": "list.filterUnread"
           },
           {
             "label": "Reply Later",
             "id": "filter.replyLater",
-            "key": "⌘⌥3"
+            "key": "⌘⌥3",
+            "shortcutId": "list.filterReplyLater"
           },
           {
             "label": "Read Later",
             "id": "filter.readLater",
-            "key": "⌘⌥4"
+            "key": "⌘⌥4",
+            "shortcutId": "list.filterReadLater"
           },
           {
             "label": "More Filters…",
@@ -241,34 +256,40 @@
           {
             "label": "Month",
             "id": "calendar.month",
-            "key": "⌥M"
+            "key": "⌥M",
+            "shortcutId": "calendar.viewMonth"
           },
           {
             "label": "Week",
             "id": "calendar.week",
-            "key": "⌥W"
+            "key": "⌥W",
+            "shortcutId": "calendar.viewWeek"
           },
           {
             "label": "Day",
             "id": "calendar.day",
-            "key": "⌥D"
+            "key": "⌥D",
+            "shortcutId": "calendar.viewDay"
           },
           {
             "label": "Agenda",
             "id": "calendar.agenda",
-            "key": "⌥A"
+            "key": "⌥A",
+            "shortcutId": "calendar.viewAgenda"
           },
           {
             "label": "Event Focus",
             "id": "calendar.focus",
-            "key": "F"
+            "key": "f",
+            "shortcutId": "calendar.focus"
           }
         ]
       },
       {
         "label": "Command Palette…",
         "id": "app.palette",
-        "key": "⌘K"
+        "key": "⌘K",
+        "shortcutId": "app.commandPalette"
       }
     ]
   },
@@ -278,17 +299,20 @@
       {
         "label": "Reply",
         "id": "mail.reply",
-        "key": "⌘R"
+        "key": "⌘R",
+        "shortcutId": "mail.reply"
       },
       {
         "label": "Reply All",
         "id": "mail.replyAll",
-        "key": "⌘⇧R"
+        "key": "⌘⇧R",
+        "shortcutId": "mail.replyAll"
       },
       {
         "label": "Forward",
         "id": "mail.forward",
-        "key": "⌘L"
+        "key": "f",
+        "shortcutId": "mail.forward"
       },
       {
         "label": "-"
@@ -300,22 +324,26 @@
       {
         "label": "Archive and Mark Read",
         "id": "mail.archiveAndMarkRead",
-        "key": "⌘E"
+        "key": "e",
+        "shortcutId": "mail.archiveAndMarkRead"
       },
       {
         "label": "Read Later",
         "id": "mail.readLater",
-        "key": "⌘U"
+        "key": "l",
+        "shortcutId": "mail.readLater"
       },
       {
         "label": "Reply Later",
         "id": "mail.replyLater",
-        "key": "⌘I"
+        "key": "⇧L",
+        "shortcutId": "mail.replyLater"
       },
       {
         "label": "Snooze…",
         "id": "mail.snooze",
-        "key": "H"
+        "key": "h",
+        "shortcutId": "mail.snooze"
       },
       {
         "label": "Unsnooze",
@@ -327,37 +355,44 @@
       {
         "label": "Mark as Read",
         "id": "mail.markRead",
-        "key": "⇧I"
+        "key": "⇧I",
+        "shortcutId": "mail.markRead"
       },
       {
         "label": "Mark as Unread",
         "id": "mail.markUnread",
-        "key": "⌘⇧U"
+        "key": "⇧U",
+        "shortcutId": "mail.markUnread"
       },
       {
         "label": "Toggle Read / Unread",
         "id": "mail.toggleRead",
-        "key": "M"
+        "key": "m",
+        "shortcutId": "mail.toggleRead"
       },
       {
         "label": "Star / Unstar",
         "id": "mail.star",
-        "key": "S"
+        "key": "s",
+        "shortcutId": "mail.star"
       },
       {
         "label": "Spam / Not Spam",
         "id": "mail.spam",
-        "key": "⌘J"
+        "key": "!",
+        "shortcutId": "mail.spam"
       },
       {
         "label": "Move to Trash",
         "id": "mail.trash",
-        "key": "⌫"
+        "key": "#",
+        "shortcutId": "mail.trash"
       },
       {
         "label": "Delete Permanently…",
         "id": "mail.deletePermanently",
-        "key": "⇧⌫"
+        "key": "⇧⌦",
+        "shortcutId": "mail.deletePermanently"
       },
       {
         "label": "-"
@@ -369,12 +404,14 @@
       {
         "label": "Move to Folder…",
         "id": "mail.moveTo",
-        "key": "⌥M"
+        "key": "v",
+        "shortcutId": "mail.moveTo"
       },
       {
         "label": "Copy to Folder…",
         "id": "mail.copyTo",
-        "key": "⌥C"
+        "key": "⌥C",
+        "shortcutId": "mail.copyTo"
       },
       {
         "label": "-"
@@ -382,12 +419,14 @@
       {
         "label": "Load Remote Images",
         "id": "viewer.loadImages",
-        "key": "⌘⌥L"
+        "key": "⌘⌥L",
+        "shortcutId": "viewer.loadImages"
       },
       {
         "label": "Always Load Images From…",
         "id": "viewer.alwaysLoadImages",
-        "key": "⌘⇧⌥L"
+        "key": "⌘⇧⌥L",
+        "shortcutId": "viewer.alwaysLoadImages"
       },
       {
         "label": "Message Details",
@@ -430,7 +469,8 @@
           {
             "label": "New Event…",
             "id": "calendar.new",
-            "key": "⌘N"
+            "key": "⌘N",
+            "shortcutId": "calendar.newEvent"
           },
           {
             "label": "Edit Event…",
@@ -476,27 +516,32 @@
           {
             "label": "New Contact…",
             "id": "contacts.new",
-            "key": "⌘N"
+            "key": "⌘N",
+            "shortcutId": "contacts.new"
           },
           {
             "label": "Edit Contact…",
             "id": "contacts.edit",
-            "key": "E"
+            "key": "e",
+            "shortcutId": "contacts.edit"
           },
           {
             "label": "Delete Contact…",
             "id": "contacts.delete",
-            "key": "⌫"
+            "key": "⌦",
+            "shortcutId": "lists.delete"
           },
           {
             "label": "Sync All Sources",
             "id": "contacts.syncAll",
-            "key": "⌘⇧A"
+            "key": "⌘⇧A",
+            "shortcutId": "contacts.syncAll"
           },
           {
             "label": "Sync Selected Source",
             "id": "contacts.syncFocused",
-            "key": "⌘⇧S"
+            "key": "⌘⇧S",
+            "shortcutId": "contacts.syncFocused"
           },
           {
             "label": "Sources and Write Access…",
@@ -512,12 +557,14 @@
       {
         "label": "Sync All Accounts / Cancel",
         "id": "app.syncAll",
-        "key": "⌘⇧A"
+        "key": "⌘⇧A",
+        "shortcutId": "app.syncAll"
       },
       {
         "label": "Sync Current Folder / Cancel",
         "id": "app.syncFolder",
-        "key": "⌘⇧S"
+        "key": "⌘⇧S",
+        "shortcutId": "app.syncFolder"
       },
       {
         "label": "Refresh Search / Virtual Folder",
@@ -564,7 +611,8 @@
       {
         "label": "Accounts and Settings…",
         "id": "app.preferences",
-        "key": "⌘,"
+        "key": "⌘,",
+        "shortcutId": "app.preferences"
       },
       {
         "label": "Calendar Sources…",
@@ -607,17 +655,20 @@
       {
         "label": "Bold",
         "id": "format.bold",
-        "key": "⌘B"
+        "key": "⌘B",
+        "shortcutId": "composer.bold"
       },
       {
         "label": "Italic",
         "id": "format.italic",
-        "key": "⌘I"
+        "key": "⌘I",
+        "shortcutId": "composer.italic"
       },
       {
         "label": "Underline",
         "id": "format.underline",
-        "key": "⌘U"
+        "key": "⌘U",
+        "shortcutId": "composer.underline"
       },
       {
         "label": "Strikethrough",
@@ -673,7 +724,8 @@
       {
         "label": "Formatting Toolbar",
         "id": "composer.toolbar",
-        "key": "⌥T"
+        "key": "⌥T",
+        "shortcutId": "composer.toolbar"
       },
       {
         "label": "-"
@@ -727,37 +779,44 @@
       {
         "label": "Back",
         "id": "nav.back",
-        "key": "⌘←"
+        "key": "⌘←",
+        "shortcutId": "nav.historyBack"
       },
       {
         "label": "Forward",
         "id": "nav.forward",
-        "key": "⌘→"
+        "key": "⌘→",
+        "shortcutId": "nav.historyForward"
       },
       {
         "label": "Next Message",
         "id": "nav.next",
-        "key": "⌘⇧]"
+        "key": "↓",
+        "shortcutId": "list.next"
       },
       {
         "label": "Previous Message",
         "id": "nav.prev",
-        "key": "⌘⇧["
+        "key": "↑",
+        "shortcutId": "list.prev"
       },
       {
         "label": "First Item",
         "id": "nav.first",
-        "key": "G"
+        "key": "g",
+        "shortcutId": "list.first"
       },
       {
         "label": "Last Item",
         "id": "nav.last",
-        "key": "⇧G"
+        "key": "⇧G",
+        "shortcutId": "list.last"
       },
       {
         "label": "Open Item",
         "id": "nav.open",
-        "key": "↩"
+        "key": "↩",
+        "shortcutId": "list.open"
       },
       {
         "label": "-"
@@ -765,42 +824,50 @@
       {
         "label": "Next Pane",
         "id": "nav.paneNext",
-        "key": "⌥→"
+        "key": "⌥→",
+        "shortcutId": "nav.paneNext"
       },
       {
         "label": "Previous Pane",
         "id": "nav.panePrev",
-        "key": "⌥←"
+        "key": "⌥←",
+        "shortcutId": "nav.panePrev"
       },
       {
         "label": "Next Folder",
         "id": "nav.folderNext",
-        "key": "⌥↓"
+        "key": "⌥↓",
+        "shortcutId": "nav.folderNext"
       },
       {
         "label": "Previous Folder",
         "id": "nav.folderPrev",
-        "key": "⌥↑"
+        "key": "⌥↑",
+        "shortcutId": "nav.folderPrev"
       },
       {
         "label": "Previous Account",
         "id": "nav.accountPrev",
-        "key": "⌘⌥←"
+        "key": "⌘⌥←",
+        "shortcutId": "nav.accountPrev"
       },
       {
         "label": "Next Account",
         "id": "nav.accountNext",
-        "key": "⌘⌥→"
+        "key": "⌘⌥→",
+        "shortcutId": "nav.accountNext"
       },
       {
         "label": "Next View",
         "id": "nav.nextView",
-        "key": "⌃⇥"
+        "key": "⌃⇥",
+        "shortcutId": "app.nextRail"
       },
       {
         "label": "Previous View",
         "id": "nav.prevView",
-        "key": "⌃`"
+        "key": "⌃`",
+        "shortcutId": "app.prevRail"
       },
       {
         "label": "-"
@@ -808,32 +875,38 @@
       {
         "label": "Calendar Today",
         "id": "calendar.today",
-        "key": "T"
+        "key": "t",
+        "shortcutId": "calendar.today"
       },
       {
         "label": "Previous Calendar Period",
         "id": "calendar.prev",
-        "key": "←"
+        "key": "←",
+        "shortcutId": "calendar.prev"
       },
       {
         "label": "Next Calendar Period",
         "id": "calendar.next",
-        "key": "→"
+        "key": "→",
+        "shortcutId": "calendar.next"
       },
       {
         "label": "First Folder",
         "id": "nav.folderFirst",
-        "key": "⌥G"
+        "key": "⌥G",
+        "shortcutId": "nav.folderFirst"
       },
       {
         "label": "Last Folder",
         "id": "nav.folderLast",
-        "key": "⌥⇧G"
+        "key": "⌥⇧G",
+        "shortcutId": "nav.folderLast"
       },
       {
         "label": "Expand / Collapse Account",
         "id": "nav.toggleAccount",
-        "key": "⌥↩"
+        "key": "⌥↩",
+        "shortcutId": "nav.toggleAccount"
       },
       {
         "label": "Folder Actions…",
@@ -846,37 +919,44 @@
       {
         "label": "Next Item and Check",
         "id": "nav.nextCheck",
-        "key": "⇧↓"
+        "key": "⇧↓",
+        "shortcutId": "list.nextCheck"
       },
       {
         "label": "Previous Item and Check",
         "id": "nav.prevCheck",
-        "key": "⇧↑"
+        "key": "⇧↑",
+        "shortcutId": "list.prevCheck"
       },
       {
         "label": "Check / Uncheck Item",
         "id": "nav.toggleCheck",
-        "key": "Space"
+        "key": "Space",
+        "shortcutId": "list.toggleCheck"
       },
       {
         "label": "Check / Uncheck All Messages",
         "id": "nav.checkAll",
-        "key": "⌘A"
+        "key": "⌘A",
+        "shortcutId": "list.selectAll"
       },
       {
         "label": "Back to Message List",
         "id": "nav.escape",
-        "key": "Esc"
+        "key": "Esc",
+        "shortcutId": "list.escape"
       },
       {
         "label": "Scroll Message Up",
         "id": "viewer.scrollUp",
-        "key": "K"
+        "key": "↑",
+        "shortcutId": "viewer.scrollUp"
       },
       {
         "label": "Scroll Message Down",
         "id": "viewer.scrollDown",
-        "key": "J"
+        "key": "↓",
+        "shortcutId": "viewer.scrollDown"
       }
     ]
   },
@@ -889,12 +969,14 @@
       {
         "label": "Keyboard Shortcuts…",
         "id": "app.shortcuts",
-        "key": "⌘/"
+        "key": "?",
+        "shortcutId": "app.shortcuts"
       },
       {
         "label": "Command Palette…",
         "id": "app.palette",
-        "key": "⌘K"
+        "key": "⌘K",
+        "shortcutId": "app.commandPalette"
       },
       {
         "label": "What's New…",

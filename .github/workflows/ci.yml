@@ -117,7 +117,17 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Compile and test native menu bridge
-        run: go test -race ./internal/nativemenu
+        run: |
+          go test -race ./internal/nativemenu
+          clang -fblocks -framework Cocoa internal/nativemenu/testdata/hints_appkit.m -o "$RUNNER_TEMP/posti-menu-hints"
+          POSTI_MENU_SCREENSHOT="$RUNNER_TEMP/posti-native-menu.png" "$RUNNER_TEMP/posti-menu-hints"
+      - name: Preserve native menu screenshot when available
+        uses: actions/upload-artifact@v6
+        with:
+          name: native-menu-screenshot
+          path: ${{ runner.temp }}/posti-native-menu.png
+          if-no-files-found: ignore
+          retention-days: 1
 
 
   lint:

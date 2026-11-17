@@ -226,3 +226,23 @@ test('Finnish layout symbols support AltGr without swallowing real modifiers', (
   assert.equal(shortcutModule.PERMANENT_DELETE(event('Delete', { shiftKey: true })), true)
 
 })
+
+// The native catalog must show the same primary binding as context menus and
+// tooltips. Alternative working bindings must not become a second hint table.
+test('native menu shortcut labels match the keyboard registry primary binding', async () => {
+  const catalog = JSON.parse(await readFile(path.join(repoDir, 'internal/nativemenu/catalog.json'), 'utf8'))
+  const fixed = new Set(['window.new', 'edit.cut', 'edit.copy', 'edit.paste', 'edit.selectAll'])
+  // app.search is updated by the separate approved search UI PR, not this fix.
+  fixed.add('app.search')
+  const walk = items => {
+    for (const item of items) {
+      if (item.children) walk(item.children)
+      if (!item.key || fixed.has(item.id)) continue
+      assert.ok(item.shortcutId, `${item.id}: missing registry reference`)
+      const def = registry.getShortcut(item.shortcutId)
+      assert.ok(def, `${item.id}: unknown registry reference ${item.shortcutId}`)
+      assert.equal(item.key, format.formatShortcut(item.shortcutId, true), `${item.id}: native hint drifted from real binding`)
+    }
+  }
+  walk(catalog)
+})

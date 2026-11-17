@@ -104,3 +104,85 @@ func TestContextualTaskMenuMatchesSelectedView(t *testing.T) {
 		t.Fatal("stale view changed task menu")
 	}
 }
+
+func TestNativeHintCatalogCoverageAndKeyboardOwnership(t *testing.T) {
+	c := New()
+	var check func([]Item)
+	check = func(definitions []Item) {
+		for _, def := range definitions {
+			check(def.Children)
+			if def.Key == "" {
+				continue
+			}
+			key, _ := shortcutHint(def.Key)
+			if key == "" {
+				t.Fatalf("unhandled catalog shortcut %s: %q", def.ID, def.Key)
+			}
+			for _, item := range c.items[def.ID] {
+				if c.hints[item] != def.Key {
+					t.Fatalf("missing native hint for %s", def.ID)
+				}
+				if item.Accelerator != nil && def.ID != "edit.cut" && def.ID != "edit.copy" && def.ID != "edit.paste" && def.ID != "edit.selectAll" {
+					t.Fatalf("hint stole frontend binding %s", def.ID)
+				}
+			}
+		}
+	}
+	check(Catalog())
+	for epoch, view := range []string{"mail", "calendar", "contacts"} {
+		c.applyState(State{Epoch: uint64(epoch + 1), View: view})
+		tree := c.hintTree(c.menu.Items)
+		if len(tree) == 0 {
+			t.Fatal("missing native tree")
+		}
+		var count int
+		var walk func([]menuHint)
+		walk = func(hints []menuHint) {
+			for _, hint := range hints {
+				if hint.Key != "" {
+					count++
+				}
+				walk(hint.Children)
+			}
+		}
+		walk(tree)
+		if count < 40 {
+			t.Fatalf("view %s lost shortcut hints: %d", view, count)
+		}
+	}
+}
+
+func TestShortcutHintSpecialKeysAndModifiers(t *testing.T) {
+	for _, tc := range []struct {
+		glyph, key string
+		mod        uint
+	}{
+		{"⌘⇧R", "r", hintCommand | hintShift},
+		{"⌘⇧⌥L", "l", hintCommand | hintShift | hintOption},
+		{"⇧I", "i", hintShift}, {"H", "h", 0},
+		{"⌘↩", "\r", hintCommand}, {"⌃⇥", "\t", hintControl},
+		{"⇧⌫", "\x7f", hintShift}, {"⇧⌦", "\uf728", hintShift}, {"Esc", "\x1b", 0}, {"Space", " ", 0},
+		{"⌥↓", "\uf701", hintOption}, {"⌘←", "\uf702", hintCommand},
+		{"unknown", "", 0}, {"", "", 0},
+	} {
+		key, mod := shortcutHint(tc.glyph)
+		if key != tc.key || mod != tc.mod {
+			t.Errorf("%q -> %q/%d, want %q/%d", tc.glyph, key, mod, tc.key, tc.mod)
+		}
+	}
+}
+
+func TestCatalogLabelsAreUnambiguousWithinEachMenu(t *testing.T) {
+	var walk func([]Item)
+	walk = func(items []Item) {
+		labels := map[string]bool{}
+		for _, item := range items {
+			if item.Label != "-" && labels[item.Label] {
+				t.Fatalf("ambiguous menu label %q", item.Label)
+			}
+			labels[item.Label] = true
+			walk(item.Children)
+		}
+	}
+	walk(Catalog())
+}
