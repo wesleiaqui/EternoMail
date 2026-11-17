@@ -83,7 +83,7 @@ func ParseAttachmentsForRepair(messageID string, raw []byte) ([]*AttachmentData,
 		cid := strings.Trim(part.Header.Get("Content-ID"), "<>")
 		// Match ordinary MIME attachment classification, without folding parts by
 		// filename, CID, size or payload. Every occurrence is a separate part.
-		if disp != "attachment" && disp != "inline" && dp["filename"] == "" && params["name"] == "" && cid == "" && strings.HasPrefix(ct, "text/") {
+		if disp != "attachment" && dp["filename"] == "" && params["name"] == "" && cid == "" && (ct == "text/plain" || ct == "text/html" || (disp != "inline" && strings.HasPrefix(ct, "text/"))) {
 			return nil
 		}
 		if disp != "attachment" && disp != "inline" && cid == "" && ct == "" {

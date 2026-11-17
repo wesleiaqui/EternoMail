@@ -62,3 +62,27 @@ func TestRepairRejectsAttachedMultipartWithoutReturningReplacement(t *testing.T)
 		}
 	}
 }
+
+func TestRepairInlineBodyClassification(t *testing.T) {
+	for _, ct := range []string{"text/plain", "text/html", "text/calendar", "text/vcard"} {
+		for _, disposition := range []string{"inline", "inline; filename=body.txt", "attachment"} {
+			t.Run(ct+"/"+disposition, func(t *testing.T) {
+				raw := strings.Replace(repairFixture(), "Content-Type: text/plain\r\n\r\nHello", "Content-Type: "+ct+"\r\nContent-Disposition: "+disposition+"\r\n\r\nHello", 1)
+				parts, err := ParseAttachmentsForRepair("mail", []byte(raw))
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := 3
+				if disposition == "inline" && (ct == "text/plain" || ct == "text/html") {
+					want = 2
+				}
+				if len(parts) != want {
+					t.Fatalf("got %d parts, want %d", len(parts), want)
+				}
+				if string(parts[len(parts)-2].Content) != "one" || string(parts[len(parts)-1].Content) != "two" {
+					t.Fatal("real attachments lost or reordered")
+				}
+			})
+		}
+	}
+}

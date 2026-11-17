@@ -212,6 +212,8 @@ func (s *AttachmentStore) RepairedContent(id string) ([]byte, bool, error) {
 	}
 	return content, err == nil, err
 }
+
+// RepairBackupID returns the current reversible repair generation, or an empty ID when none exists.
 func (s *AttachmentStore) RepairBackupID(messageID string) (string, error) {
 	var id string
 	err := s.db.QueryRow(`SELECT backup_id FROM attachment_repairs WHERE message_id=?`, messageID).Scan(&id)

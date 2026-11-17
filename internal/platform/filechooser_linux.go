@@ -158,7 +158,7 @@ func PortalSaveFiles(title string, filenames []string, directory string) ([]stri
 
 	// Build files as aay (array of null-terminated byte arrays)
 	files := make([][]byte, len(filenames))
-	for i, name := range filenames {
+	for i, name := range portalSaveNames(filenames) {
 		files[i] = append([]byte(name), 0)
 	}
 
@@ -218,6 +218,10 @@ func PortalSaveFiles(title string, filenames []string, directory string) ([]stri
 					return nil, err
 				}
 				paths[i] = p
+			}
+
+			if err := validatePortalSavePaths(paths, len(filenames)); err != nil {
+				return nil, err
 			}
 
 			log.Debug().Int("count", len(paths)).Msg("Portal save files paths selected")

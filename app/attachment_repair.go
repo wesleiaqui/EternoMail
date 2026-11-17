@@ -52,6 +52,7 @@ func (a *App) RepairMessageAttachments(accountID, messageID string) (string, err
 	return a.attachmentStore.RepairFromMIME(accountID, messageID, digest, parts, a.paths.AttachmentsPath(), message.RepairSource{FolderID: msg.FolderID, UID: msg.UID, MessageID: msg.MessageID})
 }
 
+// RestoreMessageAttachmentRepair restores the specified local repair backup after ownership and generation checks.
 func (a *App) RestoreMessageAttachmentRepair(accountID, messageID, backupID string) error {
 	if a.remoteServiceMode || a.attachmentStore == nil {
 		return fmt.Errorf("restore must run on mailbox-owning local app")
