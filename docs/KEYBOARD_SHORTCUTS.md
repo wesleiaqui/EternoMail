@@ -25,7 +25,8 @@ On macOS, `⌘` works wherever `Ctrl` is listed below, unless macOS reserves the
 | `?` / `Ctrl+/` (macOS `⌘/`) | Show keyboard shortcuts |
 | `⌘,` (macOS only) | Open settings |
 | `c` / `Ctrl+N` (macOS `⌘N`) | New message |
-| `/` / `Ctrl+S` (macOS `⌘S`) / `Ctrl+F` (macOS `⌘F`) | Search |
+| `/` / `Ctrl+S` (macOS `⌘S`) / `Ctrl+Shift+F` (macOS `⌘⇧F`) | Search |
+| `Ctrl+F` (macOS `⌘F`) | Find in message |
 | `Ctrl+D` (macOS `⌘D`) | Show folder tree or message list |
 | `z` / `Ctrl+Z` (macOS `⌘Z`) | Undo last action |
 | `Ctrl+Shift+A` (macOS `⌘⇧A`) | Sync all accounts (again to cancel) |

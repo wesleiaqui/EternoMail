@@ -72,7 +72,7 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/posti-browser" --no-package-lock --no-save playwright@1.65.1
           "$RUNNER_TEMP/posti-browser/node_modules/.bin/playwright" install --with-deps chromium
           cd frontend
-          POSTI_PLAYWRIGHT_PATH="$RUNNER_TEMP/posti-browser/node_modules/playwright/index.mjs" POSTI_CHROMIUM_BUNDLED=1 node --test tests/nativeMenu.browser.test.mjs tests/attachmentLayout.browser.test.mjs
+          POSTI_PLAYWRIGHT_PATH="$RUNNER_TEMP/posti-browser/node_modules/playwright/index.mjs" POSTI_CHROMIUM_BUNDLED=1 node --test tests/nativeMenu.browser.test.mjs tests/attachmentLayout.browser.test.mjs tests/searchWorkspace.browser.test.mjs
       - name: Build frontend
         run: npm run build --prefix frontend
 

@@ -347,7 +347,7 @@
     onFolderSelect?.('virtual', item.id, '', item.name, 'virtual')
   }
 
-  function openVirtualFolderDialog(item: virtualfolder.VirtualFolder | null = null) {
+  export function openVirtualFolderDialog(item: virtualfolder.VirtualFolder | null = null) {
     pendingVirtualFolderQuery = ''
     pendingVirtualFolderFolderId = null
     editingVirtualFolder = item
@@ -728,7 +728,7 @@
           <NavigationCards {selectedFolderId} onSelect={selectNavigationEntry}
             onEdit={(entry) => { const item = virtualFoldersStore.folders.find(f => f.id === entry.folderId); if (item) openVirtualFolderDialog(item) }}
             onDelete={(entry) => { const item = virtualFoldersStore.folders.find(f => f.id === entry.folderId); if (item) requestDeleteVirtualFolder(item) }} />
-          <button type="button" class="sidebar-primary-link" data-native-action="folder.addVirtual" onclick={() => openVirtualFolderDialog()}><Icon icon="mdi:plus" class="h-5 w-5" />{$_('navigation.addVirtual')}</button>
+          <button type="button" class="sr-only" data-native-action="folder.addVirtual" onclick={() => openVirtualFolderDialog()}><Icon icon="mdi:plus" class="h-5 w-5" />{$_('navigation.addVirtual')}</button>
 
         </div>
 
@@ -892,7 +892,14 @@
   initialSearchQuery={pendingVirtualFolderQuery}
   initialFolderId={pendingVirtualFolderFolderId}
   onRefreshFolders={refreshVirtualFolderFolders}
-  onSave={(value) => virtualFoldersStore.save(value as virtualfolder.VirtualFolder)}
+  onSave={async value => {
+    const before = new Set(virtualFoldersStore.folders.map(item => item.id))
+    await virtualFoldersStore.save(value as virtualfolder.VirtualFolder)
+    if (pendingVirtualFolderQuery && !value.id) {
+      const created = virtualFoldersStore.folders.filter(item => !before.has(item.id) && item.name === value.name && item.searchQuery === value.searchQuery)
+      if (created.length === 1) selectVirtualFolder(created[0])
+    }
+  }}
 />
 
 <ConfirmDialog

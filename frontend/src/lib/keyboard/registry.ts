@@ -141,6 +141,7 @@ export const CORE_GROUPS: ShortcutGroupDef[] = [
 // The palette derives labels/icons/keys from ShortcutDef when shortcutId is set.
 export const CORE_COMMANDS = [
   { id: 'app.compose', category: 'commandPalette.categories.mail', shortcutId: 'app.compose' },
+  { id: 'app.find', category: 'commandPalette.categories.mail', shortcutId: 'app.find' },
   { id: 'app.search', category: 'commandPalette.categories.mail', shortcutId: 'app.search' },
   { id: 'app.folders', category: 'commandPalette.categories.mail', shortcutId: 'app.folders' },
   { id: 'app.syncAll', category: 'commandPalette.categories.mail', shortcutId: 'app.syncAll' },
@@ -193,7 +194,8 @@ export const CORE_SHORTCUTS: ShortcutDef[] = [
   { id: 'app.shortcuts', icon: 'mdi:keyboard-outline', label: 'shortcuts.action.showShortcuts', group: 'general', combos: ['?', 'Mod+/'], predicates: [KEY.SHORTCUTS_HELP] },
   { id: 'app.preferences', label: 'shortcuts.action.preferences', group: 'general', combos: ['Meta+,'], macOnly: true, inline: app('Comma') },
   { id: 'app.compose', icon: 'mdi:pencil-plus-outline', label: 'shortcuts.action.compose', group: 'general', combos: ['c', 'Mod+n'], panes: MAIL, dispatch: true },
-  { id: 'app.search', icon: 'mdi:magnify', label: 'shortcuts.action.search', group: 'general', combos: ['/', 'Mod+s', 'Mod+f'], dispatch: true, inline: app('s'), legacy: ['Mod+s'] },
+  { id: 'app.search', icon: 'mdi:magnify', label: 'shortcuts.action.search', group: 'general', combos: ['/', 'Mod+s', 'Mod+Shift+f'], dispatch: true, inline: app('s'), legacy: ['Mod+s'] },
+  { id: 'app.find', icon: 'mdi:card-search-outline', label: 'search.findInMessage', group: 'general', combos: ['Mod+f'], dispatch: true, menu: 'Edit', inline: app('f') },
   { id: 'app.folders', icon: 'mdi:folder-multiple-outline', label: 'shortcuts.action.folders', group: 'general', combos: ['Mod+d'], panes: MAIL, dispatch: true, inline: app('d') },
   { id: 'app.undo', icon: 'mdi:undo', label: 'shortcuts.action.undo', group: 'general', combos: ['z', 'Mod+z'], panes: MAIL, dispatch: true, inline: app('z') },
   { id: 'app.syncAll', icon: 'mdi:refresh', label: 'shortcuts.action.syncAll', group: 'general', combos: ['Mod+Shift+a'], panes: MAIL, dispatch: true },

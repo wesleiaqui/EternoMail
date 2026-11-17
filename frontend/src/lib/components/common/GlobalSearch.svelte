@@ -1,84 +1,70 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte'
-  import SearchOperators from './SearchOperators.svelte'
-  import { decodeHtmlEntities } from '$lib/utils/decodeHtmlEntities'
-  import * as Dialog from '$lib/components/ui/dialog'
-  import { SearchMail, CancelMailSearch, ReauthorizeAccount } from '../../../../wailsjs/go/app/App'
-  import { accountStore } from '$lib/stores/accounts.svelte'
-  import { app, type message } from '../../../../wailsjs/go/models'
   import { _ } from '$lib/i18n'
-  let { open = $bindable(false), onSelect }: { open: boolean; onSelect: (thread: string, folder: string, account: string) => void } = $props()
-  let query = $state(''), accountId = $state(''), cursor = $state(''), busy = $state(false)
-  let results = $state<message.Conversation[]>([]), issues = $state<app.MailSearchIssue[]>([]), error = $state('')
-  let input = $state<HTMLInputElement | null>(null)
+  import { onDestroy } from 'svelte'
+  import Icon from '@iconify/svelte'
+  import * as Dialog from '$lib/components/ui/dialog'
+  import { SearchMail, CancelMailSearch } from '../../../../wailsjs/go/app/App'
+  import { app, type message } from '../../../../wailsjs/go/models'
+  import SearchOperators from './SearchOperators.svelte'
+  let { open = $bindable(false), query = $bindable(''), onSubmit }: { open: boolean; query?: string; onSubmit: (query: string) => void } = $props()
+  let input = $state<HTMLInputElement>()
+  let anchor = $state({ left: 0, top: 48 })
+  let results = $state<message.Conversation[]>([])
+  let busy = $state(false), error = $state(''), more = $state(false)
   const session = crypto.randomUUID()
   let generation = 0
-  let searched = $state(false)
   $effect(() => {
-    if (!open) { generation++; void CancelMailSearch(session); busy = false; return }
-    const timer = setTimeout(() => input?.focus(), 0)
-    return () => clearTimeout(timer)
-  })
-  onDestroy(() => { void CancelMailSearch(session) })
-  function insertOperator(value: string) {
-    const start = input?.selectionStart ?? query.length
-    const end = input?.selectionEnd ?? query.length
-    const prefix = start > 0 && !/\s/.test(query[start - 1]) ? ' ' : ''
-    const suffix = end < query.length && !/\s/.test(query[end]) ? ' ' : ''
-    query = query.slice(0, start) + prefix + value + suffix + query.slice(end)
-    cursor = ''
-    requestAnimationFrame(() => {
-      input?.focus()
-      const position = start + prefix.length + value.length
-      input?.setSelectionRange(position, position)
-    })
-  }
-  async function search(more = false) {
+    const text = query.trim()
     const current = ++generation
-    busy = true; error = ''; searched = true
-    if (!more) { results = []; cursor = ''; issues = [] }
-    try {
-      const page = await SearchMail(new app.MailSearchRequest({ sessionId: session, query: query.trim(), accountIds: accountId ? [accountId] : [], virtualFolderId: '', cursor: more ? cursor : '', limit: 30 }))
-      if (current !== generation || !open) return
-      const merged = more ? [...results, ...(page.conversations || [])] : page.conversations || []
-      results = [...new Map(merged.map(c => [`${c.accountId}:${c.threadId}`, c])).values()].sort((a, b) => new Date(b.latestDate as unknown as string).getTime() - new Date(a.latestDate as unknown as string).getTime())
-      cursor = page.cursor || ''; issues = page.issues || []
-    } catch (e) { if (current === generation) error = String(e) }
-    finally { if (current === generation) busy = false }
-  }
+    const typedAt = performance.now()
+    if (!open) { void CancelMailSearch(session); busy = false; return }
+    const rect = document.querySelector('[data-search-anchor]')?.getBoundingClientRect()
+    anchor = { left: rect?.left ?? 0, top: rect?.top ?? 48 }
+    error = ''; busy = !!text
+    if (!text) { results = []; more = false }
+    void CancelMailSearch(session)
+    const focus = setTimeout(() => { if (document.activeElement !== input) input?.focus() }, 0)
+    const timer = setTimeout(async () => {
+      if (!text) return
+      busy = true
+      try {
+        const page = await SearchMail(new app.MailSearchRequest({sessionId: session, query: text, accountIds: [], folderIds: [], virtualFolderId: '', cursor: '', limit: 8}))
+        if (current !== generation) return
+        results = page.conversations || []; more = !!page.cursor
+        if (import.meta.env.DEV) console.debug('[search timing]', {phase: 'modal-first-page', query: text, milliseconds: Math.round(performance.now() - typedAt), count: results.length})
+        error = (page.issues || []).map(issue => `${issue.accountName}: ${issue.message}`).join(' · ')
+      } catch (cause) { if (current === generation && !String(cause).includes('canceled')) error = String(cause) }
+      finally { if (current === generation) busy = false }
+    }, 250)
+    return () => { clearTimeout(timer); clearTimeout(focus) }
+  })
+  onDestroy(() => { generation++; void CancelMailSearch(session) })
+  function submit() { if (!query.trim()) return; onSubmit(query.trim()); open = false }
 </script>
 <Dialog.Root bind:open>
-  <Dialog.Content class="grid-rows-[auto_auto_minmax(0,1fr)] w-[calc(100vw-2rem)] max-w-4xl max-h-[85vh] overflow-hidden">
-    <Dialog.Header><Dialog.Title>{$_('search.global')}</Dialog.Title></Dialog.Header>
-    <form class="flex min-w-0 flex-col gap-2 sm:flex-row" onsubmit={(event) => { event.preventDefault(); void search() }}>
-      <input bind:this={input} bind:value={query} oninput={() => { cursor = '' }} type="search" class="w-full min-w-0 flex-1 rounded border border-border bg-background px-3 py-2" placeholder="is:unread label:work" aria-label={$_('search.global')} />
-      <select bind:value={accountId} class="w-full min-w-0 rounded border border-border bg-background px-2 sm:w-40" aria-label={$_('search.accountScope')} onchange={() => void search()}>
-        <option value="">{$_('search.allAccounts')}</option>
-        {#each accountStore.accounts as item (item.account.id)}<option value={item.account.id}>{item.account.name || item.account.email}</option>{/each}
-      </select>
-      <button type="submit" class="shrink-0 rounded bg-primary px-3 py-2 text-primary-foreground">{$_('search.searchButton')}</button>
+  <Dialog.Content class="rail-search-flyout fixed grid max-w-none gap-2 overflow-hidden p-4" style={`left:${anchor.left}px;top:${anchor.top}px`} >
+    <form class="flex min-w-0 items-center gap-3 pr-7" onsubmit={event => { event.preventDefault(); submit() }}>
+      <Icon icon="mdi:magnify" width="24" class="shrink-0 text-primary" />
+      <input bind:this={input} bind:value={query} aria-label={$_('searchUI.searchAll')} placeholder={$_('searchUI.searchAllPlaceholder')} type="search" class="min-w-0 flex-1 rounded border border-border bg-muted/40 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring" />
     </form>
-    <div class="min-h-0 min-w-0 overflow-y-auto overflow-x-hidden pr-1">
-    <SearchOperators onInsert={insertOperator} />
-    <p class="my-2 text-xs leading-5 text-muted-foreground">{$_('search.serverHint')}</p>
-    {#if error}<p role="alert" class="break-words text-sm text-destructive">{error}</p>{/if}
-    {#each issues as issue (issue.accountId + issue.message)}
-      <p class="mb-2 break-words text-xs text-destructive" role="status">{issue.accountName}: {issue.message}
-        {#if issue.reauthorize}<button type="button" class="underline" onclick={() => ReauthorizeAccount(issue.accountId).then(() => search())}>{$_('search.reauthorize')}</button>{/if}
-      </p>
-    {/each}
-    <div class="min-w-0 space-y-2" aria-busy={busy}>
-      {#each results as item (`${item.accountId}:${item.threadId}`)}
-        <button type="button" class="block w-full min-w-0 overflow-hidden rounded-lg border border-border p-3 text-left hover:bg-muted" onclick={() => { onSelect(item.threadId, item.folderId || '', item.accountId || ''); open = false }}>
-          <span class="block truncate text-sm font-medium">{item.subject || $_('messageList.noSubject')}</span>
-          <span class="block truncate text-xs text-muted-foreground">{item.accountName} · {item.participants?.map(p => p.name || p.email).join(', ')} · {new Date(item.latestDate as unknown as string).toLocaleString()}</span>
-          <span class="block truncate text-sm text-muted-foreground">{decodeHtmlEntities(item.snippet)}</span>
+    <Dialog.Header class="sr-only"><Dialog.Title>{$_('searchUI.allMail')}</Dialog.Title><Dialog.Description>Search all accounts and folders</Dialog.Description></Dialog.Header>
+    <p class="text-xs text-muted-foreground">{$_('searchUI.allScope')}</p>
+    <div class="min-h-0 overflow-auto" aria-busy={busy}>
+      {#if busy}<p role="status">{$_('searchUI.searching')}</p>{/if}
+      {#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
+      {#if query.trim() && !busy && results.length === 0 && !error}<p role="status">{$_('searchUI.noMatches')}</p>{/if}
+      {#each results as result (`${result.accountId}:${result.threadId}`)}
+        <button type="button" class="my-1 block w-full rounded border border-border p-3 text-left hover:bg-muted" onclick={submit}>
+          <span class="block truncate font-medium">{result.subject || '(No subject)'}</span>
+          <span class="block truncate text-sm text-muted-foreground">{result.accountName} · {result.participants?.map(person => person.name || person.email).join(', ')}</span>
         </button>
       {/each}
+      {#if more}<p class="text-xs text-muted-foreground">{$_('searchUI.more')}</p>{/if}
     </div>
-    {#if searched && !busy && !error && results.length === 0}<p role="status" class="text-sm text-muted-foreground">{$_('search.noMatches')}</p>{/if}
-    {#if busy}<p role="status" class="text-sm text-muted-foreground">{$_('common.loading')}</p>{/if}
-    {#if cursor}<button type="button" disabled={busy} onclick={() => void search(true)} class="rounded border border-border px-3 py-2">{$_('search.loadMore')}</button>{/if}
-    </div>
+    <SearchOperators compact onInsert={value => { query = `${query.trimEnd()} ${value}`.trimStart(); input?.focus() }} />
+    <p class="text-xs text-muted-foreground">{$_('searchUI.enterHint')}</p>
   </Dialog.Content>
 </Dialog.Root>
+<style>
+  :global(.rail-search-flyout) { left: 0.25rem; top: 3.1rem; width: min(46rem, calc(100vw - .5rem)); max-height: calc(100dvh - 3.6rem); }
+</style>

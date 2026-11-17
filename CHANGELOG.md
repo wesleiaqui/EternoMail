@@ -4,6 +4,7 @@
 
 ### Native menu shortcut column
 - macOS shortcut hints now use AppKit's aligned right column instead of title tabs. Native hints match the same primary keyboard bindings as the in-app context menus, including v for Move, l/Shift+L for Later, ! for Spam and # for Trash. Existing webview shortcut ownership, context checks and native clipboard actions are preserved.
+- Search all mail from the rail, refine results in a temporary message-list workspace, and save explicitly as an existing-format virtual folder. Find inside open messages with Cmd/Ctrl+F; press it again to widen the query to all mail. Cmd/Ctrl+Shift+F opens all-mail search.
 
 ## Postilaatikko 2026.11.17.1
 

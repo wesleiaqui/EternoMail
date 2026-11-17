@@ -31,6 +31,7 @@
   }
 
   let { open = $bindable(false), virtualFolder, accounts, initialSearchQuery = '', initialFolderId = null, onRefreshFolders, onSave }: Props = $props()
+  const compactSave = $derived(!virtualFolder && !!initialSearchQuery && !initialFolderId)
   let name = $state('')
   let selectedIDs = $state<string[]>([])
   let folderMode = $state('include')
@@ -68,12 +69,12 @@
   $effect(() => {
     if (!open) return
     untrack(() => {
-      name = virtualFolder?.name || ''
+      name = virtualFolder?.name || initialSearchQuery || ''
       selectedIDs = [...(virtualFolder?.folderIds || [])]
       if (!virtualFolder && initialFolderId && !selectedIDs.includes(initialFolderId)) {
         selectedIDs = [...selectedIDs, initialFolderId]
       }
-      folderMode = virtualFolder?.folderMode || 'include'
+      folderMode = virtualFolder?.folderMode || (initialSearchQuery && !initialFolderId ? 'exclude' : 'include')
       readStatus = virtualFolder?.readStatus || 'all'
       replyStatus = virtualFolder?.replyStatus || 'all'
       starStatus = virtualFolder?.starStatus || 'all'
@@ -146,7 +147,7 @@
 <Dialog.Root bind:open>
   <Dialog.Content class="max-h-[85vh] max-w-lg overflow-y-auto">
     <Dialog.Header>
-      <Dialog.Title>{virtualFolder ? $_('sidebar.editVirtualFolder') : $_('sidebar.newVirtualFolder')}</Dialog.Title>
+      <Dialog.Title>{compactSave ? $_('search.saveAsVirtualFolder') : virtualFolder ? $_('sidebar.editVirtualFolder') : $_('sidebar.newVirtualFolder')}</Dialog.Title>
     </Dialog.Header>
     <label class="grid gap-1 text-sm">
       <span>{$_('sidebar.virtualFolderName')}</span>
@@ -158,6 +159,9 @@
         <code class="rounded-md border border-input bg-muted px-3 py-2 text-xs break-all">{searchQuery}</code>
       </div>
     {/if}
+    {#if compactSave}
+      <p class="text-sm text-muted-foreground">All accounts, all folders. Saved folders rerun this search; no messages are moved.</p>
+    {:else}
     <label class="grid gap-1 text-sm">
       <span>{$_('sidebar.virtualFolderSelection')}</span>
       <select bind:value={folderMode} class="h-10 rounded-md border border-input bg-background px-3">
@@ -248,10 +252,11 @@
         {/each}
       {/if}
     </div>
+    {/if}
     {#if error}<p class="text-sm text-destructive" role="alert">{error}</p>{/if}
     <Dialog.Footer>
       <Button variant="outline" onclick={() => (open = false)}>{$_('common.cancel')}</Button>
-      <Button disabled={saving || selectableFolders.length === 0} onclick={submit}>
+      <Button disabled={saving || (!compactSave && selectableFolders.length === 0)} onclick={submit}>
         {#if saving}<Icon icon="mdi:loading" class="mr-1 h-4 w-4 animate-spin" />{/if}
         {$_('common.save')}
       </Button>

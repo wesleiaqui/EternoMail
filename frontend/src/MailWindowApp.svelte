@@ -1,7 +1,9 @@
 <script lang="ts">
   import { registerMenuAction } from './lib/nativeMenu'
-  import { onMount, untrack } from 'svelte'
+  import { onMount, untrack, tick } from 'svelte'
   import Icon from '@iconify/svelte'
+  import GlobalSearch from './lib/components/common/GlobalSearch.svelte'
+  import { messageFind } from './lib/components/viewer/messageFind.svelte'
   import MessageList from './lib/components/list/MessageList.svelte'
   import ConversationViewer from './lib/components/viewer/ConversationViewer.svelte'
   import ToastContainer from './lib/components/ui/toast/ToastContainer.svelte'
@@ -44,6 +46,29 @@
   let pendingSearchQuery = $state('')
   let pendingSearchFolderId = $state<string | null>(null)
   let list = $state<MessageList | undefined>(undefined)
+  let showGlobalSearch = $state(false)
+  let globalSearchQuery = $state('')
+  let searchWorkspace = $state(false)
+  let searchActive = $state(false)
+  let findInput = $state<HTMLInputElement>()
+  function openAllMail(query = '') {
+    globalSearchQuery = query
+    messageFind.open = false
+    showGlobalSearch = true
+  }
+  function findInMessage() {
+    if (!windowState.thread || messageFind.open) { openAllMail(messageFind.query); return }
+    messageFind.open = true
+    setTimeout(() => findInput?.focus(), 0)
+  }
+  async function submitAllMail(query: string) {
+    searchWorkspace = true
+    readerOnly = false
+    windowState = { ...windowState, thread: null }
+    await tick()
+    list?.startAllMailSearch(query)
+    setFocusedPane('messageList')
+  }
   let viewer = $state<ConversationViewer | undefined>(undefined)
   let savedReaderPosition = $state<{ key: string; top: number } | null>(null)
   const scopeKey = (scope: MailScope) => JSON.stringify([scope.accountId, scope.folderId])
@@ -214,7 +239,7 @@
     }
     if (id === 'mail.spam') {
       await run(() => runMessageMutation(ids, async () => {
-        const spamFolder = windowState.scope.folderType === 'spam'
+        const spamFolder = !searchActive && windowState.scope.folderType === 'spam'
         const result = spamFolder ? await MarkAsNotSpamWithUndo(ids) : await MarkAsSpamWithUndo(ids)
         publishUndoOperationCreated(result.operationId, ids, spamFolder ? 'mark-as-not-spam' : 'mark-as-spam')
         list?.clearChecked()
@@ -241,7 +266,14 @@
     viewer?.prepareForSuspend()
   }
   function keydown(event: KeyboardEvent) {
-    if (!active || !mailActive || isInputElement(event.target) || isDialogGuardActive() || event.defaultPrevented) return
+    if (!active || !mailActive || isDialogGuardActive() || event.defaultPrevented || document.querySelector('[data-composer-root]')) return
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'f') {
+      event.preventDefault()
+      if (event.shiftKey) openAllMail(messageFind.open ? messageFind.query : '')
+      else findInMessage()
+      return
+    }
+    if (isInputElement(event.target)) return
     if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'n') { event.preventDefault(); if (embedded) onNewTab?.(); else void newWindow(); return }
     if (event.ctrlKey || event.metaKey || event.altKey) return
     if (event.key === 'Escape') { closeReader(); return }
@@ -298,13 +330,13 @@
     const available=()=>active&&mailActive&&!document.querySelector('[data-composer-root]')
     const listActive=()=>available()&&!readerTab&&getFocusedPane()==='messageList'
     const commands:Record<string,()=>unknown>={
-      'app.close':Quit,'window.new':newWindow,'app.compose':compose,'app.search':()=>list?.toggleSearchFocus(),
+      'app.close':Quit,'window.new':newWindow,'app.compose':compose,'app.search':()=>openAllMail(),'app.find':findInMessage,
       'nav.next':()=>list?.selectNext(),'nav.prev':()=>list?.selectPrevious(),'nav.first':()=>list?.selectFirst(),'nav.last':()=>list?.selectLast(),
       'nav.open':()=>list?.openSelected(),'nav.toggleCheck':()=>list?.toggleCheck(),'nav.checkAll':()=>list?.selectAll(),
       'nav.nextCheck':()=>list?.selectNextWithCheck(),'nav.prevCheck':()=>list?.selectPreviousWithCheck(),
       'nav.messageMenu':()=>list?.openContextMenu(),
     }
-    const removes=Object.entries(commands).map(([id,run])=>registerMenuAction(id,run,()=>id.startsWith('nav.')?listActive():available()&&!embedded))
+    const removes=Object.entries(commands).map(([id,run])=>registerMenuAction(id,run,()=>id.startsWith('nav.')?listActive():available()&&(!embedded || id==='app.find' || id==='app.search')))
     const ids=()=>list?.hasCheckedMessages()?list.getCheckedMessageIds():list?.getSelectedMessageIds()??[]
     for(const id of ['mail.archive','mail.archiveAndMarkRead','mail.trash','mail.markRead','mail.markUnread','mail.star','mail.spam']) {
       removes.push(registerMenuAction(id,()=>bulkAction(id,undefined,ids()),()=>listActive()&&ids().length>0))
@@ -368,19 +400,28 @@
     </aside>
   {/if}
   <main class:reader-only={readerOnly} class:has-thread={!!windowState.thread} class="flex flex-1 min-w-0 min-h-0 overflow-hidden" style={`--list-width: ${listWidth}px`}>
-    {#if !readerTab}
+    {#if !readerTab || searchWorkspace}
     <section class="mail-list min-h-0 overflow-hidden border-r border-border" role="presentation" onclick={() => setFocusedPane('messageList')}>
       <MessageList bind:this={list} accountId={windowState.scope.accountId} folderId={windowState.scope.folderId} folderName={label(windowState.scope)} folderType={windowState.scope.folderType}
         isFocused={active && mailActive && getFocusedPane() === 'messageList'} onConversationSelect={select} onOpenInTab={(accountId, folderId, threadId, folderType, subject) => onOpenInTab?.({ ...windowState.scope, threadId, threadAccountId: accountId, threadFolderId: folderId, folderType, threadSubject: subject })} onReply={reply}
+        onAllMailSearchChange={value => searchActive = value} onWidenSearch={openAllMail}
         onSearchQueryChange={searchQuery => onScopeChange?.({ ...windowState.scope, searchQuery })}
         onRowActionComplete={auto => { if (auto) windowState = { ...windowState, thread: null } }}
         onBulkMarkRead={ids => void run(() => MarkAsRead(ids))} onBulkAction={bulkAction} enableCommandPalette={false} />
     </section>
     {/if}
-    <section class="mail-reader flex w-full flex-1 min-w-0 min-h-0" role="presentation" onclick={() => setFocusedPane('viewer')}>
+    <section class="mail-reader flex w-full flex-col flex-1 min-w-0 min-h-0" role="presentation" onclick={() => setFocusedPane('viewer')}>
+      {#if active && messageFind.open}
+        <div role="search" aria-label={$_('searchUI.find')} class="flex shrink-0 items-center gap-2 border-b border-border p-2">
+          <label for="window-reader-find">{$_('searchUI.find')}</label>
+          <input id="window-reader-find" bind:this={findInput} bind:value={messageFind.query} type="search" class="min-w-0 flex-1 rounded border border-border bg-background px-3 py-2" onkeydown={event => { if (event.key === 'Escape') { messageFind.open = false; event.stopPropagation() } }} />
+          <button type="button" onclick={() => openAllMail(messageFind.query)}>{$_('searchUI.allMail')}</button>
+          <button type="button" aria-label={$_('searchUI.closeFind')} onclick={() => messageFind.open = false}>×</button>
+        </div>
+      {/if}
       {#if active && windowState.thread}
         {@const thread = windowState.thread}
-        <ConversationViewer nativeOwnsMailActions={active && mailActive && getFocusedPane()==='viewer'} bind:this={viewer} threadId={thread.threadId} folderId={thread.folderId} accountId={thread.accountId} folderType={windowState.scope.folderType}
+        <ConversationViewer nativeOwnsMailActions={active && mailActive && getFocusedPane()==='viewer'} bind:this={viewer} threadId={thread.threadId} folderId={thread.folderId} accountId={thread.accountId} folderType={searchActive ? 'search' : windowState.scope.folderType}
           isViewerVisible={active && mailActive} deferMarkAsReadUntilLeave={deferMarkAsReadUntilLeave} isFocused={active && mailActive && getFocusedPane() === 'viewer'} showBackButton onBack={closeReader} onReply={reply}
           restoreScrollTop={restoreReaderScrollTop}
           onSaveScrollPosition={(threadId, folderId, accountId, top) => { savedReaderPosition = { key: readerPositionKey({ threadId, folderId, accountId }), top } }}
@@ -393,6 +434,7 @@
   </main>
   </div>
 </div>
+<GlobalSearch bind:open={showGlobalSearch} bind:query={globalSearchQuery} onSubmit={query => void submitAllMail(query)} />
 <ToastContainer />
 <!-- The primary window's App hosts the shared dialog; a detached window has to host its own. -->
 {#if !embedded}<SnoozeDialog bind:open={snoozeDialog.open} targets={snoozeDialog.targets} onDone={() => list?.handleActionComplete(true)} />{/if}

@@ -76,6 +76,8 @@
     onBulkMarkRead?: (messageIds: string[]) => void
     onBulkAction?: (actionId: string, options?: { permanent?: boolean }) => unknown
     enableCommandPalette?: boolean
+    onAllMailSearchChange?: (active: boolean) => void
+    onWidenSearch?: (query: string) => void
     onSearchQueryChange?: (query: string) => void
     isFocused?: boolean
     isFlashing?: boolean
@@ -97,6 +99,8 @@
     onBulkMarkRead,
     onBulkAction,
     enableCommandPalette = true,
+    onAllMailSearchChange,
+    onWidenSearch,
     onSearchQueryChange,
     isFocused: _isFocused = false,
     isFlashing = false,
@@ -200,6 +204,13 @@
   let pendingFlagChanges: Array<{messageIds: string[], isRead: boolean}> = []
 
   // Search state
+  let editingSearch = $state(false)
+  let allMailSearch = $state(false)
+  $effect(() => { onAllMailSearchChange?.(allMailSearch) })
+  let searchAccountScope = $state('')
+  let searchSort = $state('newest')
+  let searchTypedAt = 0
+  let searchLatencyMs = $state<number | null>(null)
   let showSearch = $state(false)
   let searchQuery = $state('')
   let searchResults = $state<any[]>([])  // ConversationSearchResult from backend
@@ -596,7 +607,7 @@
   function scheduleReload() {
     // Folder sync updates the backing cache, but never replaces an active
     // local or server-search pane.
-    if (isSearchMode) {
+    if (allMailSearch || isSearchMode) {
       return
     }
     if (isDialogGuardActive()) {
@@ -901,6 +912,8 @@
     checkedThreadIds = new Set()
     lastClickedIndex = null
     // Clear search state when folder changes
+    allMailSearch = false
+    localSearchGeneration++
     showSearch = false
     searchQuery = ''
     searchResults = []
@@ -955,7 +968,7 @@
     checkFTSIndexStatus()
   })
 
-  const isSearchMode = $derived(showSearch && searchQuery.trim().length > 0)
+  const isSearchMode = $derived(showSearch && (allMailSearch || searchQuery.trim().length > 0))
 
   // Compute selected message IDs from all checked conversations (for multi-select context menu)
   // Check normal, local-search and server-search result caches.
@@ -1404,6 +1417,12 @@
 
   // Handle search input with debounce
   function handleSearchInput() {
+    searchTypedAt = performance.now()
+    checkedThreadIds = new Set()
+    selectedThreadId = null
+    localSearchGeneration++
+    serverSearchRequestState.cancel()
+    void CancelMailSearch(virtualSearchSession)
     onSearchQueryChange?.(searchQuery)
     if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
 
@@ -1414,7 +1433,7 @@
       serverSearchResults = []
       serverSearchCount = 0
       serverSearchTotalCount = 0
-      searchSource = preferServerSearch ? 'server' : 'local'
+      searchSource = !allMailSearch && preferServerSearch ? 'server' : 'local'
       localSearchGeneration += 1
       isSearching = false
       serverSearchSelectionLocked = false
@@ -1451,13 +1470,14 @@
     localSearchError = null
     searchOffset = 0  // Reset offset for new search
     const generation = ++localSearchGeneration
+    const started = performance.now()
 
     try {
       let results: any[] = []
       let count = 0
 
-      if (isVirtualFolderView) {
-        const response = await SearchMail(new searchModels.MailSearchRequest({sessionId: virtualSearchSession, query, accountIds: [], virtualFolderId: folderId!, filter: filterMode, cursor: '', limit: PAGE_SIZE}))
+      if (allMailSearch || isVirtualFolderView) {
+        const response = await SearchMail(new searchModels.MailSearchRequest({sessionId: virtualSearchSession, query, accountIds: allMailSearch && searchAccountScope ? [searchAccountScope] : [], virtualFolderId: allMailSearch ? '' : folderId!, filter: filterMode, cursor: '', limit: PAGE_SIZE}))
         results = response.conversations || []
         if (generation !== localSearchGeneration || query !== searchQuery.trim()) return
         virtualQueryCursor = response.cursor || ''
@@ -1479,7 +1499,9 @@
       if (generation !== localSearchGeneration || query !== searchQuery.trim() || searchSource !== 'local') {
         return
       }
-      searchResults = results || []
+      searchResults = sortSearchRows(results || [])
+      searchLatencyMs = Math.round(performance.now() - started)
+      if (import.meta.env.DEV && allMailSearch) console.debug('[search timing]', {phase: 'list-first-page', query, requestMs: searchLatencyMs, inputToResultsMs: Math.round(performance.now() - searchTypedAt), count: searchResults.length})
       searchTotalCount = count
       // A list action chooses its own successor. Ordinary local searches
       // retain the existing keyboard-navigation anchor behavior.
@@ -1515,9 +1537,9 @@
 
     try {
       let results: any[] = []
-      if (isVirtualFolderView) {
+      if (allMailSearch || isVirtualFolderView) {
         if (!virtualQueryCursor) return
-        const response = await SearchMail(new searchModels.MailSearchRequest({ sessionId: virtualSearchSession, query, accountIds: [], virtualFolderId: folderId!, filter: filterMode, cursor: virtualQueryCursor, limit: PAGE_SIZE }))
+        const response = await SearchMail(new searchModels.MailSearchRequest({ sessionId: virtualSearchSession, query, accountIds: allMailSearch && searchAccountScope ? [searchAccountScope] : [], virtualFolderId: allMailSearch ? '' : folderId!, filter: filterMode, cursor: virtualQueryCursor, limit: PAGE_SIZE }))
         if (generation !== localSearchGeneration || query !== searchQuery.trim()) return
         results = response.conversations || []
         virtualQueryCursor = response.cursor || ''
@@ -1531,10 +1553,10 @@
       if (generation !== localSearchGeneration || query !== searchQuery.trim()) return
       if (results && results.length > 0) {
         const seen = new Set(searchResults.map(item => `${item.accountId}:${item.threadId}`))
-        searchResults = [...searchResults, ...results.filter(item => !seen.has(`${item.accountId}:${item.threadId}`))]
+        searchResults = sortSearchRows([...searchResults, ...results.filter(item => !seen.has(`${item.accountId}:${item.threadId}`))])
         searchOffset = newOffset
       }
-      if (isVirtualFolderView) searchTotalCount = searchResults.length + (virtualQueryCursor ? 1 : 0)
+      if (allMailSearch || isVirtualFolderView) searchTotalCount = searchResults.length + (virtualQueryCursor ? 1 : 0)
     } catch (err) {
       if (generation !== localSearchGeneration || query !== searchQuery.trim()) return
       if (isExpectedSearchCancellation(err)) return
@@ -1547,6 +1569,9 @@
 
   // Clear search and return to normal view
   function clearSearch() {
+    allMailSearch = false
+    virtualIssues = ''; virtualQueryCursor = ''
+    void CancelMailSearch(virtualSearchSession)
     searchQuery = ''
     onSearchQueryChange?.('')
     searchResults = []
@@ -1591,6 +1616,7 @@
   }
 
   function startServerSearch() {
+    if (allMailSearch) { void performSearch(); return }
     if (!searchQuery.trim()) return
     if (isUnifiedView && folderId !== 'inbox') {
       toasts.error('Server search is currently available for unified Inbox only')
@@ -2321,6 +2347,30 @@
     }
   }
 
+  function sortSearchRows(rows: any[]) {
+    const direction = searchSort === 'oldest' ? 1 : -1
+    return [...rows].sort((a, b) => direction * (new Date(a.latestDate).getTime() - new Date(b.latestDate).getTime()))
+  }
+
+  export function startAllMailSearch(query: string) {
+    loadGeneration++
+    loading = false
+    allMailSearch = true
+    editingSearch = false
+    searchAccountScope = ''
+    serverSearchRequestState.cancel(); isServerSearching = false
+    showSearch = true
+    searchSource = 'local' // SearchMail owns provider selection, not the legacy folder IMAP path.
+    searchQuery = query
+    filterMode = ''
+    checkedThreadIds = new Set()
+    selectedThreadId = null
+    searchResults = []; searchTotalCount = 0; virtualQueryCursor = ''
+    handleSearchInput()
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
+    void performSearch()
+  }
+
   export function getSearchQuery(): string {
     return searchQuery
   }
@@ -2688,7 +2738,7 @@
   // Shared delete handler — same flow as context menu "Delete" action
   // Set permanent=true to force permanent delete (e.g. Shift+Delete)
   export function requestDelete(messageIds: string[], permanent: boolean = false) {
-    if (permanent || folderType === 'trash') {
+    if (permanent || (!allMailSearch && folderType === 'trash')) {
       pendingDeleteIds = messageIds
       showDeleteConfirm = true
       return
@@ -2735,7 +2785,7 @@
       void onBulkAction?.(actionId)
       return
     }
-    void onBulkAction?.(actionId, { permanent: folderType === 'trash' })
+    void onBulkAction?.(actionId, { permanent: (!allMailSearch && folderType === 'trash') })
   }
 
   async function toggleSelectedLaterQueue(kind: 'readLater' | 'replyLater') {
@@ -2814,16 +2864,16 @@
       actions.push({ id: 'mail.archiveAndMarkRead', label: $_('shortcuts.action.archiveAndMarkRead'), icon: 'mdi:archive-check-outline', shortcut: 'mail.archiveAndMarkRead' })
       actions.push({
         id: 'mail.spam',
-        label: $_(folderType === 'spam' ? 'contextMenu.markAsNotSpam' : 'contextMenu.markAsSpam'),
-        icon: folderType === 'spam' ? 'mdi:shield-check-outline' : 'mdi:alert-octagon-outline',
+        label: $_(!allMailSearch && folderType === 'spam' ? 'contextMenu.markAsNotSpam' : 'contextMenu.markAsSpam'),
+        icon: !allMailSearch && folderType === 'spam' ? 'mdi:shield-check-outline' : 'mdi:alert-octagon-outline',
         shortcut: 'mail.spam',
       })
     }
     actions.push({
       id: 'mail.trash',
-      label: $_(folderType === 'trash' ? 'viewer.deletePermanently' : 'viewer.delete'),
-      icon: folderType === 'trash' ? 'mdi:delete-forever-outline' : 'mdi:delete-outline',
-      shortcut: folderType === 'trash' ? 'mail.deletePermanently' : 'mail.trash',
+      label: $_((!allMailSearch && folderType === 'trash') ? 'viewer.deletePermanently' : 'viewer.delete'),
+      icon: (!allMailSearch && folderType === 'trash') ? 'mdi:delete-forever-outline' : 'mdi:delete-outline',
+      shortcut: (!allMailSearch && folderType === 'trash') ? 'mail.deletePermanently' : 'mail.trash',
     })
     return actions
   })
@@ -2841,6 +2891,43 @@
 </script>
 
 <div data-native-context={JSON.stringify([accountId,folderId,selectedThreadId,[...checkedThreadIds]])} class="spark-message-list relative flex flex-col h-full {isFlashing ? 'pane-focus-flash' : ''}">
+  {#if showSearch}
+    <section class="shrink-0 space-y-3 border-b border-border p-3" aria-label="Search workspace">
+      <div class="flex min-w-0 items-center gap-2">
+        <Icon icon="mdi:magnify" width="20" />
+        <h2 class="min-w-0 flex-1 truncate font-semibold">{allMailSearch ? $_('searchUI.title', { values: { query: searchQuery } }) : folderName}</h2>
+        <button type="button" class="rounded px-2 py-1 hover:bg-muted" aria-label={$_('searchUI.closeSearch')} onclick={clearSearch}>×</button>
+      </div>
+      {#if allMailSearch}
+        <p class="text-sm text-muted-foreground">{searchAccountScope ? $_('searchUI.selectedScope') : $_('searchUI.allScope')}</p>
+        <div class="flex flex-wrap gap-2"><button type="button" class="rounded border border-border px-3 py-2 text-sm" onclick={() => { editingSearch = !editingSearch; setTimeout(() => searchInputRef?.focus(), 0) }}>{editingSearch ? $_('searchUI.done') : $_('searchUI.edit')}</button>
+        <button type="button" data-native-action="list.saveSearch" class="rounded border border-border px-3 py-2 text-sm disabled:opacity-50" disabled={!searchQuery.trim() || !!searchAccountScope || !!filterMode} title={filterMode ? $_('searchUI.clearFiltersHint') : searchAccountScope ? $_('searchUI.saveScopeHint') : $_('searchUI.saveFolder')} onclick={() => virtualFoldersStore.requestSaveSearch(searchQuery.trim())}>{$_('searchUI.save')}</button></div>
+      {/if}
+      {#if !allMailSearch || editingSearch}
+      <input bind:this={searchInputRef} bind:value={searchQuery} oninput={handleSearchInput} onkeydown={handleSearchKeydown} type="search" aria-label={$_('searchUI.searchMessages')} placeholder={$_('searchUI.searchMessagesPlaceholder')} class="w-full min-w-0 rounded border border-border bg-muted/30 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring" />
+      {#if !allMailSearch}<button type="button" class="rounded border border-border bg-muted px-3 py-1 text-sm" aria-label={$_('searchUI.widen')} onclick={() => onWidenSearch?.(searchQuery)}>{folderName} ×</button>{/if}
+      <button type="button" data-native-action="list.refresh" class="sr-only" onclick={refreshActiveSearch}>Refresh search</button>
+      {#if allMailSearch || isVirtualFolderView || (searchSource === 'server' && preferServerSearch)}<SearchOperators compact limited={!allMailSearch} onInsert={insertSearchOperator} />{/if}
+      {#if allMailSearch}
+        <label class="block text-sm">{$_('searchUI.scope')}
+          <select aria-label={$_('searchUI.scope')} bind:value={searchAccountScope} onchange={handleSearchInput} class="w-full rounded border border-border bg-background p-2">
+            <option value="">{$_('searchUI.allScope')}</option>
+            {#each accountStore.accounts as item (item.account.id)}<option value={item.account.id}>{item.account.name || item.account.email} · all folders</option>{/each}
+          </select>
+        </label>
+        <label class="block text-sm">{$_('searchUI.sortLoaded')}
+          <select bind:value={searchSort} onchange={() => searchResults = sortSearchRows(searchResults)} class="w-full rounded border border-border bg-background p-2"><option value="newest">{$_('searchUI.newest')}</option><option value="oldest">{$_('searchUI.oldestLoaded')}</option></select>
+        </label>
+
+      {:else}
+        <label class="block text-sm">{$_('searchUI.searchIn')} <select class="rounded border border-border bg-background p-1" value={searchSource} onchange={event => { if (event.currentTarget.value === 'server') startServerSearch(); else { switchToLocalSearch(); void performSearch() } }}><option value="local">{$_('searchUI.localIndex')}</option><option value="server" disabled={isVirtualFolderView || (isUnifiedView && folderId !== 'inbox')}>{$_('searchUI.server')}</option></select></label>
+      {/if}
+      {/if}
+      <p role="status" class="text-sm text-muted-foreground">{$_('searchUI.count', { values: { count: `${allMailSearch ? searchResults.length : activeCount}${allMailSearch && virtualQueryCursor ? '+' : ''}`, scope: allMailSearch ? (searchAccountScope ? $_('searchUI.selectedScope') : $_('searchUI.allMail')) : folderName } })}{isSearching || isServerSearching ? ` · ${$_('searchUI.searching')}` : ''}</p>
+
+    </section>
+  {/if}
+  {#if !showSearch}
   <!-- Header -->
   <div class="spark-list-header flex items-center justify-between px-4 py-3 border-b border-border">
     <div class="flex items-center gap-2">
@@ -2854,61 +2941,6 @@
           <Icon icon="mdi:dock-left" class="w-5 h-5 text-muted-foreground" />
         </button>
       {/if}
-      {#if showSearch}
-        <!-- Search input -->
-        <div class="flex min-w-0 flex-1 items-center gap-1 rounded-md bg-muted px-2">
-          <Icon icon="mdi:magnify" class="w-4 h-4 text-muted-foreground flex-shrink-0" />
-          <input
-            bind:this={searchInputRef}
-            type="text"
-            placeholder={$_('messageList.searchMessages')}
-            class="bg-transparent border-none outline-none text-sm py-1.5 w-full min-w-[60px]"
-            bind:value={searchQuery}
-            oninput={handleSearchInput}
-            onkeydown={handleSearchKeydown}
-          />
-          {#if searchQuery.trim()}
-            <span
-              class="min-w-0 truncate rounded-full bg-primary/20 px-1.5 py-0.5 text-[10px] font-medium text-primary"
-              aria-label={searchSource === 'server' ? $_('search.server') : $_('search.localSearch')}
-            >
-              {#if searchSource === 'server'}
-                {#if isServerSearching}
-                  <Icon icon="mdi:loading" class="mr-1 inline h-3 w-3 animate-spin" />{$_('search.serverSearching')}
-                {:else}
-                  {$_('search.server')}
-                {/if}
-              {:else}
-                {$_('search.localSearch')}
-              {/if}
-            </span>
-          {/if}
-          {#if searchQuery.trim()}
-            <button
-              class="p-0.5 hover:bg-muted-foreground/20 rounded"
-              data-native-action="list.refresh" title="Refresh search"
-              aria-label="Refresh search"
-              onclick={refreshActiveSearch}
-              disabled={isSearching || isServerSearching}
-            >
-              <Icon icon="mdi:refresh" class="w-4 h-4 text-muted-foreground" />
-            </button>
-          {/if}
-          {#if searchQuery.trim() && !isVirtualFolderView}
-            <button
-              class="p-0.5 hover:bg-muted-foreground/20 rounded"
-              data-native-action="list.saveSearch" title={$_('search.saveAsVirtualFolder')}
-              aria-label={$_('search.saveAsVirtualFolder')}
-              onclick={() => virtualFoldersStore.requestSaveSearch(searchQuery.trim(), isUnifiedView ? null : folderId)}
-            >
-              <Icon icon="mdi:folder-star-outline" class="w-4 h-4 text-muted-foreground" />
-            </button>
-          {/if}
-        </div>
-        {#if preferServerSearch || isVirtualFolderView}
-          <SearchOperators onInsert={insertSearchOperator} popup />
-        {/if}
-      {:else}
         {#if folderType === 'inbox'}
           <button
             class="group -ml-2 rounded-lg px-2 py-1 text-left transition-colors hover:bg-muted/70"
@@ -2930,7 +2962,6 @@
         <span class="spark-list-unread text-sm text-muted-foreground whitespace-nowrap">
           {$_('messageList.unread', { values: { count: unreadCount } })}
         </span>
-      {/if}
     </div>
     <div class="flex items-center gap-1">
       {#if isVirtualFolderView && !isSearchMode}
@@ -3067,8 +3098,9 @@
       </button>
     </div>
   </div>
+  {/if}
 
-  {#if folderId && showQuickFilters}
+  {#if folderId && showQuickFilters && !allMailSearch}
     <div class="flex items-center gap-2 overflow-x-auto border-b border-border px-3 py-2" aria-label={$_('messageList.quickFilters')}>
       <button
         type="button"
@@ -3199,7 +3231,7 @@
   {#if checkedThreadIds.size > 0}
     <ActionBar
       count={checkedThreadIds.size}
-      actions={folderType === 'trash'
+      actions={(!allMailSearch && folderType === 'trash')
         ? [{ id: 'mail.moveToInbox', label: $_('viewer.moveToInbox'), icon: 'mdi:inbox-arrow-down-outline' }, ...selectionActions]
         : selectionActions}
       disabled={moveMutationInFlight || laterQueueMutationInFlight}
@@ -3211,7 +3243,7 @@
   {/if}
 
   <!-- Empty Trash bar (only shown when viewing trash folder with messages, not in search mode) -->
-  {#if folderType === 'trash' && totalCount > 0 && !isSearchMode}
+  {#if (!allMailSearch && folderType === 'trash') && totalCount > 0 && !isSearchMode}
     <div class="flex items-center justify-end px-4 py-2 bg-muted/50 border-b border-border">
       <Button
         size="sm"
@@ -3289,14 +3321,14 @@
           {$_('messageList.tryAgain')}
         </button>
       </div>
-    {:else if !isUnifiedView && !isVirtualFolderView && (!accountId || !folderId)}
+    {:else if !allMailSearch && !isUnifiedView && !isVirtualFolderView && (!accountId || !folderId)}
       <div class="flex flex-col items-center justify-center h-full text-muted-foreground">
         <Icon icon="mdi:email-outline" class="w-12 h-12 mb-2" />
         <p>{$_('messageList.selectFolder')}</p>
       </div>
     {:else if isSearchMode}
       <!-- Search Results -->
-      {#if isSearching || isServerSearching}
+      {#if (isSearching || isServerSearching) && !(allMailSearch && searchResults.length)}
         <div class="flex flex-col items-center justify-center h-32 gap-2">
           <Icon icon="mdi:loading" class="w-6 h-6 animate-spin text-muted-foreground" />
           {#if isServerSearching}
@@ -3376,10 +3408,10 @@
         <div class="flex flex-col items-center justify-center h-full text-muted-foreground">
           <Icon icon="mdi:magnify" class="w-12 h-12 mb-2" />
           <p>{$_('messageList.noResults', { values: { query: searchQuery } })}</p>
-          {#if !indexComplete}
+          {#if !allMailSearch && !indexComplete}
             <p class="text-xs mt-1">{$_('messageList.indexBuilding')}</p>
           {/if}
-          {#if !isVirtualFolderView && (isUnifiedView || (accountId && folderId))}
+          {#if !allMailSearch && !isVirtualFolderView && (isUnifiedView || (accountId && folderId))}
             <button
               class="mt-2 text-sm text-primary hover:underline"
               onclick={startServerSearch}
@@ -3390,9 +3422,10 @@
         </div>
       {:else}
         <!-- Local search results header -->
+        {#if !allMailSearch}
         <div class="flex items-center justify-between px-4 py-2 bg-muted/30 border-b border-border text-sm text-muted-foreground">
           <span>{$_('messageList.foundResults', { values: { count: searchTotalCount, query: searchQuery } })}</span>
-          {#if !isVirtualFolderView && (isUnifiedView || (accountId && folderId))}
+          {#if !allMailSearch && !isVirtualFolderView && (isUnifiedView || (accountId && folderId))}
             <button
               class="text-xs text-primary hover:underline"
               onclick={startServerSearch}
@@ -3401,6 +3434,7 @@
             </button>
           {/if}
         </div>
+        {/if}
         {#each searchResults as result, index (result.threadId + '-' + index)}
           {@const resultAccountId = result.accountId || accountId}
           {@const resultFolderId = result.folderId || folderId}
@@ -3410,9 +3444,9 @@
             density={getMessageListDensity()}
             selected={focusedRowIdentity === focusedRowKey(result, accountId || '', folderId || '')}
             checked={checkedThreadIds.has(result.threadId)}
-            accountId={isUnifiedView || isVirtualFolderView ? resultAccountId : accountId!}
-            folderId={isUnifiedView || isVirtualFolderView ? resultFolderId : folderId!}
-            folderType={isVirtualFolderView ? result.folderType || 'folder' : folderType}
+            accountId={resultAccountId!}
+            folderId={resultFolderId!}
+            folderType={allMailSearch || isVirtualFolderView ? result.folderType || 'folder' : folderType}
             {selectedMessageIds}
             {selectedQueueRefs}
             {selectedQueueReady}

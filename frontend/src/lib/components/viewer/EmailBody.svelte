@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { messageFind, highlightMessageText } from './messageFind.svelte'
   import LaterQueueButton from '../common/LaterQueueButton.svelte'
   import Icon from '@iconify/svelte'
   import { ClipboardSetText } from '../../../../wailsjs/runtime/runtime'
@@ -60,6 +61,12 @@
 
   // Derived state
   let hasRemoteImages = $derived(checkForRemoteImages(bodyHtml) || hasBlockedRemoteImages(bodyHtml))
+
+  $effect(() => {
+    const query = messageFind.open ? messageFind.query : ''
+    if (iframeReady && iframeElement?.contentWindow) iframeElement.contentWindow.postMessage({type: 'reader-find', query}, '*')
+    if (plainTextElement) highlightMessageText(plainTextElement, query)
+  })
 
   // Outer iframe element bg: matches the dark-mail surface color (derived from
   // active theme) when darken=true, otherwise white. Reactive to theme changes
@@ -236,6 +243,11 @@
 `
 
     const iframeScript = `
+      window.addEventListener('message', function(event) {
+        if (event.source !== window.parent || event.data?.type !== 'reader-find' || typeof event.data.query !== 'string') return;
+        (${highlightMessageText.toString()})(document.body, event.data.query);
+      });
+
       var lastSentHeight = 0;
       var heightRafId = 0;
 
@@ -445,7 +457,7 @@
             shiftKey: e.shiftKey,
             altGraph: e.getModifierState('AltGraph')
           }, '*');
-          if (isUnmodifiedShortcut) e.preventDefault();
+          if (isUnmodifiedShortcut || ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'f')) e.preventDefault();
         }
       });
 

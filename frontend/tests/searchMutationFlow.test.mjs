@@ -130,48 +130,14 @@ test('global Ctrl+Z publishes the returned operation ID for snapshot restoration
   }
 })
 
-test('MessageList header has the required refresh, badge, close, and filter matrix', () => {
-  const headerStart = messageListSource.indexOf('<!-- Header -->')
-  const headerEnd = messageListSource.indexOf('<!-- Active filter chip -->')
-  assert.notEqual(headerStart, -1)
-  assert.notEqual(headerEnd, -1)
-  const header = messageListSource.slice(headerStart, headerEnd)
-
-  assert.equal((header.match(/onclick=\{refreshActiveSearch\}/g) ?? []).length, 1)
-  assert.match(header, /\{:else if !isVirtualFolderView && !isSearchMode && \(syncing \|\| manualSyncing\)\}[\s\S]*?\{:else if !isVirtualFolderView && !isSearchMode\}/)
-  assert.match(header, /\{#if searchQuery\.trim\(\)\}[\s\S]*?onclick=\{refreshActiveSearch\}/)
-  assert.match(header, /\{#if isVirtualFolderView && !isSearchMode\}[\s\S]*?aria-busy=\{manualSyncing\}[\s\S]*?onclick=\{syncFolder\}/)
-  assert.equal((header.match(/onclick=\{toggleSearch\}/g) ?? []).length, 1)
-  assert.equal((header.match(/onclick=\{clearSearch\}/g) ?? []).length, 0)
-  assert.equal((header.match(/title=\{\$_\('messageList\.filter'\)\}/g) ?? []).length, 1)
-  assert.match(header, /icon=\{showSearch \? 'mdi:close' : 'mdi:magnify'\}/)
-  assert.match(header, /searchSource === 'server' \? \$_\('search\.server'\) : \$_\('search\.localSearch'\)/)
-
-  const matrix = [
-    { name: 'normal', showSearch: false, query: '', source: 'local', refreshCount: 1, searchCloseCount: 0, badgeCount: 0 },
-    { name: 'local', showSearch: true, query: 'needle', source: 'local', refreshCount: 1, searchCloseCount: 1, badgeCount: 1 },
-    { name: 'server', showSearch: true, query: 'needle', source: 'server', refreshCount: 1, searchCloseCount: 1, badgeCount: 1 },
-  ]
-  for (const state of matrix) {
-    const isSearchMode = state.showSearch && state.query.trim().length > 0
-    const actual = {
-      refreshCount: Number(!isSearchMode) + Number(isSearchMode),
-      searchCloseCount: Number(state.showSearch),
-      badgeCount: Number(isSearchMode),
-    }
-    assert.deepEqual(actual, {
-      refreshCount: state.refreshCount,
-      searchCloseCount: state.searchCloseCount,
-      badgeCount: state.badgeCount,
-    }, state.name)
-  }
-
-  const refreshFunction = messageListSource.slice(
-    messageListSource.indexOf('function refreshActiveSearch()'),
-    messageListSource.indexOf('// Perform IMAP server-side search'),
-  )
-  assert.equal((refreshFunction.match(/performServerSearch\(/g) ?? []).length, 1)
-  assert.equal((refreshFunction.match(/performSearch\(true\)/g) ?? []).length, 1)
+test('search uses a full-width field and scoped workspace, with refresh and one explicit close', () => {
+  const workspace = messageListSource.slice(messageListSource.indexOf('{#if showSearch}\n    <section'), messageListSource.indexOf('<!-- Header -->'))
+  assert.match(workspace, /searchUI\.searchMessages/)
+  assert.match(workspace, /class="w-full min-w-0/)
+  assert.match(workspace, /searchUI\.widen/)
+  assert.match(workspace, /onclick=\{refreshActiveSearch\}/)
+  assert.equal((workspace.match(/onclick=\{clearSearch\}/g) || []).length, 1)
+  assert.match(workspace, /limited=\{!allMailSearch\}/)
 })
 
 test('the single Search close control runs one reset and restores normal-list state', () => {
@@ -180,6 +146,9 @@ test('the single Search close control runs one reset and restores normal-list st
   assert.equal((toggleSearch.match(/clearSearch\(\)/g) ?? []).length, 1)
 
   const { outputText } = ts.transpileModule(`
+    let allMailSearch = true, virtualIssues = '', virtualQueryCursor = ''
+    const CancelMailSearch = () => Promise.resolve()
+    const virtualSearchSession = 'test'
     let searchQuery = 'needle'
     let searchResults = ['local-result']
     let searchTotalCount = 1

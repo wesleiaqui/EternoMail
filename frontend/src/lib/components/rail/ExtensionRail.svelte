@@ -1,5 +1,5 @@
 <script lang="ts">
-  let { onRevealContext = () => {}, onHideContext = () => {}, foldersOpen = false, windowControls = false, onCloseWindow }: { onRevealContext?: () => void; onHideContext?: () => void; foldersOpen?: boolean; windowControls?: boolean; onCloseWindow?: () => void } = $props()
+  let { onSearch = () => {}, onAddVirtualFolder = () => {}, onRevealContext = () => {}, onHideContext = () => {}, foldersOpen = false, windowControls = false, onCloseWindow }: { onSearch?: () => void; onAddVirtualFolder?: () => void; onRevealContext?: () => void; onHideContext?: () => void; foldersOpen?: boolean; windowControls?: boolean; onCloseWindow?: () => void } = $props()
   import RailButton from './RailButton.svelte'
   import WindowControls from '$lib/components/common/WindowControls.svelte'
   import { toggleMaximise } from '$lib/windowState.svelte'
@@ -35,7 +35,7 @@
   function keydown(event: KeyboardEvent) {
     if (event.defaultPrevented || document.querySelector('[role="dialog"], [role="alertdialog"]')) return
     const target = event.target as HTMLElement | null
-    if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+    if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"]')) return
     const index = shortcutIndex(event, mac), entry = nav.quick[index]
     if (entry) { event.preventDefault(); event.stopPropagation(); nav.navigate(entry) }
   }
@@ -62,6 +62,7 @@
       <WindowControls onClose={onCloseWindow} />
     </div>
   {/if}
+  <div data-search-anchor><RailButton icon="mdi:magnify" label="Search all mail" active={false} onclick={onSearch} /></div>
   <RailButton icon="mdi:email" label="Mail" active={getActiveExtension() === 'mail'} onclick={() => setActiveExtension('mail')} />
   <RailButton icon="mdi:folder-multiple-outline" label={withShortcut($_('shortcuts.action.folders'), 'app.folders')} active={foldersOpen} onclick={() => void executeCommand('app.folders')} />
   {#each nav.quick as entry, index (entry.id)}
@@ -85,4 +86,5 @@
       <RailButton icon={tab.icon || 'mdi:puzzle'} label={tab.label} active={getActiveExtension() === tab.extensionId} onclick={() => setActiveExtension(tab.extensionId)} />
     {/each}
   {/if}
+  <div class="mt-auto border-t border-border pt-2"><RailButton icon="mdi:plus" label="Add virtual folder" active={false} onclick={onAddVirtualFolder} /></div>
 </nav>
