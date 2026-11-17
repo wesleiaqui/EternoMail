@@ -309,6 +309,7 @@
   </provides>
 
   <releases>
+    <release version="2026.11.17.1" date="2026-11-17" />
     <release version="2026.11.12.1" date="2026-11-12" />
     <release version="2026.11.10.4" date="2026-11-10" />
     <release version="2026.11.10.2" date="2026-11-10" />
