@@ -492,7 +492,7 @@ func (c *mailboxServiceConnector) folders(ctx context.Context, accountID string)
 			Type: folder.Type(summary.Type), ParentID: summary.ParentID,
 			UIDValidity: summary.UIDValidity, UIDNext: summary.UIDNext,
 			HighestModSeq: summary.HighestModSeq, FlagsSyncModSeq: summary.FlagsSyncModSeq,
-			Subscribed: summary.Subscribed,
+			Subscribed: summary.Subscribed, Hidden: summary.Hidden,
 			TotalCount: summary.TotalCount, UnreadCount: summary.UnreadCount, LastSync: summary.LastSync,
 		})
 	}

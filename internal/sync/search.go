@@ -85,6 +85,12 @@ func buildSearchCriteria(query string) *imap.SearchCriteria {
 // Non-local messages get envelope data fetched from the server.
 // When limit > 0, only the newest `limit` UIDs are processed but TotalCount reflects all matches.
 func (e *Engine) IMAPSearch(ctx context.Context, accountID, folderID, query string, limit int) (*IMAPSearchResponse, error) {
+	unlock, lockErr := e.folderLocks.lock(ctx, folderID)
+	if lockErr != nil {
+		return nil, lockErr
+	}
+	defer unlock()
+
 	// Get folder path
 	f, err := e.folderStore.Get(folderID)
 	if err != nil {
@@ -95,6 +101,10 @@ func (e *Engine) IMAPSearch(ctx context.Context, accountID, folderID, query stri
 	}
 	if f.AccountID != accountID {
 		return nil, fmt.Errorf("folder belongs to another account")
+	}
+
+	if f.Hidden {
+		return nil, fmt.Errorf("folder is hidden; show it before searching")
 	}
 
 	// Acquire connection

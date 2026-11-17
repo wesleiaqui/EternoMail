@@ -115,3 +115,25 @@ func cachedConversationPresent(entries []virtualfolder.CachedConversation, id st
 	}
 	return false
 }
+
+func TestSavedOperatorCacheMaintenanceDoesNotReplaceProviderMembership(t *testing.T) {
+	db, runtime, view := newCachedVirtualFolderTestRuntime(t)
+	defer db.Close()
+	view.SearchQuery = "from:alice"
+	if err := runtime.virtualFolders.Update(view); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.virtualFolders.SaveSearchCachePage(view, "acc", []virtualfolder.CachedConversation{{AccountID: "acc", ConversationID: "thread-a"}}, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.RefreshVirtualFolderCache(view.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.refreshVirtualFolderCacheContext(context.Background(), view.ID); err != nil {
+		t.Fatal(err)
+	}
+	cached, err := runtime.GetCachedVirtualFolderView(context.Background(), view.ID)
+	if err != nil || !cached.HasCache || len(cached.Conversations) != 1 || cached.Conversations[0].ThreadID != "thread-a" {
+		t.Fatalf("provider membership overwritten: %#v %v", cached, err)
+	}
+}

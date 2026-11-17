@@ -37,6 +37,18 @@ type FolderContentPolicy struct {
 // default for a folder. Inbox, Starred and pinned folders prefetch new message
 // bodies; other folders keep header-only sync behavior.
 func (a *App) GetFolderContentPolicy(accountID, folderID string) (*FolderContentPolicy, error) {
+	if a.mailboxService != nil && a.mailboxService.isRemote() {
+		catalog, err := a.GetFolders(accountID)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range catalog {
+			if f.ID == folderID && f.Hidden {
+				return &FolderContentPolicy{AccountID: accountID, FolderID: folderID, Source: "hidden"}, nil
+			}
+		}
+	}
+
 	if a.contentPolicyStore == nil {
 		return nil, fmt.Errorf("folder content policy store is not initialized")
 	}
@@ -48,6 +60,10 @@ func (a *App) GetFolderContentPolicy(accountID, folderID string) (*FolderContent
 		return nil, fmt.Errorf("folder does not belong to account")
 	}
 	policy := &FolderContentPolicy{AccountID: accountID, FolderID: folderID}
+	if f.Hidden {
+		policy.Source = "hidden"
+		return policy, nil
+	}
 	override, err := a.contentPolicyStore.Get(accountID, folderID)
 	if err != nil {
 		return nil, err

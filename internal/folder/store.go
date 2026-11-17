@@ -30,7 +30,7 @@ func (s *Store) List(accountID string) ([]*Folder, error) {
 	query := `
 		SELECT id, account_id, name, path, folder_type, parent_id,
 		       uid_validity, uid_next, highest_mod_seq, flags_sync_modseq,
-		       total_count, unread_count, last_sync, subscribed
+		       total_count, unread_count, last_sync, subscribed, hidden
 		FROM folders
 		WHERE account_id = ?
 		ORDER BY name
@@ -53,7 +53,7 @@ func (s *Store) List(accountID string) ([]*Folder, error) {
 		err := rows.Scan(
 			&f.ID, &f.AccountID, &f.Name, &f.Path, &f.Type, &parentID,
 			&uidValidity, &uidNext, &highestModSeq, &flagsSyncModSeq,
-			&f.TotalCount, &f.UnreadCount, &lastSync, &f.Subscribed,
+			&f.TotalCount, &f.UnreadCount, &lastSync, &f.Subscribed, &f.Hidden,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan folder: %w", err)
@@ -90,7 +90,7 @@ func (s *Store) Get(id string) (*Folder, error) {
 	query := `
 		SELECT id, account_id, name, path, folder_type, parent_id,
 		       uid_validity, uid_next, highest_mod_seq, flags_sync_modseq,
-		       total_count, unread_count, last_sync, subscribed
+		       total_count, unread_count, last_sync, subscribed, hidden
 		FROM folders
 		WHERE id = ?
 	`
@@ -104,7 +104,7 @@ func (s *Store) Get(id string) (*Folder, error) {
 	err := s.db.QueryRow(query, id).Scan(
 		&f.ID, &f.AccountID, &f.Name, &f.Path, &f.Type, &parentID,
 		&uidValidity, &uidNext, &highestModSeq, &flagsSyncModSeq,
-		&f.TotalCount, &f.UnreadCount, &lastSync, &f.Subscribed,
+		&f.TotalCount, &f.UnreadCount, &lastSync, &f.Subscribed, &f.Hidden,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -141,7 +141,7 @@ func (s *Store) GetByPath(accountID, path string) (*Folder, error) {
 	query := `
 		SELECT id, account_id, name, path, folder_type, parent_id,
 		       uid_validity, uid_next, highest_mod_seq, flags_sync_modseq,
-		       total_count, unread_count, last_sync, subscribed
+		       total_count, unread_count, last_sync, subscribed, hidden
 		FROM folders
 		WHERE account_id = ? AND path = ?
 	`
@@ -155,7 +155,7 @@ func (s *Store) GetByPath(accountID, path string) (*Folder, error) {
 	err := s.db.QueryRow(query, accountID, path).Scan(
 		&f.ID, &f.AccountID, &f.Name, &f.Path, &f.Type, &parentID,
 		&uidValidity, &uidNext, &highestModSeq, &flagsSyncModSeq,
-		&f.TotalCount, &f.UnreadCount, &lastSync, &f.Subscribed,
+		&f.TotalCount, &f.UnreadCount, &lastSync, &f.Subscribed, &f.Hidden,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -343,7 +343,7 @@ func (s *Store) GetByType(accountID string, folderType Type) (*Folder, error) {
 	query := `
 		SELECT id, account_id, name, path, folder_type, parent_id,
 		       uid_validity, uid_next, highest_mod_seq, flags_sync_modseq,
-		       total_count, unread_count, last_sync, subscribed
+		       total_count, unread_count, last_sync, subscribed, hidden
 		FROM folders
 		WHERE account_id = ? AND folder_type = ?
 		LIMIT 1
@@ -358,7 +358,7 @@ func (s *Store) GetByType(accountID string, folderType Type) (*Folder, error) {
 	err := s.db.QueryRow(query, accountID, folderType).Scan(
 		&f.ID, &f.AccountID, &f.Name, &f.Path, &f.Type, &parentID,
 		&uidValidity, &uidNext, &highestModSeq, &flagsSyncModSeq,
-		&f.TotalCount, &f.UnreadCount, &lastSync, &f.Subscribed,
+		&f.TotalCount, &f.UnreadCount, &lastSync, &f.Subscribed, &f.Hidden,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -396,7 +396,7 @@ func (s *Store) ListSubscribed(accountID string) ([]*Folder, error) {
 	query := `
 		SELECT id, account_id, name, path, folder_type, parent_id,
 		       uid_validity, uid_next, highest_mod_seq, flags_sync_modseq,
-		       total_count, unread_count, last_sync, subscribed
+		       total_count, unread_count, last_sync, subscribed, hidden
 		FROM folders
 		WHERE account_id = ? AND (subscribed = 1 OR folder_type IN ('inbox', 'drafts', 'sent'))
 		ORDER BY name
@@ -419,7 +419,7 @@ func (s *Store) ListSubscribed(accountID string) ([]*Folder, error) {
 		err := rows.Scan(
 			&f.ID, &f.AccountID, &f.Name, &f.Path, &f.Type, &parentID,
 			&uidValidity, &uidNext, &highestModSeq, &flagsSyncModSeq,
-			&f.TotalCount, &f.UnreadCount, &lastSync, &f.Subscribed,
+			&f.TotalCount, &f.UnreadCount, &lastSync, &f.Subscribed, &f.Hidden,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan folder: %w", err)
@@ -458,4 +458,28 @@ func (s *Store) UpdateSubscribed(folderID string, subscribed bool) error {
 		return fmt.Errorf("failed to update folder subscription: %w", err)
 	}
 	return nil
+}
+
+// SetHiddenBatch validates ownership for every target and commits atomically.
+func (s *Store) SetHiddenBatch(accountID string, ids []string, hidden bool) error {
+	if accountID == "" || len(ids) == 0 || len(ids) > 10000 {
+		return fmt.Errorf("select between 1 and 10000 folders")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, id := range ids {
+		var owner string
+		if err := tx.QueryRow("SELECT account_id FROM folders WHERE id = ?", id).Scan(&owner); err != nil || owner != accountID {
+			return fmt.Errorf("folder not found for account: %s", id)
+		}
+	}
+	for _, id := range ids {
+		if _, err := tx.Exec("UPDATE folders SET hidden = ? WHERE account_id = ? AND id = ?", hidden, accountID, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }

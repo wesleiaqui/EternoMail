@@ -96,7 +96,7 @@
         account, folders: (await GetFolderTree(account.id)) ?? [], loading: false, syncing: false, error: null, lastSync: null,
       })))
       accountStore.accounts = entries
-      const real = await Promise.all(accounts.map(async account => ((await GetFolders(account.id)) ?? []).map(folder => ({
+      const real = await Promise.all(accounts.map(async account => ((await GetFolders(account.id)) ?? []).filter(folder => !folder.hidden).map(folder => ({
         accountId: account.id, folderId: folder.id, folderName: `${account.name || account.email} · ${folder.path}`, folderType: folder.type,
       }))))
       await virtualFoldersStore.load(true)

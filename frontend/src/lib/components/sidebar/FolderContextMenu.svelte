@@ -1,4 +1,5 @@
 <script lang="ts">
+  import HideFolderDialog from './HideFolderDialog.svelte'
   import { onMount } from 'svelte'
   import { registerMenuAction } from '$lib/nativeMenu'
   import Icon from '@iconify/svelte'
@@ -45,6 +46,7 @@
       registerMenuAction('folder.defaultDownload',()=>setContentPolicy('inherit'),()=>valid()&&!!accountId&&!!folder&&!policySaving),
     ];return ()=>removes.forEach(remove=>remove())
   })
+  let hideOpen = $state(false)
   let pinned = $derived(accountId !== undefined && sidebarPins.has(accountId, folderId))
   let policy = $state<{ bodyPrefetch: boolean; explicit: boolean; source: string } | null>(null)
   let policyLoading = $state(false)
@@ -141,6 +143,10 @@
         <Icon icon={pinned ? 'mdi:pin-off-outline' : 'mdi:pin-outline'} class="mr-2 h-4 w-4" />
         {pinned ? $_('contextMenu.unpinFromSidebar') : $_('contextMenu.pinToSidebar')}
       </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem onSelect={() => { hideOpen = true }}><Icon icon="mdi:eye-off-outline" class="mr-2 h-4 w-4" />{$_('folderVisibility.hide')}</ContextMenuItem>
     {/if}
   </ContextMenuContent>
 </ContextMenuPrimitive.Root>
+
+{#if accountId}<HideFolderDialog bind:open={hideOpen} {accountId} folderIds={[folderId]} />{/if}

@@ -277,7 +277,7 @@
       { id: 'readLater', kind: 'system', folderType: 'readLater', name: $_('readLater.title'), count: readLaterQueue.ready ? readLaterQueue.count : undefined },
       { id: 'snoozed', kind: 'system', folderType: 'snoozed', name: $_('sidebar.snoozed'), count: snoozedCount },
       ...[...primaryFolders, ...secondaryFolders].map(item => ({ id: item.type, kind: 'system' as const, name: $_(item.label), folderType: item.type, ...folderCounts(folder => folder.type === item.type) })),
-      ...sidebarPins.list.map(pin => ({ id: `folder:${pin.accountId}:${pin.folderId}`, kind: 'folder' as const, accountId: pin.accountId, folderId: pin.folderId, name: pin.name, path: pin.path, ...countsForFolder(pin.accountId, pin.folderId) })),
+      ...sidebarPins.all.map(pin => ({ id: `folder:${pin.accountId}:${pin.folderId}`, kind: 'folder' as const, accountId: pin.accountId, folderId: pin.folderId, name: pin.name, path: pin.path, ...countsForFolder(pin.accountId, pin.folderId) })),
       ...virtualFoldersStore.folders.map(item => ({ id: `virtual:${item.id}`, kind: 'virtual' as const, folderId: item.id, name: item.name, unreadCount: virtualFoldersStore.unreadCounts[item.id] || 0 })),
     ]
     navigationCards.sync(entries)

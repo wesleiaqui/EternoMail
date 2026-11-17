@@ -1071,3 +1071,9 @@ func (c *Client) SaveContactAuthorization(ctx context.Context, req v1.ContactsAu
 func (c *Client) StoreContactSourceTokens(ctx context.Context, req v1.ContactsSourceTokensRequest, idempotencyKey string) error {
 	return c.contactsPost(ctx, "/v1/contacts/sources/tokens", req, idempotencyKey, nil)
 }
+
+// SetFolderVisibility updates the mailbox-owned display preference.
+func (c *Client) SetFolderVisibility(ctx context.Context, req v1.FolderVisibilityRequest) error {
+	_, err := c.doRequest(ctx, http.MethodPost, "/v1/folders/visibility", req, "")
+	return err
+}

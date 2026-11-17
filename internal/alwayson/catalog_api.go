@@ -380,8 +380,13 @@ func (r *SyncRuntime) GetVirtualFolderUnreadCounts() (map[string]int, error) {
 	return r.virtualFolders.UnreadCounts()
 }
 
+var errProviderSearchCache = errors.New("saved search membership is maintained by provider search")
+
 func (r *SyncRuntime) refreshVirtualFolderCache(id string) error {
 	entries, err := r.virtualFolderCacheEntries(id)
+	if errors.Is(err, errProviderSearchCache) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -395,6 +400,9 @@ func (r *SyncRuntime) refreshVirtualFolderCache(id string) error {
 // pool connection within that bound.
 func (r *SyncRuntime) refreshVirtualFolderCacheContext(ctx context.Context, id string) error {
 	entries, err := r.virtualFolderCacheEntries(id)
+	if errors.Is(err, errProviderSearchCache) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -413,6 +421,10 @@ func (r *SyncRuntime) virtualFolderCacheEntries(id string) ([]virtualfolder.Cach
 	if err != nil {
 		return nil, fmt.Errorf("resolve virtual folder members: %w", err)
 	}
+	if vf.SearchQuery != "" {
+		return nil, errProviderSearchCache
+	}
+
 	refs, err := r.messages.ListVirtualFolderConversationIDs(folderIDs, vf.SearchQuery, 200, message.VirtualFolderCriteria{
 		ReadStatus: vf.ReadStatus, ReplyStatus: vf.ReplyStatus, StarStatus: vf.StarStatus, DateWindow: vf.DateWindow,
 	})
@@ -648,6 +660,7 @@ func (r *SyncRuntime) MailboxReadAPIHandler() (http.Handler, error) {
 	v1.MountVirtualFolderUnreadCountRoute(mux, r, automation.RequireGrantCapability)
 	v1.NewAccountMutationHandler(r, newAccountMutationLedger(r.db), r.accountMutationFingerprint).MountRoutes(mux, automation.RequireGrantCapability)
 	v1.MountFolderMutationRoutes(mux, r, automation.RequireGrantCapability)
+	v1.MountFolderVisibilityRoutes(mux, r, automation.RequireGrantCapability)
 	v1.MountVirtualFolderMutationRoutes(mux, r, automation.RequireGrantCapability)
 	v1.MountFilterRuleRoutes(mux, r, automation.RequireGrantCapability)
 	v1.MountFilterJobRoutes(mux, r, automation.RequireGrantCapability)

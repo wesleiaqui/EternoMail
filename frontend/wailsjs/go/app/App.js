@@ -1929,6 +1929,7 @@ export function DispatchRemotePendingSend(arg1) {
   return window['go']['app']['App']['DispatchRemotePendingSend'](arg1);
 }
 
+export function SetFolderVisibility(a,b,c,d) { return window["go"]["app"]["App"]["SetFolderVisibility"](a,b,c,d); }
 export function ChangeLaterWithUndo(arg1, arg2, arg3) {
  return window['go']['app']['App']['ChangeLaterWithUndo'](arg1,arg2,arg3);
 }

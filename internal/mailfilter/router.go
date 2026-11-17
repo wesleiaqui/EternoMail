@@ -58,9 +58,10 @@ func (r *AutomaticRouter) Route(msg *message.Message) {
 			log.Warn().Err(err).Str("ruleID", rule.ID).Msg("Filter rule destination lookup failed")
 			continue
 		}
-		if destination == nil {
-			// Skip stale destinations until the user repairs the rule.
-			log.Debug().Str("ruleID", rule.ID).Str("destFolderID", rule.DestFolderID).Msg("Filter rule destination missing, skipping rule")
+		if destination == nil || destination.Hidden {
+			// Missing destinations need repair. Hidden destinations pause dynamically
+			// without changing the persisted Enabled choice.
+			log.Debug().Str("ruleID", rule.ID).Str("destFolderID", rule.DestFolderID).Msg("Filter rule destination missing or hidden, skipping rule")
 			continue
 		}
 		if !Match(rule, criteria, destination.AccountID) {

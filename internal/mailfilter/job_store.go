@@ -74,7 +74,7 @@ func (s *JobStore) ClaimNext() (*FilterJob, error) {
 	job := &FilterJob{}
 	err = tx.QueryRow(`
 		SELECT id, rule_id, destination_folder_id, message_id, source_account_id, source_folder_id, source_uid
-		FROM automatic_filter_jobs WHERE state='pending' ORDER BY created_at, id LIMIT 1
+		FROM automatic_filter_jobs WHERE state='pending' AND updated_at<=datetime('now') ORDER BY created_at, id LIMIT 1
 	`).Scan(&job.ID, &job.RuleID, &job.DestinationFolderID, &job.MessageID, &job.SourceAccountID, &job.SourceFolderID, &job.SourceUID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -89,6 +89,14 @@ func (s *JobStore) ClaimNext() (*FilterJob, error) {
 		return nil, fmt.Errorf("commit automatic filter claim: %w", err)
 	}
 	return job, nil
+}
+
+// DeferUnstarted keeps an unattempted hidden-destination job pending. The
+// future eligibility time avoids repeatedly claiming it in the hot queue loop;
+// after Show it resumes within a minute, without losing the original snapshot.
+func (s *JobStore) DeferUnstarted(id string) error {
+	_, err := s.db.Exec(`UPDATE automatic_filter_jobs SET state='pending',updated_at=datetime('now','+60 seconds') WHERE id=? AND state='processing'`, id)
+	return err
 }
 
 // Complete removes a successfully handled job from the live queue.

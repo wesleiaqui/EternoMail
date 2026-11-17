@@ -4,6 +4,7 @@
 // $state so any sidebar row can ask whether its folder is pinned and update
 // the list without passing callbacks through the folder tree.
 
+import { accountStore } from './accounts.svelte'
 import { getPinnedFolders, setPinnedFolders } from './uiState.svelte'
 import { isPinned, togglePin, unpinFolder, type PinnedFolder } from '../sidebar/pins'
 
@@ -18,8 +19,10 @@ function commit(next: PinnedFolder[]): void {
 export const sidebarPins = {
   // Pins in pin order.
   get list(): PinnedFolder[] {
-    return pins
+    return pins.filter(pin => !accountStore.folderCatalog[pin.accountId]?.some(item => item.id === pin.folderId && item.hidden))
   },
+
+  get all(): PinnedFolder[] { return pins },
 
   // Whether the account's folder is pinned.
   has(accountId: string, folderId: string): boolean {

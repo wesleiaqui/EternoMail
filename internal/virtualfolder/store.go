@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -135,6 +137,61 @@ func (s *Store) Reorder(ids []string) error {
 // and stamps the refresh time.
 func (s *Store) SaveCache(virtualFolderID string, entries []CachedConversation) error {
 	return database.RetryOnBusy(func() error { return s.saveCache(virtualFolderID, entries) }, busyRetryAttempts, busyRetryBaseDelay)
+}
+
+// SaveSearchCachePage retains provider-resolved membership, never a local FTS
+// approximation. Pages replace only their account on the first page and append
+// thereafter. The definition revision is checked in the write transaction so
+// an edited/deleted view cannot be repopulated by an old in-flight search.
+func (s *Store) SaveSearchCachePage(vf *VirtualFolder, accountID string, entries []CachedConversation, first bool) error {
+	return database.RetryOnBusy(func() error {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+		var revision time.Time
+		err = tx.QueryRow(`SELECT updated_at FROM virtual_folders WHERE id=?`, vf.ID).Scan(&revision)
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !revision.Equal(vf.UpdatedAt) {
+			return nil
+		}
+		if first {
+			if _, err = tx.Exec(`DELETE FROM virtual_folder_cache WHERE virtual_folder_id=? AND account_id=?`, vf.ID, accountID); err != nil {
+				return err
+			}
+		}
+		var position, count int
+		if err = tx.QueryRow(`SELECT COALESCE(MAX(position)+1,0), COUNT(*) FROM virtual_folder_cache WHERE virtual_folder_id=?`, vf.ID).Scan(&position, &count); err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if entry.AccountID != accountID {
+				return fmt.Errorf("search cache account mismatch")
+			}
+			var exists int
+			if err = tx.QueryRow(`SELECT COUNT(*) FROM virtual_folder_cache WHERE virtual_folder_id=? AND account_id=? AND conversation_id=?`, vf.ID, accountID, entry.ConversationID).Scan(&exists); err != nil {
+				return err
+			}
+			if exists > 0 || count >= 200 {
+				continue
+			}
+			if _, err = tx.Exec(`INSERT INTO virtual_folder_cache(virtual_folder_id,position,account_id,conversation_id) VALUES(?,?,?,?)`, vf.ID, position, accountID, entry.ConversationID); err != nil {
+				return err
+			}
+			position++
+			count++
+		}
+		if _, err = tx.Exec(`INSERT INTO virtual_folder_cache_meta(virtual_folder_id,refreshed_at) VALUES(?,?) ON CONFLICT(virtual_folder_id) DO UPDATE SET refreshed_at=excluded.refreshed_at`, vf.ID, time.Now().UTC().Unix()); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}, busyRetryAttempts, busyRetryBaseDelay)
 }
 
 // detachedSaveBusyTimeoutMS bounds how long a detached, best-effort cache
@@ -408,11 +465,11 @@ func (s *Store) reorder(ids []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to reorder virtual folder %s: %w", id, err)
 		}
-		rows, err := result.RowsAffected()
+		affected, err := result.RowsAffected()
 		if err != nil {
 			return fmt.Errorf("failed to confirm virtual folder reorder: %w", err)
 		}
-		if rows == 0 {
+		if affected == 0 {
 			return fmt.Errorf("virtual folder not found: %s", id)
 		}
 	}
@@ -445,6 +502,41 @@ func (s *Store) update(vf *VirtualFolder) error {
 	}
 	defer func() { _ = tx.Rollback() }() // no-op after a successful Commit
 
+	// Cached provider-resolved membership belongs to one exact definition.
+	var oldMode, oldRead, oldReply, oldStar, oldDate, oldQuery string
+	if err := tx.QueryRow(`SELECT folder_mode,read_status,reply_status,star_status,date_window,search_query FROM virtual_folders WHERE id=?`, vf.ID).Scan(&oldMode, &oldRead, &oldReply, &oldStar, &oldDate, &oldQuery); err != nil {
+		return err
+	}
+	rows, err := tx.Query(`SELECT folder_id FROM virtual_folder_members WHERE virtual_folder_id=? ORDER BY folder_id`, vf.ID)
+	if err != nil {
+		return err
+	}
+	oldIDs := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		oldIDs = append(oldIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	newIDs := append([]string{}, vf.FolderIDs...)
+	sort.Strings(newIDs)
+	changed := oldMode != vf.FolderMode || oldRead != vf.ReadStatus || oldReply != vf.ReplyStatus || oldStar != vf.StarStatus || oldDate != vf.DateWindow || oldQuery != vf.SearchQuery || !slices.Equal(oldIDs, newIDs)
+	if changed {
+		if _, err := tx.Exec(`DELETE FROM virtual_folder_cache WHERE virtual_folder_id=?`, vf.ID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM virtual_folder_cache_meta WHERE virtual_folder_id=?`, vf.ID); err != nil {
+			return err
+		}
+	}
+
 	result, err := tx.Exec(`
 		UPDATE virtual_folders
 		SET name = ?, order_index = ?, folder_mode = ?, read_status = ?, reply_status = ?, star_status = ?, date_window = ?, search_query = ?, updated_at = ?
@@ -453,11 +545,11 @@ func (s *Store) update(vf *VirtualFolder) error {
 	if err != nil {
 		return fmt.Errorf("failed to update virtual folder: %w", err)
 	}
-	rows, err := result.RowsAffected()
+	affected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to check affected rows: %w", err)
 	}
-	if rows == 0 {
+	if affected == 0 {
 		return fmt.Errorf("virtual folder not found: %s", vf.ID)
 	}
 
@@ -516,11 +608,11 @@ func (s *Store) delete(id string) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete virtual folder: %w", err)
 	}
-	rows, err := result.RowsAffected()
+	affected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to check affected rows: %w", err)
 	}
-	if rows == 0 {
+	if affected == 0 {
 		return fmt.Errorf("virtual folder not found: %s", id)
 	}
 
@@ -561,6 +653,16 @@ func (s *Store) saveCacheTx(ctx context.Context, beginner txBeginner, virtualFol
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }() // no-op after a successful Commit
+
+	// A local maintenance pass may have started before the definition changed
+	// into a provider search. Recheck inside the write transaction.
+	var query string
+	if err = tx.QueryRowContext(ctx, `SELECT search_query FROM virtual_folders WHERE id=?`, virtualFolderID).Scan(&query); err != nil {
+		return err
+	}
+	if query != "" {
+		return nil
+	}
 
 	if _, err = tx.ExecContext(ctx, `DELETE FROM virtual_folder_cache WHERE virtual_folder_id = ?`, virtualFolderID); err != nil {
 		return fmt.Errorf("failed to clear virtual folder cache: %w", err)

@@ -64,6 +64,9 @@ func (o *mailboxReadOperations) SearchMessagesWithFilter(ctx context.Context, sc
 	}
 	for _, issue := range page.Issues {
 		code := "account_search_failed"
+		if issue.Warning {
+			code = "stale_source"
+		}
 		if issue.Reauthorize {
 			code = "reauthorize_required"
 		}

@@ -50,6 +50,12 @@ func searchUIDPage(uids []uint32, before uint32, limit int) ([]uint32, uint32) {
 // SearchIMAPPage searches on the server and fetches fresh envelopes and flags
 // for one page only. No body sections or attachment payloads are requested.
 func (e *Engine) SearchIMAPPage(ctx context.Context, accountID, folderID, query string, cursor *IMAPSearchCursor, limit int) (*IMAPSearchPage, error) {
+	unlock, lockErr := e.folderLocks.lock(ctx, folderID)
+	if lockErr != nil {
+		return nil, lockErr
+	}
+	defer unlock()
+
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -60,6 +66,10 @@ func (e *Engine) SearchIMAPPage(ctx context.Context, accountID, folderID, query 
 	if f == nil || f.AccountID != accountID {
 		return nil, fmt.Errorf("search folder does not belong to account")
 	}
+	if f.Hidden {
+		return nil, fmt.Errorf("folder is hidden; show it before searching")
+	}
+
 	conn, err := e.pool.GetConnection(ctx, accountID)
 	if err != nil {
 		return nil, err

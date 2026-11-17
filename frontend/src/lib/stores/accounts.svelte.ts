@@ -3,6 +3,7 @@ import { contactPhotos } from './contactPhotos.svelte'
 import {
   GetAccounts,
   GetFolderTree,
+  GetFolders,
   SyncAccountComplete,
   SyncAllComplete,
   CancelAllSyncs,
@@ -45,6 +46,7 @@ export interface SelectedFolder {
 class AccountStore {
   // State
   accounts = $state<AccountWithFolders[]>([])
+  folderCatalog = $state<Record<string, folder.Folder[]>>({})
   loading = $state(false)
   error = $state<string | null>(null)
   selectedFolder = $state<SelectedFolder | null>(null)
@@ -62,6 +64,10 @@ class AccountStore {
     if (this.eventsInitialized) return
     this.eventsInitialized = true
 
+    EventsOn('folders:visibilityChanged', (data: {accountId: string}) => {
+      void this.loadFolders(data.accountId)
+      if (this.selectedFolder?.accountId === data.accountId) this.selectedFolder = null
+    })
     // Listen for folder count changes (e.g., when messages are marked as read)
     EventsOn('folders:countsChanged', (folderCounts: Record<string, number>) => {
       // Update folder counts locally instead of reloading from DB
@@ -273,8 +279,10 @@ class AccountStore {
     acc.error = null
 
     try {
-      const folderTree = await GetFolderTree(accountId)
+      const [folderTree, catalog] = await Promise.all([GetFolderTree(accountId), GetFolders(accountId)])
+      this.folderCatalog[accountId] = catalog || []
       acc.folders = folderTree || []
+      if (this.selectedFolder?.accountId === accountId && catalog?.some(item => item.id === this.selectedFolder?.folderId && item.hidden)) this.selectedFolder = null
     } catch (err) {
       acc.error = err instanceof Error ? err.message : String(err)
       console.error(`Failed to load folders for account ${accountId}:`, err)
@@ -299,6 +307,7 @@ class AccountStore {
       acc.lastSync = new Date()
       // Reload folders after sync
       await this.loadFolders(accountId)
+      if (!(this.folderCatalog[accountId] || []).some(folder => !folder.hidden)) acc.syncing = false
     } catch (err) {
       acc.error = err instanceof Error ? err.message : String(err)
       console.error(`Failed to sync account ${accountId}:`, err)
@@ -331,6 +340,7 @@ class AccountStore {
       // Reload folders for all accounts
       for (const acc of this.accounts) {
         await this.loadFolders(acc.account.id)
+        if (!(this.folderCatalog[acc.account.id] || []).some(folder => !folder.hidden)) acc.syncing = false
       }
     } catch (err) {
       // Parse which account(s) actually failed and only set error on those

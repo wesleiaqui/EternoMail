@@ -14,6 +14,7 @@ import (
 	"github.com/hkdb/aerion/internal/virtualfolder"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -219,6 +220,9 @@ func (s *Service) Search(parent context.Context, req MailSearchRequest) (*MailSe
 		if f == nil || !slices.Contains(ids, f.AccountID) {
 			return nil, fmt.Errorf("folder %s is outside the selected account scope", folderID)
 		}
+		if f.Hidden {
+			return nil, fmt.Errorf("folder is hidden; show it before searching")
+		}
 		foldersByAccount[f.AccountID] = append(foldersByAccount[f.AccountID], f)
 	}
 	if req.VirtualFolderID != "" {
@@ -232,6 +236,11 @@ func (s *Service) Search(parent context.Context, req MailSearchRequest) (*MailSe
 		if vf == nil {
 			return nil, fmt.Errorf("virtual folder not found")
 		}
+		revision := vf.UpdatedAt.UTC().Format(time.RFC3339Nano)
+		if req.Cursor != "" && state.Revision != revision {
+			return nil, fmt.Errorf("saved view changed; start a new search")
+		}
+		state.Revision = revision
 		for _, id := range vf.FolderIDs {
 			f, err := s.folderStore.Get(id)
 			if err != nil {
@@ -304,6 +313,183 @@ func (s *Service) Search(parent context.Context, req MailSearchRequest) (*MailSe
 				}
 				result.Issues = append(result.Issues, MailSearchIssue{AccountID: acc.ID, AccountName: acc.Name, Message: text, Reauthorize: errors.Is(err, gmail.ErrReauthRequired) || errors.Is(err, gmail.ErrInsufficientScope)})
 			}
+
+			retainProviderPage := func(convs []*message.Conversation) {
+				// Typed queries and temporary filters are narrower than the saved
+				// definition and must never replace its retained membership.
+				if vf == nil || vf.SearchQuery == "" || state.Query != "" || req.Filter != "" {
+					return
+				}
+				entries := make([]virtualfolder.CachedConversation, 0, len(convs))
+				for _, conv := range convs {
+					entries = append(entries, virtualfolder.CachedConversation{AccountID: acc.ID, ConversationID: conv.ThreadID})
+				}
+				if err := s.virtualFolderStore.SaveSearchCachePage(vf, acc.ID, entries, token == ""); err != nil {
+					issue(fmt.Errorf("could not retain saved search results: %w", err))
+				}
+			}
+
+			if vf != nil {
+				memberIDs, lookupErr := s.virtualFolderStore.QueryFolderIDs(vf)
+				if lookupErr != nil {
+					issue(lookupErr)
+					return
+				}
+				accountMembers := []string{}
+				paused := false
+				for _, id := range memberIDs {
+					f, lookupErr := s.folderStore.Get(id)
+					if lookupErr != nil {
+						issue(lookupErr)
+						return
+					}
+					if f != nil && f.AccountID == acc.ID {
+						accountMembers = append(accountMembers, id)
+						paused = paused || f.Hidden
+					}
+				}
+				if paused {
+					offset := 0
+					if strings.HasPrefix(token, "hidden:") {
+						parsed, parseErr := strconv.Atoi(strings.TrimPrefix(token, "hidden:"))
+						offset = parsed
+						if parseErr != nil || offset < 0 {
+							issue(fmt.Errorf("invalid cached view cursor"))
+							return
+						}
+					}
+					// Provider query syntax cannot be replayed as literal local FTS.
+					// Preserve the last provider-resolved membership for saved searches.
+					if vf.SearchQuery != "" {
+						refs, _, found, err := s.virtualFolderStore.LoadCache(vf.ID)
+						if err != nil {
+							issue(err)
+							return
+						}
+						selectedRefs := []message.ConversationRef{}
+						for _, ref := range refs {
+							if ref.AccountID == acc.ID {
+								selectedRefs = append(selectedRefs, message.ConversationRef{AccountID: ref.AccountID, ConversationID: ref.ConversationID})
+							}
+						}
+						criteria := savedViewCriteria(vf)
+						criteriaFolders := accountMembers
+						// Gmail reply membership came from sent/In-Reply-To metadata,
+						// not IMAP's Answered flag. Keep that provider decision while
+						// paused; the stale warning applies until sources are shown.
+						if acc.AuthType == account.AuthOAuth2 && strings.EqualFold(acc.IMAPHost, "imap.gmail.com") {
+							criteria.ReplyStatus = "all"
+							// Gmail applies status/date criteria to the whole thread,
+							// including messages outside the selected labels.
+							allFolders, lookupErr := s.folderStore.List(acc.ID)
+							if lookupErr != nil {
+								issue(lookupErr)
+								return
+							}
+							criteriaFolders = nil
+							for _, f := range allFolders {
+								criteriaFolders = append(criteriaFolders, f.ID)
+							}
+						}
+						selectedRefs, err = s.messageStore.FilterVirtualFolderRefs(criteriaFolders, selectedRefs, criteria)
+						if err != nil {
+							issue(err)
+							return
+						}
+						convs, err := s.messageStore.ListConversationsByRefs(selectedRefs)
+						if err != nil {
+							issue(err)
+							return
+						}
+						var filtered []*message.Conversation
+						for _, conv := range convs {
+							if matchesFilter(conv) {
+								filtered = append(filtered, conv)
+							}
+						}
+						// A new typed provider query cannot safely narrow cached membership.
+						if state.Query != "" {
+							issue(fmt.Errorf("Hidden saved search supports its retained results only; show sources to run a new query"))
+							return
+						}
+						if offset > len(filtered) {
+							offset = len(filtered)
+						}
+						end := min(offset+limit, len(filtered))
+						mu.Lock()
+						result.Conversations = append(result.Conversations, filtered[offset:end]...)
+						notice := "Saved search is stale: showing retained provider results; hidden sources are not refreshed"
+						if !found {
+							notice = "Saved search results unavailable: no compatible retained membership; show hidden sources and refresh"
+						}
+						result.Issues = append(result.Issues, MailSearchIssue{AccountID: acc.ID, AccountName: acc.Name, Message: notice, Warning: true})
+						state.Pages[acc.ID] = "!done"
+						if end < len(filtered) {
+							state.Pages[acc.ID] = "hidden:" + strconv.Itoa(end)
+						}
+						mu.Unlock()
+						return
+					}
+					criteria := message.VirtualFolderCriteria{ReadStatus: vf.ReadStatus, ReplyStatus: vf.ReplyStatus, StarStatus: vf.StarStatus, DateWindow: vf.DateWindow}
+					if req.Filter == "unread" {
+						if criteria.ReadStatus == "read" {
+							mu.Lock()
+							state.Pages[acc.ID] = "!done"
+							mu.Unlock()
+							return
+						}
+						criteria.ReadStatus = "unread"
+					}
+					var cached []*message.Conversation
+					exhausted := false
+					for len(cached) < limit && !exhausted {
+						batchLimit := limit - len(cached)
+						var batch []*message.Conversation
+						if req.Query != "" {
+							hits, _, readErr := s.messageStore.SearchVirtualFolderConversations(accountMembers, req.Query, offset, batchLimit, criteria)
+							if readErr != nil {
+								issue(readErr)
+								return
+							}
+							for _, hit := range hits {
+								batch = append(batch, &hit.Conversation)
+							}
+						} else {
+							var readErr error
+							batch, readErr = s.messageStore.ListVirtualFolderConversations(accountMembers, offset, batchLimit, "newest", criteria)
+							if readErr != nil {
+								issue(readErr)
+								return
+							}
+						}
+						offset += len(batch)
+						exhausted = len(batch) < batchLimit
+						for _, conv := range batch {
+							if matchesFilter(conv) {
+								cached = append(cached, conv)
+							}
+						}
+						if err := ctx.Err(); err != nil {
+							issue(err)
+							return
+						}
+					}
+
+					mu.Lock()
+					result.Issues = append(result.Issues, MailSearchIssue{AccountID: acc.ID, AccountName: acc.Name, Message: "Saved view is stale: hidden source refresh paused; showing cached mail", Warning: true})
+					for _, conv := range cached {
+						if matchesFilter(conv) {
+							result.Conversations = append(result.Conversations, conv)
+						}
+					}
+					state.Pages[acc.ID] = "!done"
+					if !exhausted {
+						state.Pages[acc.ID] = "hidden:" + strconv.Itoa(offset)
+					}
+					mu.Unlock()
+					return
+				}
+			}
 			c, err := s.syncEngine.GmailClient(ctx, acc.ID)
 			if errors.Is(err, gmail.ErrNotCapable) {
 				convs, next, e := s.searchIMAPAccountPage(ctx, acc, vf, scope, req.Query, token, limit)
@@ -311,6 +497,7 @@ func (s *Service) Search(parent context.Context, req MailSearchRequest) (*MailSe
 					issue(e)
 					return
 				}
+				retainProviderPage(convs)
 				mu.Lock()
 				for _, conv := range convs {
 					if matchesFilter(conv) {
@@ -477,6 +664,7 @@ func (s *Service) Search(parent context.Context, req MailSearchRequest) (*MailSe
 				}
 				newSeen = append(newSeen, key)
 			}
+			retainProviderPage(convs)
 			mu.Lock()
 			defer mu.Unlock()
 			result.Conversations = append(result.Conversations, convs...)
@@ -547,6 +735,9 @@ func (s *Service) searchIMAPAccountPage(ctx context.Context, acc *account.Accoun
 			return nil, "", err
 		}
 		for _, f := range fs {
+			if f.Hidden {
+				continue
+			}
 			if slices.Contains(vf.FolderIDs, f.ID) == (vf.FolderMode == "exclude") {
 				continue
 			}
@@ -554,6 +745,9 @@ func (s *Service) searchIMAPAccountPage(ctx context.Context, acc *account.Accoun
 		}
 	} else if len(selectedFolders) > 0 {
 		for _, f := range selectedFolders {
+			if f.Hidden {
+				continue
+			}
 			ids = append(ids, f.ID)
 		}
 	} else {
@@ -562,6 +756,9 @@ func (s *Service) searchIMAPAccountPage(ctx context.Context, acc *account.Accoun
 			return nil, "", err
 		}
 		for _, f := range fs {
+			if f.Hidden {
+				continue
+			}
 			if vf != nil && slices.Contains(vf.FolderIDs, f.ID) == (vf.FolderMode == "exclude") {
 				continue
 			}
@@ -594,6 +791,20 @@ func (s *Service) searchIMAPAccountPage(ctx context.Context, acc *account.Accoun
 		}
 		convs = append(convs, &message.Conversation{ThreadID: m.ThreadID, Subject: m.Subject, Snippet: m.Snippet, LatestDate: m.Date, MessageIDs: []string{m.ID}, MessageCount: 1, UnreadCount: unread, IsStarred: m.IsStarred, AccountID: acc.ID, AccountName: acc.Name, FolderID: m.FolderID, Participants: []message.Address{{Name: m.FromName, Email: m.FromEmail}}})
 	}
+	if vf != nil {
+		refs := make([]message.ConversationRef, 0, len(convs))
+		for _, conv := range convs {
+			refs = append(refs, message.ConversationRef{AccountID: acc.ID, ConversationID: conv.ThreadID})
+		}
+		refs, err = s.messageStore.FilterVirtualFolderRefs(ids, refs, savedViewCriteria(vf))
+		if err != nil {
+			return nil, "", err
+		}
+		convs, err = s.messageStore.ListConversationsByRefs(refs)
+		if err != nil {
+			return nil, "", err
+		}
+	}
 	state.Cursor = page.Next
 	if page.Next == nil {
 		state.Index++
@@ -603,4 +814,8 @@ func (s *Service) searchIMAPAccountPage(ctx context.Context, acc *account.Accoun
 	}
 	encoded, err := json.Marshal(state)
 	return convs, string(encoded), err
+}
+
+func savedViewCriteria(vf *virtualfolder.VirtualFolder) message.VirtualFolderCriteria {
+	return message.VirtualFolderCriteria{ReadStatus: vf.ReadStatus, ReplyStatus: vf.ReplyStatus, StarStatus: vf.StarStatus, DateWindow: vf.DateWindow}
 }

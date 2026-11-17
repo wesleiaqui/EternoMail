@@ -468,3 +468,49 @@ func (s *Store) ListConversationsByRefs(refs []ConversationRef) ([]*Conversation
 	}
 	return conversations, nil
 }
+
+// FilterVirtualFolderRefs applies saved conversation criteria to provider text
+// matches without interpreting their query as local FTS. Criteria aggregate all
+// cached messages in the saved scope, not only the matching message's flags.
+func (s *Store) FilterVirtualFolderRefs(folderIDs []string, refs []ConversationRef, criteria VirtualFolderCriteria) ([]ConversationRef, error) {
+	if len(folderIDs) == 0 || len(refs) == 0 {
+		return []ConversationRef{}, nil
+	}
+	cte, args, err := virtualFolderConversationCTE(folderIDs)
+	if err != nil {
+		return nil, err
+	}
+	where, criteriaArgs, err := virtualFolderCriteriaWhere(criteria)
+	if err != nil {
+		return nil, err
+	}
+	args = append(args, criteriaArgs...)
+	clauses := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		clauses = append(clauses, "(c.account_id=? AND c.conversation_id=?)")
+		args = append(args, ref.AccountID, ref.ConversationID)
+	}
+	rows, err := s.db.Query(cte+` SELECT c.account_id,c.conversation_id FROM virtual_folder_conversations c WHERE 1=1`+where+` AND (`+strings.Join(clauses, " OR ")+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	found := map[ConversationRef]bool{}
+	for rows.Next() {
+		var ref ConversationRef
+		if err := rows.Scan(&ref.AccountID, &ref.ConversationID); err != nil {
+			return nil, err
+		}
+		found[ref] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := []ConversationRef{}
+	for _, ref := range refs {
+		if found[ref] {
+			out = append(out, ref)
+		}
+	}
+	return out, nil
+}

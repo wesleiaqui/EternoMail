@@ -370,6 +370,7 @@ type FolderSummary struct {
 	UIDNext         uint32     `json:"uidNext"`
 	HighestModSeq   uint64     `json:"highestModSeq"`
 	FlagsSyncModSeq uint64     `json:"flagsSyncModSeq"`
+	Hidden          bool       `json:"hidden"`
 	Subscribed      bool       `json:"subscribed"`
 	TotalCount      int        `json:"totalCount"`
 	UnreadCount     int        `json:"unreadCount"`
@@ -404,7 +405,7 @@ func (h *ReadHandler) handleFolders(w http.ResponseWriter, r *http.Request) {
 				ID: f.ID, AccountID: f.AccountID, Name: f.Name, Path: f.Path,
 				Type: string(f.Type), ParentID: f.ParentID, UIDValidity: f.UIDValidity,
 				UIDNext: f.UIDNext, HighestModSeq: f.HighestModSeq, FlagsSyncModSeq: f.FlagsSyncModSeq,
-				Subscribed: f.Subscribed,
+				Subscribed: f.Subscribed, Hidden: f.Hidden,
 				TotalCount: f.TotalCount, UnreadCount: f.UnreadCount, LastSync: f.LastSync,
 			})
 		}

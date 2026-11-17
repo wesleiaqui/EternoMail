@@ -229,25 +229,47 @@ func (a *App) syncFolder(accountID, folderID string, restart bool) error {
 // folder, then re-syncs headers. Bodies are fetched again only as messages are
 // opened.
 func (a *App) ForceSyncFolder(accountID, folderID string) error {
+	f, err := a.folderStore.Get(folderID)
+	if err != nil {
+		return err
+	}
+	if f == nil || f.AccountID != accountID {
+		return fmt.Errorf("folder account mismatch")
+	}
+	if f.Hidden {
+		return fmt.Errorf("folder is hidden; show it before force refresh")
+	}
 	if err := a.ensureSyncOwnership(); err != nil {
 		return err
 	}
 	log := logging.WithComponent("app")
 	log.Info().Str("accountID", accountID).Str("folderID", folderID).Msg("Starting force re-sync of folder")
 
-	// Step 1: Clear body content for all messages in the folder
-	bodiesCleared, err := a.messageStore.ClearBodiesForFolder(folderID)
-	if err != nil {
-		return fmt.Errorf("failed to clear bodies: %w", err)
-	}
-	log.Info().Int64("bodiesCleared", bodiesCleared).Msg("Cleared message bodies")
+	err = func() error {
+		unlock, err := a.syncEngine.LockVisibleFolder(a.ctx, accountID, folderID)
+		if err != nil {
+			return err
+		}
+		defer unlock()
+		// Step 1: Clear body content for all messages in the folder
+		bodiesCleared, err := a.messageStore.ClearBodiesForFolder(folderID)
+		if err != nil {
+			return fmt.Errorf("failed to clear bodies: %w", err)
+		}
+		log.Info().Int64("bodiesCleared", bodiesCleared).Msg("Cleared message bodies")
 
-	// Step 2: Delete attachments for all messages in the folder
-	attachmentsDeleted, err := a.attachmentStore.DeleteAttachmentsForFolder(folderID)
+		// Step 2: Delete attachments for all messages in the folder
+		attachmentsDeleted, err := a.attachmentStore.DeleteAttachmentsForFolder(folderID)
+		if err != nil {
+			return fmt.Errorf("failed to delete attachments: %w", err)
+		}
+		log.Info().Int64("attachmentsDeleted", attachmentsDeleted).Msg("Deleted attachments")
+
+		return nil
+	}()
 	if err != nil {
-		return fmt.Errorf("failed to delete attachments: %w", err)
+		return err
 	}
-	log.Info().Int64("attachmentsDeleted", attachmentsDeleted).Msg("Deleted attachments")
 
 	// Step 3: Refresh headers. Opening a message will fetch its body again.
 	return a.SyncFolder(accountID, folderID)
@@ -369,12 +391,15 @@ func (a *App) getSyncFolders(accountID string) ([]*folder.Folder, error) {
 		return nil, err
 	}
 	if acct.SyncAllFolders {
-		return a.folderStore.List(accountID)
+		items, err := a.folderStore.List(accountID)
+		return folder.WithoutHidden(items), err
 	}
 	if acct.SyncFoldersEnabled {
-		return a.folderStore.ListSubscribed(accountID)
+		items, err := a.folderStore.ListSubscribed(accountID)
+		return folder.WithoutHidden(items), err
 	}
-	return a.folderStore.List(accountID)
+	items, err := a.folderStore.List(accountID)
+	return folder.WithoutHidden(items), err
 }
 
 // getCoreOnlyFolders returns core folders (Inbox, Drafts, Sent, Trash) — the default sync behavior.
@@ -386,7 +411,7 @@ func (a *App) getCoreOnlyFolders(accountID string) ([]*folder.Folder, error) {
 		if err != nil {
 			continue
 		}
-		if f != nil {
+		if f != nil && !f.Hidden {
 			folders = append(folders, f)
 		}
 	}

@@ -41,13 +41,14 @@ func TestGmailSearchAcrossAccountsAndVirtualFolderFromEmptyCache(t *testing.T) {
 			}
 		}
 	}
-	var bodyCalls, modifies, metadataCalls atomic.Int32
-	var failB, quotaThreads atomic.Bool
+	var bodyCalls, modifies, metadataCalls, providerCalls atomic.Int32
+	var failB, quotaThreads, includeReplies, crossLabelStar atomic.Bool
 	var lastListQuery atomic.Value
 	header := func(id string) map[string]any {
 		return map[string]any{"id": id, "threadId": id, "internalDate": fmt.Sprint(time.Now().UnixMilli()), "labelIds": []string{"Label_1", "UNREAD"}, "payload": map[string]any{"headers": []map[string]string{{"name": "Subject", "value": "Remote only"}, {"name": "From", "value": "peer@example.org"}, {"name": "Message-ID", "value": "<" + id + "@example.org>"}}}}
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		providerCalls.Add(1)
 		if failB.Load() && r.Header.Get("Authorization") == "Bearer b" {
 			w.WriteHeader(401)
 			return
@@ -93,7 +94,20 @@ func TestGmailSearchAcrossAccountsAndVirtualFolderFromEmptyCache(t *testing.T) {
 			metadataCalls.Add(1)
 			_ = json.NewEncoder(w).Encode(header(strings.TrimPrefix(r.URL.Path, "/messages/")))
 		case strings.HasPrefix(r.URL.Path, "/threads/"):
-			_ = json.NewEncoder(w).Encode(map[string]any{"messages": []any{header(strings.TrimPrefix(r.URL.Path, "/threads/"))}})
+			item := header(strings.TrimPrefix(r.URL.Path, "/threads/"))
+			if includeReplies.Load() {
+				item["labelIds"] = []string{"Label_1", "UNREAD", "SENT"}
+				payload := item["payload"].(map[string]any)
+				payload["headers"] = append(payload["headers"].([]map[string]string), map[string]string{"name": "In-Reply-To", "value": "<original@example.org>"})
+			}
+			items := []any{item}
+			if crossLabelStar.Load() {
+				outside := header(strings.TrimPrefix(r.URL.Path, "/threads/") + "-outside")
+				outside["threadId"] = item["threadId"]
+				outside["labelIds"] = []string{"Label_2", "STARRED"}
+				items = append(items, outside)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"messages": items})
 		default:
 			t.Errorf("unexpected request %s", r.URL)
 			w.WriteHeader(404)
@@ -144,6 +158,116 @@ func TestGmailSearchAcrossAccountsAndVirtualFolderFromEmptyCache(t *testing.T) {
 	if q, _ := lastListQuery.Load().(string); !strings.Contains(q, "invoice") || !strings.Contains(q, "report") {
 		t.Fatalf("typed query not combined with stored query: %q", q)
 	}
+	// Resolve an operator through the provider, retain both pages, and hide
+	// sources. No test-only cache seeding: this covers the production writer.
+	vf.SearchQuery = "from:peer"
+	if err = a.virtualFolderStore.Update(vf); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := a.SearchMail(MailSearchRequest{VirtualFolderID: vf.ID})
+	if err != nil || len(resolved.Issues) != 0 || resolved.Cursor == "" {
+		t.Fatalf("operator first page %#v %v", resolved, err)
+	}
+	if _, err = a.SearchMail(MailSearchRequest{VirtualFolderID: vf.ID, Cursor: resolved.Cursor}); err != nil {
+		t.Fatal(err)
+	}
+	refs, _, found, err := a.virtualFolderStore.LoadCache(vf.ID)
+	if err != nil || !found || len(refs) != 3 {
+		t.Fatalf("provider membership %#v %v %v", refs, found, err)
+	}
+	// Local refresh and a narrower typed query cannot overwrite membership.
+	if err = a.RefreshVirtualFolderCache(vf.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.SearchMail(MailSearchRequest{VirtualFolderID: vf.ID, Query: "narrower"}); err != nil {
+		t.Fatal(err)
+	}
+	if err = a.folderStore.SetHiddenBatch("a", []string{"a1"}, true); err != nil {
+		t.Fatal(err)
+	}
+	if err = a.folderStore.SetHiddenBatch("b", []string{"b1"}, true); err != nil {
+		t.Fatal(err)
+	}
+	beforeHidden := providerCalls.Load()
+	retained, err := a.SearchMail(MailSearchRequest{VirtualFolderID: vf.ID})
+	if err != nil || len(retained.Conversations) != 3 || len(retained.Issues) != 2 {
+		t.Fatalf("operator retained view %#v %v", retained, err)
+	}
+	for _, issue := range retained.Issues {
+		if !issue.Warning {
+			t.Fatalf("not a stale warning: %#v", issue)
+		}
+	}
+	if providerCalls.Load() != beforeHidden {
+		t.Fatal("hidden saved search contacted provider")
+	}
+	if err = a.folderStore.SetHiddenBatch("a", []string{"a1"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if err = a.folderStore.SetHiddenBatch("b", []string{"b1"}, false); err != nil {
+		t.Fatal(err)
+	}
+	// Gmail reply status is a provider thread decision, not IMAP Answered.
+	// Retention must preserve both replied and unreplied provider memberships.
+	for _, replyStatus := range []string{"replied", "unreplied"} {
+		includeReplies.Store(replyStatus == "replied")
+		vf.ReplyStatus = replyStatus
+		if err = a.virtualFolderStore.Update(vf); err != nil {
+			t.Fatal(err)
+		}
+		online, err := a.SearchMail(MailSearchRequest{VirtualFolderID: vf.ID})
+		if err != nil || len(online.Conversations) != 2 || len(online.Issues) != 0 {
+			t.Fatalf("Gmail %s online %#v %v", replyStatus, online, err)
+		}
+		if err = a.folderStore.SetHiddenBatch("a", []string{"a1"}, true); err != nil {
+			t.Fatal(err)
+		}
+		if err = a.folderStore.SetHiddenBatch("b", []string{"b1"}, true); err != nil {
+			t.Fatal(err)
+		}
+		before := providerCalls.Load()
+		offline, err := a.SearchMail(MailSearchRequest{VirtualFolderID: vf.ID})
+		if err != nil || len(offline.Conversations) != 2 || len(offline.Issues) != 2 || providerCalls.Load() != before {
+			t.Fatalf("Gmail %s retained %#v %v", replyStatus, offline, err)
+		}
+		if err = a.folderStore.SetHiddenBatch("a", []string{"a1"}, false); err != nil {
+			t.Fatal(err)
+		}
+		if err = a.folderStore.SetHiddenBatch("b", []string{"b1"}, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	includeReplies.Store(false)
+	vf.ReplyStatus = "all"
+	vf.StarStatus = "starred"
+	vf.FolderIDs = []string{"a1", "b1"}
+	crossLabelStar.Store(true)
+	if err = a.virtualFolderStore.Update(vf); err != nil {
+		t.Fatal(err)
+	}
+	online, err := a.SearchMail(MailSearchRequest{VirtualFolderID: vf.ID})
+	if err != nil || len(online.Conversations) != 2 || len(online.Issues) != 0 {
+		t.Fatalf("cross-label online %#v %v", online, err)
+	}
+	if err = a.folderStore.SetHiddenBatch("a", []string{"a1"}, true); err != nil {
+		t.Fatal(err)
+	}
+	if err = a.folderStore.SetHiddenBatch("b", []string{"b1"}, true); err != nil {
+		t.Fatal(err)
+	}
+	before := providerCalls.Load()
+	offline, err := a.SearchMail(MailSearchRequest{VirtualFolderID: vf.ID})
+	if err != nil || len(offline.Conversations) != 2 || len(offline.Issues) != 2 || providerCalls.Load() != before {
+		t.Fatalf("cross-label retained %#v %v", offline, err)
+	}
+	if err = a.folderStore.SetHiddenBatch("a", []string{"a1"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if err = a.folderStore.SetHiddenBatch("b", []string{"b1"}, false); err != nil {
+		t.Fatal(err)
+	}
+	crossLabelStar.Store(false)
+	vf.StarStatus = "all"
 	vf.SearchQuery = ""
 	if err = a.virtualFolderStore.Update(vf); err != nil {
 		t.Fatal(err)
@@ -176,7 +300,13 @@ func TestGmailSearchAcrossAccountsAndVirtualFolderFromEmptyCache(t *testing.T) {
 	}
 	quotaThreads.Store(true)
 	cached, err := a.GetConversation(chosen.ThreadID, chosen.FolderID)
-	if err != nil || cached == nil || len(cached.Messages) == 0 || cached.Messages[0].BodyText != "Requested content" {
+	hasRequestedBody := false
+	if cached != nil {
+		for _, m := range cached.Messages {
+			hasRequestedBody = hasRequestedBody || m.BodyText == "Requested content"
+		}
+	}
+	if err != nil || cached == nil || !hasRequestedBody {
 		t.Fatalf("quota hid cached reader: %+v %v", cached, err)
 	}
 	quotaThreads.Store(false)

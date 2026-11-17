@@ -987,4 +987,5 @@ export function SendMessageWithRequestID(arg1:string,arg2:smtp.ComposeMessage,ar
 
 export function DispatchRemotePendingSend(arg1:string):Promise<boolean>;
 
+export function SetFolderVisibility(accountId:string, folderIds:string[], hidden:boolean, refresh:boolean):Promise<void>;
 export function ChangeLaterWithUndo(arg1:string,arg2:string,arg3:boolean):Promise<app.TriageChangeResult>;

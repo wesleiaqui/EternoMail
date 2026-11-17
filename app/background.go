@@ -444,7 +444,7 @@ func (a *App) reconcileInboxFlags(accountID string, attempt int) {
 	log := logging.WithComponent("app.idle")
 
 	inbox, _ := a.folderStore.GetByType(accountID, folder.TypeInbox)
-	if inbox == nil {
+	if inbox == nil || inbox.Hidden {
 		return
 	}
 	folderID := inbox.ID
@@ -505,7 +505,7 @@ func (a *App) handleIdleExpunge(accountID string) {
 	log := logging.WithComponent("app.idle")
 
 	inbox, _ := a.folderStore.GetByType(accountID, folder.TypeInbox)
-	if inbox == nil {
+	if inbox == nil || inbox.Hidden {
 		return
 	}
 	folderID := inbox.ID

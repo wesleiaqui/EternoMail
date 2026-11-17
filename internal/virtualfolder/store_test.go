@@ -1,6 +1,7 @@
 package virtualfolder
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -324,5 +325,77 @@ func TestStore_CacheSaveLoadDelete(t *testing.T) {
 	}
 	if _, _, found, err := store.LoadCache(vf.ID); err != nil || found {
 		t.Errorf("LoadCache after delete: found=%v err=%v, want false/nil", found, err)
+	}
+}
+
+func TestDefinitionEditInvalidatesRetainedMembershipButRenameKeepsIt(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	s := NewStore(db)
+	vf := &VirtualFolder{ID: "saved", Name: "Saved", FolderIDs: []string{"folder1", "folder2"}, SearchQuery: "from:alice"}
+	if err := s.Create(vf); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveSearchCachePage(vf, "account1", []CachedConversation{{AccountID: "account1", ConversationID: "from-removed-folder"}}, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE folders SET hidden=1 WHERE id='folder1'`); err != nil {
+		t.Fatal(err)
+	}
+	vf.Name = "Renamed"
+	if err := s.Update(vf); err != nil {
+		t.Fatal(err)
+	}
+	if refs, _, found, err := s.LoadCache(vf.ID); err != nil || !found || len(refs) != 1 {
+		t.Fatal("rename lost membership", err)
+	}
+	vf.FolderIDs = []string{"folder1"}
+	if err := s.Update(vf); err != nil {
+		t.Fatal(err)
+	}
+	if refs, _, found, err := s.LoadCache(vf.ID); err != nil || found || len(refs) != 0 {
+		t.Fatal("edited scope retained stale membership", err)
+	}
+}
+
+func TestProviderSearchCachePagesRejectStaleDefinition(t *testing.T) {
+	db := setupTestDB(t)
+	store := NewStore(db)
+	defer db.Close()
+	vf := &VirtualFolder{Name: "Operator", SearchQuery: "from:alice"}
+	if err := store.Create(vf); err != nil {
+		t.Fatal(err)
+	}
+	first := []CachedConversation{{AccountID: "a", ConversationID: "one"}}
+	second := []CachedConversation{{AccountID: "a", ConversationID: "two"}}
+	if err := store.SaveSearchCachePage(vf, "a", first, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSearchCachePage(vf, "a", second, false); err != nil {
+		t.Fatal(err)
+	}
+	refs, _, _, err := store.LoadCache(vf.ID)
+	if err != nil || len(refs) != 2 {
+		t.Fatalf("pages %#v %v", refs, err)
+	}
+	if err := store.SaveCache(vf.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveCacheContext(context.Background(), vf.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if refs, _, _, err := store.LoadCache(vf.ID); err != nil || len(refs) != 2 {
+		t.Fatalf("local maintenance replaced provider cache %#v %v", refs, err)
+	}
+	stale := *vf
+	vf.SearchQuery = "from:bob"
+	if err := store.Update(vf); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSearchCachePage(&stale, "a", first, true); err != nil {
+		t.Fatal(err)
+	}
+	if refs, _, found, err := store.LoadCache(vf.ID); err != nil || found || len(refs) != 0 {
+		t.Fatalf("stale search repopulated edited view %#v %v %v", refs, found, err)
 	}
 }

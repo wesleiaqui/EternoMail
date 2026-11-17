@@ -103,6 +103,9 @@ func (a *App) RefreshViewHeaders(accountID, folderID string) error {
 	if f == nil || f.AccountID != accountID {
 		return fmt.Errorf("folder account mismatch")
 	}
+	if f.Hidden {
+		return nil
+	}
 	key := accountID + ":" + folderID
 	a.refreshMu.Lock()
 	if a.refreshLast == nil {

@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { accountStore } from '$lib/stores/accounts.svelte'
+  import { virtualFoldersStore } from '$lib/stores/virtualFolders.svelte'
+  import { folderDependencies } from '$lib/sidebar/folderVisibility'
   import Icon from '@iconify/svelte'
   import { DropdownMenu } from 'bits-ui'
   import { navigationCards as nav } from '$lib/stores/navigationCards.svelte'
@@ -8,6 +11,12 @@
   function cardName(card: NavigationCard): string {
     const names: Record<string, [string, string]> = { virtual: ['Virtual folders', 'navigation.virtualCard'], primary: ['Mail', 'navigation.mailCard'], secondary: ['More', 'navigation.moreCard'], pinned: ['Pinned folders', 'navigation.pinnedCard'], favorites: ['Starred folders', 'navigation.favoritesCard'] }
     return names[card.id]?.[0] === card.name ? $_(names[card.id][1]) : card.name
+  }
+  function paused(entry: NavigationEntry): boolean {
+    if (entry.kind !== 'virtual') return false
+    const view = virtualFoldersStore.folders.find(item => item.id === entry.folderId)
+    const hidden = Object.values(accountStore.folderCatalog).flat().filter(item => item.hidden).map(item => item.id)
+    return !!view && folderDependencies(hidden, [view], []).views.length > 0
   }
   let editing = $state(false)
   let newName = $state('')
@@ -74,8 +83,9 @@
               <div class="group relative flex items-center gap-1 px-2 py-0.5" role="group" aria-label={entry.name} draggable={editing}
                 ondragstart={(event) => dragEntry(event, id)}
                 ondragover={(event) => event.preventDefault()} ondrop={(event) => drop(event, card.id, index)}>
-                <button type="button" class="sidebar-primary-link min-w-0 flex-1 {selectedFolderId === entry.folderId || (entry.kind === 'system' && selectedFolderId === entry.folderType) || (entry.kind === 'inboxes' && selectedFolderId === 'inbox') ? 'sidebar-primary-link-selected' : ''} {entry.kind === 'virtual' ? (isQuick(id) ? 'pr-16' : 'group-hover:pr-16') : (isQuick(id) ? 'pr-10' : 'group-hover:pr-10')}" onclick={() => onSelect(entry)} title={entry.path || entry.name} aria-label={entry.name}>
+                <button type="button" class="sidebar-primary-link min-w-0 flex-1 {selectedFolderId === entry.folderId || (entry.kind === 'system' && selectedFolderId === entry.folderType) || (entry.kind === 'inboxes' && selectedFolderId === 'inbox') ? 'sidebar-primary-link-selected' : ''} {entry.kind === 'virtual' ? (isQuick(id) ? 'pr-16' : 'group-hover:pr-16') : (isQuick(id) ? 'pr-10' : 'group-hover:pr-10')}" onclick={() => onSelect(entry)} title={paused(entry) ? $_('folderVisibility.viewsWarning') : entry.path || entry.name} aria-label={entry.name}>
                   <Icon icon={entry.folderType === 'replyLater' || entry.folderType === 'snoozed' ? 'mdi:clock-outline' : entry.folderType === 'readLater' ? 'mdi:book-clock-outline' : entry.kind === 'virtual' ? 'mdi:folder-multiple-outline' : entry.kind === 'inboxes' ? 'mdi:inbox-multiple-outline' : 'mdi:folder-outline'} class="h-5 w-5 shrink-0" />
+                  {#if paused(entry)}<span class="text-amber-500 text-xs" title={$_('folderVisibility.viewsWarning')}>⚠ {$_('folderVisibility.stale')}</span>{/if}
                   <span class="navigation-entry-label min-w-0 flex-1 whitespace-normal break-words leading-tight line-clamp-2">{entry.name}</span>
                   {#if badgeCount(entry) !== undefined && badgeCount(entry)! > 0}<span class="ml-auto shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground" title={entry.unreadCount ? `${entry.unreadCount} unread / ${entry.totalCount || 0} messages` : `${badgeCount(entry)} messages`}>{badgeCount(entry)}</span>{/if}
                 </button>

@@ -83,6 +83,10 @@ func (e *Engine) SyncMessages(ctx context.Context, accountID, folderID string, s
 		return fmt.Errorf("folder %s belongs to account %s, not %s", folderID, f.AccountID, accountID)
 	}
 
+	if f.Hidden {
+		return nil
+	}
+
 	if c, apiErr := e.GmailClient(ctx, accountID); apiErr == nil {
 		return e.syncGmailMessages(ctx, c, f, syncPeriodDays)
 	} else if !errors.Is(apiErr, gmail.ErrNotCapable) {
@@ -564,6 +568,10 @@ func (e *Engine) SyncFolderFlags(ctx context.Context, accountID, folderID string
 	}
 	if f == nil {
 		return fmt.Errorf("folder not found: %s", folderID)
+	}
+
+	if f.Hidden {
+		return nil
 	}
 
 	if c, apiErr := e.GmailClient(ctx, accountID); apiErr == nil {

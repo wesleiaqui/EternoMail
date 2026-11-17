@@ -4,6 +4,7 @@
   import * as Tabs from '$lib/components/ui/tabs'
   import { Button } from '$lib/components/ui/button'
   import AccountForm, { type OAuthCredentials } from './AccountForm.svelte'
+  import AccountFoldersTab from './account/AccountFoldersTab.svelte'
   import AccountGeneralTab from './account/AccountGeneralTab.svelte'
   import AccountIdentityTab from './account/AccountIdentityTab.svelte'
   import AccountServerTab from './account/AccountServerTab.svelte'
@@ -426,7 +427,7 @@
     {#if editAccount}
       <!-- Edit Mode: Tabbed Interface -->
       <Tabs.Root bind:value={activeTab} class="flex-1 min-h-0 flex flex-col overflow-hidden">
-        <Tabs.List class="grid w-full grid-cols-4">
+        <Tabs.List class="grid w-full grid-cols-5">
           <Tabs.Trigger value="general" class="flex items-center gap-2">
             <Icon icon="mdi:cog" class="w-4 h-4" />
             {$_('account.general')}
@@ -443,6 +444,7 @@
             <Icon icon="mdi:shield-lock-outline" class="w-4 h-4" />
             {$_('account.security')}
           </Tabs.Trigger>
+        <Tabs.Trigger value="folders" class="flex items-center gap-2"><Icon icon="mdi:folder-outline" class="w-4 h-4" />{$_('folderVisibility.tab')}</Tabs.Trigger>
         </Tabs.List>
 
         <div class="flex-1 min-h-0 overflow-y-auto mt-4 pl-1 pr-3">
@@ -472,6 +474,7 @@
             />
           </Tabs.Content>
 
+          <Tabs.Content value="folders" class="mt-0"><AccountFoldersTab accountId={editAccount.id} /></Tabs.Content>
           <Tabs.Content value="identity" class="mt-0">
             <AccountIdentityTab accountId={editAccount.id} {editAccount} />
           </Tabs.Content>

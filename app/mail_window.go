@@ -206,6 +206,7 @@ func (a *App) mailWindowMethods() map[string]any {
 		"GetFTSIndexStatus":             a.GetFTSIndexStatus,
 		"IsFTSIndexing":                 a.IsFTSIndexing,
 		"RefreshViewHeaders":            a.RefreshViewHeaders,
+		"SetFolderVisibility":           a.SetFolderVisibility,
 		"SyncVirtualFolder":             a.SyncVirtualFolder,
 		"SyncFolder":                    a.SyncFolder,
 		"ForceSyncFolder":               a.ForceSyncFolder,

@@ -509,21 +509,42 @@ func (e *Engine) SyncGmailAccount(ctx context.Context, accountID string) ([]stri
 	}
 	touched := []string{}
 	for _, f := range fs {
-		label, _ := e.folderStore.GmailLabel(accountID, f.ID)
-		if label != "" {
-			counts, err := c.Label(ctx, label)
+		changed, err := func() (bool, error) {
+			unlock, err := e.folderLocks.lock(ctx, f.ID)
 			if err != nil {
-				return touched, err
+				return false, err
 			}
-			if err = e.folderStore.UpdateCounts(f.ID, counts.MessagesTotal, counts.MessagesUnread); err != nil {
-				return touched, err
+			defer unlock()
+			current, err := e.folderStore.Get(f.ID)
+			if err != nil {
+				return false, err
 			}
-		}
-		if err = e.folderStore.MarkSynced(f.ID); err != nil {
+			if current == nil || current.Hidden {
+				return false, nil
+			}
+			label, err := e.folderStore.GmailLabel(accountID, f.ID)
+			if err != nil {
+				return false, err
+			}
+			if label != "" {
+				counts, err := c.Label(ctx, label)
+				if err != nil {
+					return false, err
+				}
+				if err = e.folderStore.UpdateCounts(f.ID, counts.MessagesTotal, counts.MessagesUnread); err != nil {
+					return false, err
+				}
+			}
+			return true, e.folderStore.MarkSynced(f.ID)
+		}()
+		if err != nil {
 			return touched, err
 		}
-		touched = append(touched, f.ID)
+		if changed {
+			touched = append(touched, f.ID)
+		}
 	}
+
 	return touched, nil
 }
 

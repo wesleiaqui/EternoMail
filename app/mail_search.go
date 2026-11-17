@@ -159,6 +159,7 @@ func (a *App) searchMailViaService(req MailSearchRequest) (*MailSearchPage, bool
 			AccountName: issue.AccountName,
 			Message:     issue.Message,
 			Reauthorize: issue.Reauthorize,
+			Warning:     issue.Code == "stale_source",
 		})
 	}
 	result.Cursor = page.NextCursor

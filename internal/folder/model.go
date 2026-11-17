@@ -45,6 +45,13 @@ type Folder struct {
 	// Sync state
 	LastSync   *time.Time `json:"lastSync,omitempty"`
 	Subscribed bool       `json:"subscribed"` // IMAP subscription state
+
+	// Hidden is a Postilaatikko-local display flag: hidden folders are removed
+	// from the folder tree, rail and pickers and are excluded from scheduled
+	// and bulk refresh. It is account-owned local state only; it never
+	// touches IMAP subscriptions or Gmail label visibility - and it survives
+	// folder discovery. Server folders and cached mail are always retained.
+	Hidden bool `json:"hidden"`
 }
 
 // IsSpecial returns true if this is a special folder (inbox, sent, etc.)
@@ -114,6 +121,19 @@ func BuildTree(folders []*Folder) []*FolderTree {
 	}
 
 	return roots
+}
+
+// WithoutHidden returns the folders that are not hidden, preserving order.
+// Refresh schedulers and bulk folder operations use it so hidden folders are
+// never refreshed implicitly.
+func WithoutHidden(folders []*Folder) []*Folder {
+	visible := make([]*Folder, 0, len(folders))
+	for _, f := range folders {
+		if f != nil && !f.Hidden {
+			visible = append(visible, f)
+		}
+	}
+	return visible
 }
 
 // SortFolders sorts folders with special folders first, then alphabetically

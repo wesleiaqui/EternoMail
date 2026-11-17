@@ -22,6 +22,7 @@ type MailSearchIssue struct {
 	AccountName string `json:"accountName"`
 	Message     string `json:"message"`
 	Reauthorize bool   `json:"reauthorize"`
+	Warning     bool   `json:"warning,omitempty"`
 }
 
 // MailSearchPage contains header-only conversation results and retry state.
@@ -32,6 +33,7 @@ type MailSearchPage struct {
 }
 
 type mailCursor struct {
+	Revision string            `json:"r,omitempty"`
 	Query    string            `json:"q"`
 	Virtual  string            `json:"v"`
 	Filter   string            `json:"f,omitempty"`

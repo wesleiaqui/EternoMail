@@ -487,7 +487,7 @@ func (a *App) SyncVirtualFolder(virtualFolderID string) error {
 				refreshErrors[folderID] = getErr
 				continue
 			}
-			if f == nil {
+			if f == nil || f.Hidden {
 				continue // a deleted selected folder is no longer a member
 			}
 			acc, getErr := a.accountStore.Get(f.AccountID)
@@ -544,6 +544,12 @@ func (a *App) refreshVirtualFolderCache(vf *virtualfolder.VirtualFolder) error {
 	if err != nil {
 		return fmt.Errorf("failed to resolve virtual folder members: %w", err)
 	}
+	// Only provider search can resolve operators such as from: or has:.
+	// Search records each successful page; local maintenance must not replace it.
+	if vf.SearchQuery != "" {
+		return nil
+	}
+
 	refs := []message.ConversationRef{}
 	if len(folderIDs) > 0 {
 		refs, err = a.messageStore.ListVirtualFolderConversationIDs(folderIDs, vf.SearchQuery, virtualFolderCacheLimit, virtualFolderMessageCriteria(vf))

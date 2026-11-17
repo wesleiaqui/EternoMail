@@ -89,6 +89,9 @@ func TestSaveCacheRetriesTransientLockContention(t *testing.T) {
 // wait on context expiry, so SaveCacheContext lowers busy_timeout on a
 // pinned connection instead. With the lock held and a 5 s configured
 // timeout, returning near the 2 s detached bound proves the override works.
+// SQLite busy handlers may stop early (observed ~1.4 s for a 2 s limit).
+// The lower bound distinguishes this path from the 300 ms canceled context;
+// the upper bound distinguishes it from the configured 5 s timeout.
 func TestSaveCacheContextBoundsTheLockWait(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "vf-busy-ctx.db")
 	db, err := database.Open(path, database.WithBusyTimeout(5000))
@@ -139,7 +142,7 @@ func TestSaveCacheContextBoundsTheLockWait(t *testing.T) {
 	if !database.IsBusy(err) {
 		t.Fatalf("SaveCacheContext error = %v, want SQLite lock contention", err)
 	}
-	if elapsed < 1500*time.Millisecond || elapsed > 4*time.Second {
+	if elapsed < time.Second || elapsed > 4*time.Second {
 		t.Fatalf("SaveCacheContext waited %s; want the ~2 s detached bound, not the configured 5 s busy_timeout", elapsed)
 	}
 }
@@ -204,7 +207,7 @@ func TestSaveCacheContextBoundRestsOnBusyTimeoutNotContext(t *testing.T) {
 	if !database.IsBusy(err) {
 		t.Fatalf("SaveCacheContext error = %v, want lock contention; context cancellation must not interrupt the wait", err)
 	}
-	if elapsed < 1500*time.Millisecond || elapsed > 4*time.Second {
+	if elapsed < time.Second || elapsed > 4*time.Second {
 		t.Fatalf("SaveCacheContext waited %s; want the ~2 s busy_timeout override, unaffected by the 300 ms context cancellation", elapsed)
 	}
 }

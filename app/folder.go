@@ -22,7 +22,7 @@ func (a *App) GetFolders(accountID string) ([]*folder.Folder, error) {
 		status := a.mailboxService.status(ctx)
 		if status.Connected {
 			folders, err = a.mailboxService.folders(ctx, accountID)
-		} else if status.ErrorCode != "service_unavailable" {
+		} else if status.ErrorCode != "service_unavailable" || a.mailboxService.isRemote() {
 			return nil, fmt.Errorf("list folders from mailbox service: %s", status.Message)
 		}
 	}
@@ -47,7 +47,7 @@ func (a *App) GetFolderTree(accountID string) ([]*folder.FolderTree, error) {
 
 	// Sort folders (INBOX first, then special folders, then alphabetically)
 	folder.SortFolders(folders)
-	return folder.BuildTree(folders), nil
+	return folder.BuildTree(folder.WithoutHidden(folders)), nil
 }
 
 // SyncFolders synchronizes the folder list with the IMAP server
@@ -106,7 +106,7 @@ func (a *App) GetAccountFoldersForMapping(accountID string) ([]*folder.Folder, e
 
 	// Sort using existing logic
 	folder.SortFolders(folders)
-	return folders, nil
+	return folder.WithoutHidden(folders), nil
 }
 
 // GetAutoDetectedFolders returns the auto-detected special folders for an account.

@@ -20,6 +20,7 @@ import (
 	appimap "github.com/hkdb/aerion/internal/imap"
 	"github.com/hkdb/aerion/internal/message"
 	syncengine "github.com/hkdb/aerion/internal/sync"
+	"github.com/hkdb/aerion/internal/virtualfolder"
 )
 
 type searchPageSession struct {
@@ -49,8 +50,12 @@ func TestSearchMailIMAPContinuationAcrossAccountsAndFolders(t *testing.T) {
 			t.Fatal(err)
 		}
 		for i := 0; i < 3; i++ {
-			raw := fmt.Sprintf("From: Sender <s@example.org>\r\nTo: r@example.org\r\nMessage-ID: <%s%d@example.org>\r\nSubject: Match %d\r\n\r\nPrivate body", mailbox, i, i)
-			if _, err := user.Append(mailbox, strings.NewReader(raw), &imap.AppendOptions{}); err != nil {
+			raw := fmt.Sprintf("Date: %s\r\nFrom: Sender <s@example.org>\r\nTo: r@example.org\r\nMessage-ID: <%s%d@example.org>\r\nSubject: Match %d\r\n\r\nPrivate body", time.Now().Format(time.RFC1123Z), mailbox, i, i)
+			flags := []imap.Flag{}
+			if i == 0 {
+				flags = append(flags, imap.FlagFlagged)
+			}
+			if _, err := user.Append(mailbox, strings.NewReader(raw), &imap.AppendOptions{Flags: flags}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -98,7 +103,7 @@ func TestSearchMailIMAPContinuationAcrossAccountsAndFolders(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	a := &App{ctx: ctx, accountStore: account.NewStore(db), folderStore: folder.NewStore(db), messageStore: message.NewStore(db)}
+	a := &App{virtualFolderStore: virtualfolder.NewStore(db), ctx: ctx, accountStore: account.NewStore(db), folderStore: folder.NewStore(db), messageStore: message.NewStore(db)}
 	a.syncEngine = syncengine.NewEngine(pool, a.accountStore, a.folderStore, a.messageStore, message.NewAttachmentStore(db))
 	req := MailSearchRequest{Query: "Match", Limit: 1}
 	seen := map[string]bool{}
@@ -124,6 +129,71 @@ func TestSearchMailIMAPContinuationAcrossAccountsAndFolders(t *testing.T) {
 	}
 	if req.Cursor != "" || len(seen) != 12 {
 		t.Fatalf("truncated pages: %d rows, cursor %q", len(seen), req.Cursor)
+	}
+	// Provider text matches must also satisfy the saved conversation criteria
+	// before entering retained membership. Exercise real IMAP flag fetching.
+	a.virtualFolderStore = virtualfolder.NewStore(db)
+	vf := &virtualfolder.VirtualFolder{Name: "Starred matches", FolderIDs: []string{"a0"}, SearchQuery: "Match", StarStatus: "starred", ReadStatus: "unread", ReplyStatus: "unreplied", DateWindow: "7d"}
+	if err := a.virtualFolderStore.Create(vf); err != nil {
+		t.Fatal(err)
+	}
+	savedReq := MailSearchRequest{VirtualFolderID: vf.ID, Limit: 1}
+	eligible := map[string]bool{}
+	for n := 0; n < 10; n++ {
+		result, err := a.SearchMail(savedReq)
+		if err != nil || len(result.Issues) > 0 {
+			t.Fatalf("saved IMAP %#v %v", result, err)
+		}
+		for _, c := range result.Conversations {
+			if !c.IsStarred {
+				t.Fatal("saved criteria ignored")
+			}
+			eligible[c.ThreadID] = true
+		}
+		savedReq.Cursor = result.Cursor
+		if result.Cursor == "" {
+			break
+		}
+	}
+	if len(eligible) != 1 || savedReq.Cursor != "" {
+		t.Fatalf("saved IMAP membership %v cursor %s", eligible, savedReq.Cursor)
+	}
+	if err := a.folderStore.SetHiddenBatch("a", []string{"a0"}, true); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := a.SearchMail(MailSearchRequest{VirtualFolderID: vf.ID})
+	if err != nil || len(retained.Conversations) != 1 || !retained.Conversations[0].IsStarred || len(retained.Issues) != 1 || !retained.Issues[0].Warning {
+		t.Fatalf("retained IMAP criteria %#v %v", retained, err)
+	}
+	// Current flags still apply even while membership is stale/offline.
+	if _, err := db.Exec(`UPDATE messages SET is_starred=0 WHERE folder_id='a0'`); err != nil {
+		t.Fatal(err)
+	}
+	retained, err = a.SearchMail(MailSearchRequest{VirtualFolderID: vf.ID})
+	if err != nil || len(retained.Conversations) != 0 {
+		t.Fatalf("stale flags ignored %#v %v", retained, err)
+	}
+	if err := a.folderStore.SetHiddenBatch("a", []string{"a0"}, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, read, reply, star string
+		want                    int
+	}{
+		{"read excludes unread", "read", "all", "all", 0},
+		{"replied excludes unanswered", "all", "replied", "all", 0},
+		{"unstarred", "all", "all", "unstarred", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			vf.ReadStatus, vf.ReplyStatus, vf.StarStatus = tc.read, tc.reply, tc.star
+			if err := a.virtualFolderStore.Update(vf); err != nil {
+				t.Fatal(err)
+			}
+			result, err := a.SearchMail(MailSearchRequest{VirtualFolderID: vf.ID, Limit: 100})
+			if err != nil || len(result.Issues) != 0 || len(result.Conversations) != tc.want {
+				t.Fatalf("criteria %#v %v want %d", result, err, tc.want)
+			}
+		})
 	}
 	// A failed account page must remain retryable at precisely the same cursor.
 	req = MailSearchRequest{Query: "Match", AccountIDs: []string{"a"}, Limit: 1}
