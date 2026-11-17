@@ -60,10 +60,8 @@ func filterHavingClause(filter, prefix string) string {
 		clause = fmt.Sprintf("MAX(CASE WHEN %sis_starred = 1 THEN 1 ELSE 0 END) = 1", prefix)
 	case "attachments":
 		clause = fmt.Sprintf("MAX(CASE WHEN %shas_attachments = 1 THEN 1 ELSE 0 END) = 1", prefix)
-	case "replyLater":
-		clause = fmt.Sprintf("SUM(CASE WHEN EXISTS (SELECT 1 FROM reply_later_queue rl WHERE rl.account_id = %saccount_id AND rl.conversation_id = COALESCE(%sthread_id, %sid)) THEN 1 ELSE 0 END) > 0", prefix, prefix, prefix)
-	case "readLater":
-		clause = fmt.Sprintf("SUM(CASE WHEN EXISTS (SELECT 1 FROM read_later_queue rl WHERE rl.account_id = %saccount_id AND rl.conversation_id = COALESCE(%sthread_id, %sid)) THEN 1 ELSE 0 END) > 0", prefix, prefix, prefix)
+	case "replyLater", "readLater":
+		clause = fmt.Sprintf("SUM(CASE WHEN EXISTS (SELECT 1 FROM (SELECT account_id, conversation_id FROM read_later_queue UNION SELECT account_id, conversation_id FROM reply_later_queue) rl WHERE rl.account_id = %saccount_id AND rl.conversation_id = COALESCE(%sthread_id, %sid)) THEN 1 ELSE 0 END) > 0", prefix, prefix, prefix)
 	}
 	if clause == "" {
 		clause = "1=1"
@@ -93,10 +91,8 @@ func filterWhereClause(filter, prefix string) string {
 		clause = fmt.Sprintf(" AND %sis_starred = 1", prefix)
 	case "attachments":
 		clause = fmt.Sprintf(" AND %shas_attachments = 1", prefix)
-	case "replyLater":
-		clause = fmt.Sprintf(" AND EXISTS (SELECT 1 FROM reply_later_queue rl WHERE rl.account_id = %saccount_id AND rl.conversation_id = COALESCE(%sthread_id, %sid))", prefix, prefix, prefix)
-	case "readLater":
-		clause = fmt.Sprintf(" AND EXISTS (SELECT 1 FROM read_later_queue rl WHERE rl.account_id = %saccount_id AND rl.conversation_id = COALESCE(%sthread_id, %sid))", prefix, prefix, prefix)
+	case "replyLater", "readLater":
+		clause = fmt.Sprintf(" AND EXISTS (SELECT 1 FROM (SELECT account_id, conversation_id FROM read_later_queue UNION SELECT account_id, conversation_id FROM reply_later_queue) rl WHERE rl.account_id = %saccount_id AND rl.conversation_id = COALESCE(%sthread_id, %sid))", prefix, prefix, prefix)
 	}
 	return clause + snoozed
 }
@@ -122,10 +118,8 @@ func snoozedViewHavingClause(filter string) string {
 		return " HAVING MAX(CASE WHEN m.is_starred=1 THEN 1 ELSE 0 END)=1"
 	case "attachments":
 		return " HAVING MAX(CASE WHEN m.has_attachments=1 THEN 1 ELSE 0 END)=1"
-	case "replyLater":
-		return " HAVING MAX(CASE WHEN EXISTS(SELECT 1 FROM reply_later_queue rl WHERE rl.account_id=m.account_id AND rl.conversation_id=COALESCE(m.thread_id,m.id)) THEN 1 ELSE 0 END)=1"
-	case "readLater":
-		return " HAVING MAX(CASE WHEN EXISTS(SELECT 1 FROM read_later_queue rl WHERE rl.account_id=m.account_id AND rl.conversation_id=COALESCE(m.thread_id,m.id)) THEN 1 ELSE 0 END)=1"
+	case "replyLater", "readLater":
+		return " HAVING MAX(CASE WHEN EXISTS(SELECT 1 FROM (SELECT account_id, conversation_id FROM read_later_queue UNION SELECT account_id, conversation_id FROM reply_later_queue) rl WHERE rl.account_id=m.account_id AND rl.conversation_id=COALESCE(m.thread_id,m.id)) THEN 1 ELSE 0 END)=1"
 	default:
 		return ""
 	}
@@ -265,10 +259,10 @@ func (s *Store) ListReadLaterConversations(offset, limit int, sortOrder, filter 
 	query := `
 		SELECT COALESCE(m.thread_id,m.id), MIN(m.subject), MAX(m.snippet), COUNT(*),
 		 SUM(CASE WHEN m.is_read=0 THEN 1 ELSE 0 END), MAX(CASE WHEN m.has_attachments=1 THEN 1 ELSE 0 END),
-		 MAX(CASE WHEN m.is_starred=1 THEN 1 ELSE 0 END), MAX(m.date), GROUP_CONCAT(m.id ORDER BY m.date ASC, m.id ASC),
+		 MAX(CASE WHEN m.is_starred=1 THEN 1 ELSE 0 END), MAX(m.date) AS latest_date, GROUP_CONCAT(m.id ORDER BY m.date ASC, m.id ASC),
 		 MAX(CASE WHEN m.smime_encrypted=1 OR m.pgp_encrypted=1 THEN 1 ELSE 0 END), MAX(m.inbox_category),
 		 a.id,a.name,a.color,f.id,json_group_array(DISTINCT json_object('name',m.from_name,'email',m.from_email))
-		FROM read_later_queue rl JOIN messages m ON m.account_id=rl.account_id
+		FROM (SELECT account_id, conversation_id FROM read_later_queue UNION SELECT account_id, conversation_id FROM reply_later_queue) rl JOIN messages m ON m.account_id=rl.account_id
 		 AND (m.thread_id=rl.conversation_id OR (m.thread_id IS NULL AND m.id=rl.conversation_id))
 		JOIN folders f ON m.folder_id=f.id JOIN accounts a ON f.account_id=a.id AND a.enabled=1
 		GROUP BY COALESCE(m.thread_id,m.id),a.id` + filterHavingClause(filter, "m.") + ` ` + orderClause + ` LIMIT ? OFFSET ?`
@@ -469,7 +463,7 @@ func (s *Store) CountReadLaterConversations(filter string) (int, error) {
 	defer cancel()
 	var count int
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT COALESCE(m.thread_id,m.id)||'-'||a.id)
-	 FROM read_later_queue rl JOIN messages m ON m.account_id=rl.account_id
+	 FROM (SELECT account_id, conversation_id FROM read_later_queue UNION SELECT account_id, conversation_id FROM reply_later_queue) rl JOIN messages m ON m.account_id=rl.account_id
 	 AND (m.thread_id=rl.conversation_id OR (m.thread_id IS NULL AND m.id=rl.conversation_id))
 	 JOIN folders f ON m.folder_id=f.id JOIN accounts a ON f.account_id=a.id AND a.enabled=1
 	 WHERE 1=1`+filterWhereClause(filter, "m.")).Scan(&count)

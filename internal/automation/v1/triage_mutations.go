@@ -16,6 +16,7 @@ var errTriageReceiptAlreadyExists = errors.New("triage receipt already exists")
 // TriageMutationRequest is the canonical, account-qualified operation passed
 // to the helper's triage owner. It is constructed from the route-specific DTOs.
 type TriageMutationRequest struct {
+	UnifiedLater   bool `json:",omitempty"`
 	Action         ActionKind
 	AccountID      string
 	ConversationID string
@@ -95,6 +96,25 @@ func (h *TriageMutationsHandler) MountRoutes(mux *http.ServeMux, requireCap func
 		}
 		h.handle(w, r, TriageMutationRequest{Action: action, AccountID: body.Ref.AccountID, ConversationID: body.Ref.ConversationID, InQueue: body.InQueue})
 	})
+	mux.HandleFunc("/v1/triage/later/mutations", func(w http.ResponseWriter, r *http.Request) {
+		if !requireCap(w, r, CapabilityMailWrite) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeTriageMutationError(w, r, http.StatusMethodNotAllowed, CodeInvalidRequest, "Method not allowed", false)
+			return
+		}
+		var body ReadLaterMutationRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeTriageMutationError(w, r, http.StatusBadRequest, CodeInvalidRequest, "Malformed Read Later request", false)
+			return
+		}
+		action := ActionReadLaterRemove
+		if body.InQueue {
+			action = ActionReadLaterAdd
+		}
+		h.handle(w, r, TriageMutationRequest{UnifiedLater: true, Action: action, AccountID: body.Ref.AccountID, ConversationID: body.Ref.ConversationID, InQueue: body.InQueue})
+	})
 	mux.HandleFunc("/v1/triage/snoozes/mutations", func(w http.ResponseWriter, r *http.Request) {
 		if !requireCap(w, r, CapabilityMailWrite) {
 			return
@@ -166,12 +186,11 @@ func (h *TriageMutationsHandler) handle(w http.ResponseWriter, r *http.Request, 
 	operationID := generateOpID()
 	reserved := false
 	reserve := func(snapshot []byte) error {
-		ref := triageMutationRef(request, false)
 		var stored ActionReceiptRecord
 		var owner bool
 		var err error
 		if triageReceipts, ok := h.receipts.(TriageActionReceiptStore); ok {
-			stored, owner, err = triageReceipts.ReserveTriage(r.Context(), keyHash, requestHash, operationID, request.Action, 1, []AffectedTriageRef{ref})
+			stored, owner, err = triageReceipts.ReserveTriage(r.Context(), keyHash, requestHash, operationID, request.Action, 1, triageMutationRefs(request, false))
 		} else {
 			stored, owner, err = h.receipts.Reserve(r.Context(), keyHash, requestHash, operationID, request.Action, 1)
 		}
@@ -216,11 +235,10 @@ func (h *TriageMutationsHandler) handle(w http.ResponseWriter, r *http.Request, 
 		Changed: changed && state == OperationSent,
 		Receipt: OperationReceipt{OperationID: operationID, State: state},
 	}
-	ref := triageMutationRef(request, state == OperationSent)
 	if state == OperationSent && !changed {
 		response.AffectedTriage = nil
 	} else {
-		response.AffectedTriage = []AffectedTriageRef{ref}
+		response.AffectedTriage = triageMutationRefs(request, state == OperationSent)
 	}
 	actionKind := request.Action
 	if !response.Changed || state != OperationSent {
@@ -309,4 +327,19 @@ func writeTriageMutationError(w http.ResponseWriter, r *http.Request, status int
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(ErrorResponse{Error: ErrorBody{Code: code, Message: message, Retryable: retryable, RequestID: requestID}})
+}
+
+func triageMutationRefs(request TriageMutationRequest, known bool) []AffectedTriageRef {
+	ref := triageMutationRef(request, known)
+	refs := []AffectedTriageRef{ref}
+	if request.UnifiedLater {
+		ref.Queue = "replyLater"
+		ref.InQueue = false
+		refs = append(refs, ref)
+		if request.InQueue { // Add does not rewrite an existing legacy mark; reload authoritative sets.
+			refs[0].Known = false
+			refs[1].Known = false
+		}
+	}
+	return refs
 }

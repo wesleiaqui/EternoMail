@@ -117,17 +117,17 @@ func (s *Service) Search(parent context.Context, req MailSearchRequest) (*MailSe
 		return nil, fmt.Errorf("unsupported online filter")
 	}
 	queued := map[string]bool{}
-	if req.Filter == "replyLater" {
+	if req.Filter == "replyLater" || req.Filter == "readLater" {
 		if s.syncTriageQueues != nil {
 			s.syncTriageQueues("reply-later")
 		}
 	}
-	if req.Filter == "readLater" {
+	if req.Filter == "readLater" || req.Filter == "replyLater" {
 		if s.syncTriageQueues != nil {
 			s.syncTriageQueues("read-later")
 		}
 	}
-	if req.Filter == "replyLater" {
+	if req.Filter == "replyLater" || req.Filter == "readLater" {
 		if s.replyLaterStore == nil {
 			return nil, fmt.Errorf("Reply Later queue is not ready")
 		}
@@ -139,7 +139,7 @@ func (s *Service) Search(parent context.Context, req MailSearchRequest) (*MailSe
 			queued[ref.AccountID+"\x00"+ref.ConversationID] = true
 		}
 	}
-	if req.Filter == "readLater" {
+	if req.Filter == "readLater" || req.Filter == "replyLater" {
 		refs, err := s.triageStore.ListReadLater()
 		if err != nil {
 			return nil, err
@@ -267,7 +267,7 @@ func (s *Service) Search(parent context.Context, req MailSearchRequest) (*MailSe
 			token = "!done"
 		}
 		mu.Unlock()
-		if req.Filter == "replyLater" {
+		if req.Filter == "replyLater" || req.Filter == "readLater" {
 			hasQueued := false
 			for ref := range queued {
 				if strings.HasPrefix(ref, acc.ID+"\x00") {
@@ -341,7 +341,7 @@ func (s *Service) Search(parent context.Context, req MailSearchRequest) (*MailSe
 				query += " is:unread"
 			}
 			pageLimit := min(limit, 25)
-			if req.Filter == "replyLater" {
+			if req.Filter == "replyLater" || req.Filter == "readLater" {
 				pageLimit = 100
 			}
 			page, err := c.Threads(ctx, gmail.SearchRequest{Query: query, PageToken: token, Limit: pageLimit, IncludeSpamTrash: true})
@@ -350,7 +350,7 @@ func (s *Service) Search(parent context.Context, req MailSearchRequest) (*MailSe
 				return
 			}
 			threadIDs := page.ThreadIDs
-			if req.Filter == "replyLater" {
+			if req.Filter == "replyLater" || req.Filter == "readLater" {
 				// Intersect provider scope with explicit local queue membership before
 				// fetching metadata. Advance a bounded number of cheap ID pages so a
 				// sparse queue does not hydrate unrelated mail or exhaust quota.

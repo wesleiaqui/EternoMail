@@ -96,15 +96,10 @@ func (a *App) GetUnifiedFolderConversations(folderType string, offset, limit int
 		}
 		return conversations, nil
 	}
-	if folderType == "replyLater" {
-		if offset == 0 {
-			a.syncGmailTriageQueues("reply-later")
-		}
-		return a.messageStore.ListReplyLaterConversations(offset, limit, sortOrder, filterValue)
-	}
-	if folderType == "readLater" {
+	if folderType == "readLater" || folderType == "replyLater" {
 		if offset == 0 {
 			a.syncGmailTriageQueues("read-later")
+			a.syncGmailTriageQueues("reply-later")
 		}
 		return a.messageStore.ListReadLaterConversations(offset, limit, sortOrder, filterValue)
 	}
@@ -195,10 +190,7 @@ func (a *App) GetUnifiedFolderCount(folderType, filterValue string) (int, error)
 		}
 		return count, nil
 	}
-	if folderType == "replyLater" {
-		return a.messageStore.CountReplyLaterConversations(filterValue)
-	}
-	if folderType == "readLater" {
+	if folderType == "readLater" || folderType == "replyLater" {
 		return a.messageStore.CountReadLaterConversations(filterValue)
 	}
 	if folderType == "snoozed" {
@@ -252,6 +244,9 @@ func (a *App) GetSearchCountUnifiedFolder(folderType, query, filterValue string)
 }
 
 func isRemoteUnifiedFolderType(folderType string) bool {
+	if folderType == "readLater" || folderType == "replyLater" {
+		return true
+	}
 	switch folder.Type(folderType) {
 	case folder.TypeDrafts, folder.TypeSent, folder.TypeTrash, folder.TypeStarred, folder.TypeArchive, folder.TypeSpam:
 		return true

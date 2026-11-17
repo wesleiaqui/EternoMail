@@ -14,10 +14,9 @@
   import type { CommandId } from '$lib/keyboard/registry'
   import './lib/iconify-offline'
   import { clearCache as clearInlineAttachmentCache } from './lib/stores/inlineAttachmentCache'
-  import { readLaterQueue } from './lib/stores/readLater.svelte'
+  import { laterQueue as readLaterQueue, undoLaterChange } from './lib/stores/later.svelte'
   import { snoozeDialog } from './lib/stores/snoozeDialog.svelte'
   import SnoozeDialog from './lib/components/common/SnoozeDialog.svelte'
-  import { replyLaterQueue } from './lib/stores/replyLater.svelte'
 
   import { onDestroy, onMount, tick, untrack } from 'svelte'
   import Sidebar from './lib/components/sidebar/Sidebar.svelte'
@@ -1225,7 +1224,6 @@
     registerCommand('mail.markUnread', () => runListAction('mail.markUnread'), () => listActionAvailable('mail.markUnread'))
     registerCommand('mail.toggleRead', () => runListAction('mail.toggleRead'), () => listActionAvailable('mail.toggleRead'))
     registerCommand('mail.readLater', () => toggleLaterQueue('readLater'), () => selectedThreadId !== null)
-    registerCommand('mail.replyLater', () => toggleLaterQueue('replyLater'), () => selectedThreadId !== null)
     registerCommand('mail.snooze', () => { if (getFocusedPane() === 'viewer') openSnoozeDialog(); else messageListRef?.snoozeSelection() }, () => selectedThreadId !== null || !!messageListRef)
     registerCommand('mail.moveTo', () => {
       if (getFocusedPane() === 'viewer' && selectedThreadId) viewerRef?.toggleFolderPicker('move')
@@ -1279,7 +1277,7 @@
     add('edit.history', () => { showUndoHistory = true }, mail)
     add('app.find', findInMessage, mail)
     add('app.close', () => closeWorkspaceTab(activeMailWorkspace), () => noComposer() && getActiveExtension()==='mail' && activeMailWorkspace !== 'primary')
-    for (const id of ['mail.archive','mail.archiveAndMarkRead','mail.spam','mail.trash','mail.star','mail.markRead','mail.markUnread','mail.toggleRead','mail.deletePermanently','mail.moveTo','mail.copyTo','mail.readLater','mail.replyLater','mail.snooze','mail.reply','mail.replyAll','mail.forward'] as const) {
+    for (const id of ['mail.archive','mail.archiveAndMarkRead','mail.spam','mail.trash','mail.star','mail.markRead','mail.markUnread','mail.toggleRead','mail.deletePermanently','mail.moveTo','mail.copyTo','mail.readLater','mail.snooze','mail.reply','mail.replyAll','mail.forward'] as const) {
       add(id, () => {
         if (getFocusedPane()==='viewer' && selectedThreadId && viewerRef) {
           if (id==='mail.markRead'||id==='mail.markUnread') return viewerRef.requestReadState(id==='mail.markRead')
@@ -1290,7 +1288,7 @@
         return KEY_HANDLERS[id] ? KEY_HANDLERS[id]() : executeCommand(id)
       }, () => mail() && ((getFocusedPane()==='viewer' && !!viewerRef?.nativeMailReady()) || (id==='mail.deletePermanently' ? listActionAvailable('mail.trash') : id.startsWith('mail.') && ['mail.archive','mail.archiveAndMarkRead','mail.spam','mail.trash','mail.star','mail.markRead','mail.markUnread','mail.toggleRead'].includes(id) ? listActionAvailable(id) : selectedThreadId!==null)))
     }
-    for (const [id,key] of Object.entries({'filter.all':'list.filterAll','filter.unread':'list.filterUnread','filter.replyLater':'list.filterReplyLater','filter.readLater':'list.filterReadLater','nav.accountPrev':'nav.accountPrev','nav.accountNext':'nav.accountNext'})) {
+    for (const [id,key] of Object.entries({'filter.all':'list.filterAll','filter.unread':'list.filterUnread','filter.readLater':'list.filterReadLater','nav.accountPrev':'nav.accountPrev','nav.accountNext':'nav.accountNext'})) {
       add(id, () => KEY_HANDLERS[key](), mail)
     }
     add('nav.back', () => navigateMessageHistory(-1), mail)
@@ -1704,7 +1702,6 @@
     'mail.forward': () => replyTo('forward'),
     'mail.archiveAndMarkRead': () => viewerOr(() => viewerRef?.archiveAndMarkRead(), 'mail.archiveAndMarkRead'),
     'mail.readLater': () => void executeCommand('mail.readLater'),
-    'mail.replyLater': () => void executeCommand('mail.replyLater'),
     'mail.snooze': () => void executeCommand('mail.snooze'),
     'mail.moveTo': () => {
       if (getActiveExtension() !== 'mail') return
@@ -1745,7 +1742,6 @@
     'nav.accountNext': () => { sidebarRef?.focusAdjacentAccount(1); setFocusedPane('sidebar') },
     'list.filterAll': () => messageListRef?.applyQuickFilter(''),
     'list.filterUnread': () => messageListRef?.applyQuickFilter('unread'),
-    'list.filterReplyLater': () => messageListRef?.applyQuickFilter('replyLater'),
     'list.filterReadLater': () => messageListRef?.applyQuickFilter('readLater'),
   }
   function runRegistryShortcut(e: KeyboardEvent): boolean {
@@ -2492,32 +2488,16 @@
     snoozeDialog.show([{ accountId, conversationId }])
   }
 
-  async function toggleLaterQueue(kind: 'readLater' | 'replyLater') {
+  async function toggleLaterQueue(_kind: 'readLater' | 'replyLater') {
     const accountId = selectedConversationAccountId || selectedAccountId
     const conversationId = selectedThreadId
     if (!accountId || accountId === 'unified' || accountId === 'virtual' || !conversationId) return
-
     try {
-      if (kind === 'readLater') {
-        await readLaterQueue.load()
-        const inQueue = !readLaterQueue.has(accountId, conversationId)
-        const result = await readLaterQueue.setWithUndo(accountId, conversationId, inQueue)
-        if (result?.changed) addToast({
-          type: 'success',
-          message: $_(inQueue ? 'readLater.added' : 'readLater.removed'),
-          actions: result.operationId ? [{ label: $_('common.undo'), onClick: () => { void UndoOperation(result.operationId).catch(() => addToast({ type: 'error', message: $_('toast.undoFailed') })) } }] : undefined,
-        })
-        return
-      }
-
-      await replyLaterQueue.load()
-      const inQueue = !replyLaterQueue.has(accountId, conversationId)
-      const result = await replyLaterQueue.set(accountId, conversationId, inQueue)
-      if (result?.changed) addToast({ type: 'success', message: $_(inQueue ? 'replyLater.added' : 'replyLater.removed') })
-    } catch (err) {
-      console.error(`Failed to update ${kind} queue:`, err)
-      addToast({ type: 'error', message: $_(kind === 'readLater' ? 'readLater.failed' : 'replyLater.failed') })
-    }
+      await readLaterQueue.load()
+      const inQueue = !readLaterQueue.has(accountId, conversationId)
+      const result = await readLaterQueue.setWithUndo(accountId, conversationId, inQueue)
+      if (result?.changed) addToast({ type: 'success', message: $_(inQueue ? 'readLater.added' : 'readLater.removed'), actions: result.operationId ? [{ label: $_('common.undo'), onClick: () => { void undoLaterChange(result).catch(() => addToast({ type: 'error', message: $_('toast.undoFailed') })) } }] : undefined })
+    } catch (err) { addToast({ type: 'error', message: `${$_('readLater.failed')}: ${String(err)}` }) }
   }
 
   async function handleBulkSpam(messageIds: string[]) {
@@ -2691,10 +2671,9 @@
       {/if}
       <div class="flex min-h-10 shrink-0 items-center gap-1 overflow-hidden border-b border-border px-2 py-1" aria-label={$_('messageList.quickFilters')}>
         <div class="flex shrink-0 items-center gap-1" role="group" aria-label={$_('messageList.quickFilters')}>
-          <button type="button" class="flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageButtonActive('all') ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.all')} title={$_('triage.all')} aria-pressed={triageButtonActive('all')} onclick={() => triageButtonClick('')}><Icon icon="mdi:inbox-multiple-outline" width="16" /></button>
-          <button type="button" class="flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageButtonActive('unread') ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.unread')} title={$_('triage.unread')} aria-pressed={triageButtonActive('unread')} onclick={() => triageButtonClick('unread')}><Icon icon="mdi:email-outline" width="16" /></button>
-          <button type="button" class="flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageButtonActive('readLater') ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.readLater')} title={$_('triage.readLater')} aria-pressed={triageButtonActive('readLater')} onclick={() => triageButtonClick('readLater')}><Icon icon="mdi:book-clock-outline" width="16" /></button>
-          <button type="button" class="flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageButtonActive('replyLater') ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.replyLater')} title={$_('triage.replyLater')} aria-pressed={triageButtonActive('replyLater')} onclick={() => triageButtonClick('replyLater')}><Icon icon="mdi:reply" width="16" /></button>
+          <button type="button" class="flex h-8 shrink-0 px-2 text-xs items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageButtonActive('all') ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.all')} title={$_('triage.all')} aria-pressed={triageButtonActive('all')} onclick={() => triageButtonClick('')}>{$_('triage.all')}</button>
+          <button type="button" class="flex h-8 shrink-0 px-2 text-xs items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageButtonActive('unread') ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.unread')} title={$_('triage.unread')} aria-pressed={triageButtonActive('unread')} onclick={() => triageButtonClick('unread')}>{$_('triage.unread')}</button>
+          <button type="button" class="flex h-8 shrink-0 px-2 text-xs items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageButtonActive('readLater') ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.readLater')} title={$_('triage.readLater')} aria-pressed={triageButtonActive('readLater')} onclick={() => triageButtonClick('readLater')}>{$_('triage.readLater')}</button>
         </div>
         <button type="button" class="ml-auto flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-pressed={contextPaneAutoHide} title={contextPaneAutoHide ? $_('triage.keepContextVisible') : $_('triage.autoHideContext')} aria-label={contextPaneAutoHide ? $_('triage.keepContextVisible') : $_('triage.autoHideContext')} onclick={toggleContextPaneAutoHide}><Icon icon={contextPaneAutoHide ? 'mdi:pin-outline' : 'mdi:pin-off-outline'} width="16" /></button>
       </div>
@@ -2763,10 +2742,9 @@
       {/if}
       <div class="flex min-h-10 shrink-0 items-center gap-1 overflow-hidden border-b border-border px-2 py-1" aria-label={$_('messageList.quickFilters')}>
         <div class="flex shrink-0 items-center gap-1" role="group" aria-label={$_('messageList.quickFilters')}>
-          <button type="button" class="flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageStatus === 'all' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.all')} title={$_('triage.all')} aria-pressed={triageStatus === 'all'} onclick={() => selectTriageFilter('')}><Icon icon="mdi:inbox-multiple-outline" width="16" /></button>
-          <button type="button" class="flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageStatus === 'unread' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.unread')} title={$_('triage.unread')} aria-pressed={triageStatus === 'unread'} onclick={() => selectTriageFilter('unread')}><Icon icon="mdi:email-outline" width="16" /></button>
-          <button type="button" class="flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageStatus === 'readLater' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.readLater')} title={$_('triage.readLater')} aria-pressed={triageStatus === 'readLater'} onclick={() => selectTriageFilter('readLater')}><Icon icon="mdi:book-clock-outline" width="16" /></button>
-          <button type="button" class="flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageStatus === 'replyLater' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.replyLater')} title={$_('triage.replyLater')} aria-pressed={triageStatus === 'replyLater'} onclick={() => selectTriageFilter('replyLater')}><Icon icon="mdi:reply" width="16" /></button>
+          <button type="button" class="flex h-8 shrink-0 px-2 text-xs items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageStatus === 'all' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.all')} title={$_('triage.all')} aria-pressed={triageStatus === 'all'} onclick={() => selectTriageFilter('')}>{$_('triage.all')}</button>
+          <button type="button" class="flex h-8 shrink-0 px-2 text-xs items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageStatus === 'unread' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.unread')} title={$_('triage.unread')} aria-pressed={triageStatus === 'unread'} onclick={() => selectTriageFilter('unread')}>{$_('triage.unread')}</button>
+          <button type="button" class="flex h-8 shrink-0 px-2 text-xs items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {triageStatus === 'readLater' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}" aria-label={$_('triage.readLater')} title={$_('triage.readLater')} aria-pressed={triageStatus === 'readLater'} onclick={() => selectTriageFilter('readLater')}>{$_('triage.readLater')}</button>
         </div>
         <button type="button" class="ml-auto flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-pressed={contextPaneAutoHide} title={contextPaneAutoHide ? $_('triage.keepContextVisible') : $_('triage.autoHideContext')} aria-label={contextPaneAutoHide ? $_('triage.keepContextVisible') : $_('triage.autoHideContext')} onclick={toggleContextPaneAutoHide}><Icon icon={contextPaneAutoHide ? 'mdi:pin-outline' : 'mdi:pin-off-outline'} width="16" /></button>
       </div>

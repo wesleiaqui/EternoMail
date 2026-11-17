@@ -88,6 +88,8 @@ func (a *App) setGmailTriageLabel(accountID, conversationID, queue string, enabl
 // Gmail label. The user label is authoritative for Gmail; non-Gmail accounts
 // never enter this path and keep their app-local queue membership.
 func (a *App) syncGmailTriageQueue(accountID, queue string) error {
+	a.laterMutationMu.Lock()
+	defer a.laterMutationMu.Unlock()
 	ctx := a.ctx
 	if ctx == nil {
 		ctx = context.Background()
@@ -245,6 +247,8 @@ func (a *App) ChangeReadLaterWithUndo(accountID, conversationID string, inQueue 
 		}
 		return TriageChangeResult{Changed: response.Changed, OperationID: response.Receipt.OperationID}, nil
 	}
+	a.laterMutationMu.Lock()
+	defer a.laterMutationMu.Unlock()
 	if err := a.setGmailTriageLabel(accountID, conversationID, "read-later", inQueue); err != nil {
 		return TriageChangeResult{}, err
 	}

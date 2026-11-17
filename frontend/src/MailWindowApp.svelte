@@ -18,8 +18,8 @@
   import { KEY } from './lib/keyboard/shortcuts'
   import { createMailWindowState, navigateMailWindow, selectMailWindowConversation, type MailScope } from './lib/windows/mailWindow'
   import { toasts } from './lib/stores/toast'
-  import { readLaterQueue } from './lib/stores/readLater.svelte'
-  import { replyLaterQueue } from './lib/stores/replyLater.svelte'
+  import { laterQueue as readLaterQueue, undoLaterChange } from './lib/stores/later.svelte'
+  import { laterQueue as replyLaterQueue } from './lib/stores/later.svelte'
   import { publishUndoOperationCreated, publishUndoOperationCompleted, rememberUnreadForUndo, setUnreadRestorer } from './lib/components/list/undoMutationEvents'
   import { runMessageMutation } from './lib/components/list/mutationInFlight'
   import type { virtualfolder } from '../wailsjs/go/models'
@@ -298,14 +298,14 @@
             const result = await readLaterQueue.setWithUndo(thread.accountId, thread.threadId, inQueue)
             if (result?.changed) toasts.success($_(inQueue ? 'readLater.added' : 'readLater.removed'), result.operationId ? [{
               label: $_('common.undo'),
-              onClick: () => { void UndoOperation(result.operationId).catch(() => toasts.error($_('toast.undoFailed'))) },
+              onClick: () => { void undoLaterChange(result).catch(() => toasts.error($_('toast.undoFailed'))) },
             }] : undefined)
             return
           }
           await replyLaterQueue.load()
           const inQueue = !replyLaterQueue.has(thread.accountId, thread.threadId)
           const result = await replyLaterQueue.set(thread.accountId, thread.threadId, inQueue)
-          if (result?.changed) toasts.success($_(inQueue ? 'replyLater.added' : 'replyLater.removed'))
+          if (result?.changed) toasts.success($_(inQueue ? 'replyLater.added' : 'replyLater.removed'), result.operationId ? [{ label: $_('common.undo'), onClick: () => { void undoLaterChange(result).catch(() => toasts.error($_('toast.undoFailed'))) } }] : undefined)
         } catch (error) {
           toasts.error(String(error))
         }

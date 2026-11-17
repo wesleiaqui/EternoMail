@@ -98,7 +98,7 @@ func (s Scope) Validate() error {
 			return errors.New("folder scope takes only accountId and folderId")
 		}
 	case ScopeUnifiedFolder:
-		if s.FolderType != "drafts" && s.FolderType != "sent" && s.FolderType != "trash" && s.FolderType != "starred" && s.FolderType != "archive" && s.FolderType != "spam" {
+		if s.FolderType != "replyLater" && s.FolderType != "readLater" && s.FolderType != "drafts" && s.FolderType != "sent" && s.FolderType != "trash" && s.FolderType != "starred" && s.FolderType != "archive" && s.FolderType != "spam" {
 			return errors.New("unified folder scope needs a supported folderType")
 		}
 		if s.AccountID != "" || s.FolderID != "" || s.VirtualFolderID != "" || s.Query != "" || s.Within != nil {

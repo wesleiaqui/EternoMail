@@ -771,8 +771,7 @@
               <Icon icon="mdi:folder-outline" class="{densityClasses.icon[density]} opacity-60" />
             </span>
           {/if}
-          <LaterQueueButton {accountId} conversationId={queueActionsEnabled ? backendConversationId : ''} kind="readLater" variant="row" />
-          <LaterQueueButton {accountId} conversationId={queueActionsEnabled ? backendConversationId : ''} kind="replyLater" variant="row" />
+          <LaterQueueButton {accountId} conversationId={queueActionsEnabled ? backendConversationId : ''} variant="row" />
         </div>
       </div>
 

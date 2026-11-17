@@ -11,6 +11,7 @@ import (
 
 	v1 "github.com/hkdb/aerion/internal/automation/v1"
 	"github.com/hkdb/aerion/internal/database"
+	"github.com/hkdb/aerion/internal/triage"
 )
 
 type actionReceiptLedger struct{ db *database.DB }
@@ -650,11 +651,12 @@ func actionUndoTriageRefs(payload []byte, known bool) ([]v1.AffectedTriageRef, e
 	var snapshot struct {
 		Action  v1.ActionKind `json:"action"`
 		Entries []struct {
-			AccountID      string `json:"accountId"`
-			ConversationID string `json:"conversationId"`
-			PriorInQueue   bool   `json:"priorInQueue"`
-			PriorWakeAt    string `json:"priorWakeAt"`
-			PriorSnoozed   bool   `json:"priorSnoozed"`
+			AccountID      string             `json:"accountId"`
+			ConversationID string             `json:"conversationId"`
+			PriorLater     *triage.LaterState `json:"priorLater,omitempty"`
+			PriorInQueue   bool               `json:"priorInQueue"`
+			PriorWakeAt    string             `json:"priorWakeAt"`
+			PriorSnoozed   bool               `json:"priorSnoozed"`
 		} `json:"entries"`
 	}
 	if err := json.Unmarshal(payload, &snapshot); err != nil {
@@ -665,6 +667,9 @@ func actionUndoTriageRefs(payload []byte, known bool) ([]v1.AffectedTriageRef, e
 	}
 	entry := snapshot.Entries[0]
 	ref := v1.AffectedTriageRef{AccountID: entry.AccountID, ConversationID: entry.ConversationID, Known: known}
+	if entry.PriorLater != nil {
+		return laterAffectedRefs(entry.AccountID, entry.ConversationID, *entry.PriorLater, known), nil
+	}
 	switch snapshot.Action {
 	case v1.ActionReplyLaterAdd, v1.ActionReplyLaterRemove:
 		ref.Queue, ref.InQueue = "replyLater", entry.PriorInQueue

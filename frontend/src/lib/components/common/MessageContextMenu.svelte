@@ -2,8 +2,8 @@
   import { onMount } from 'svelte'
   import { registerMenuAction } from '$lib/nativeMenu'
   import Icon from '@iconify/svelte'
-  import { replyLaterQueue } from '$lib/stores/replyLater.svelte'
-  import { readLaterQueue } from '$lib/stores/readLater.svelte'
+  import { laterQueue as replyLaterQueue } from '$lib/stores/later.svelte'
+  import { laterQueue as readLaterQueue, undoLaterChange } from '$lib/stores/later.svelte'
   import { ContextMenu as ContextMenuPrimitive } from 'bits-ui'
   import {
     ContextMenuContent,
@@ -79,7 +79,6 @@
 
   const queueTargets = $derived(laterTargets ?? (conversationId ? [{ accountId, conversationId }] : []))
   const allReadLater = $derived(queueTargets.length > 0 && queueTargets.every(ref => readLaterQueue.has(ref.accountId, ref.conversationId)))
-  const allReplyLater = $derived(queueTargets.length > 0 && queueTargets.every(ref => replyLaterQueue.has(ref.accountId, ref.conversationId)))
   const laterBusy = $derived(queueTargets.some(ref => readLaterQueue.isBusy(ref.accountId, ref.conversationId) || replyLaterQueue.isBusy(ref.accountId, ref.conversationId)))
 
   // Accounts list — passed to FolderPickerDialog for its account dropdown.
@@ -196,17 +195,15 @@
     const targets = queueTargets.map(ref => ({ ...ref }))
     if (!laterActionsEnabled || laterBusy || targets.length === 0) return
     try {
-      const queue = kind === 'readLater' ? readLaterQueue : replyLaterQueue
+      const queue = readLaterQueue
       await queue.load()
       const inQueue = !targets.every(ref => queue.has(ref.accountId, ref.conversationId))
       let failures = 0
       for (const ref of targets) {
         try {
-          const result = kind === 'readLater'
-            ? await readLaterQueue.setWithUndo(ref.accountId, ref.conversationId, inQueue)
-            : await replyLaterQueue.set(ref.accountId, ref.conversationId, inQueue)
+          const result = await readLaterQueue.setWithUndo(ref.accountId, ref.conversationId, inQueue)
           if (result?.changed) toasts.success($_(`${kind}.${inQueue ? 'added' : 'removed'}`), result.operationId ? [{
-            label: $_('common.undo'), onClick: () => { void UndoOperation(result.operationId).catch(() => toasts.error($_('toast.undoFailed'))) },
+            label: $_('common.undo'), onClick: () => { void undoLaterChange(result).catch(() => toasts.error($_('toast.undoFailed'))) },
           }] : undefined)
         } catch { failures += 1 }
       }
@@ -511,11 +508,7 @@
         {$_(allReadLater ? 'readLater.remove' : 'readLater.add')}
         <ShortcutHint id="mail.readLater" />
       </ContextMenuItem>
-      <ContextMenuItem onSelect={() => void toggleLater('replyLater')} disabled={!laterActionsEnabled || laterBusy || !replyLaterQueue.ready}>
-        <Icon icon="mdi:clock-outline" class="mr-2 h-4 w-4" />
-        {$_(allReplyLater ? 'replyLater.remove' : 'replyLater.add')}
-        <ShortcutHint id="mail.replyLater" />
-      </ContextMenuItem>
+
     {/if}
     {#if conversationId}
       {#if folderType === 'snoozed'}

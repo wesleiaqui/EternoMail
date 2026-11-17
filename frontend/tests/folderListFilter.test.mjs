@@ -40,9 +40,9 @@ test('unread matches folders with a positive unreadCount', () => {
 test('readLater/replyLater match on the per-queue per-folder counts', () => {
   assert.equal(folderMatches({ id: 'f1' }, 'a1', 'readLater', queueCounts), true)
   assert.equal(folderMatches({ id: 'f3' }, 'a1', 'readLater', queueCounts), true)
-  assert.equal(folderMatches({ id: 'f2' }, 'a1', 'readLater', queueCounts), false)
+  assert.equal(folderMatches({ id: 'f2' }, 'a1', 'readLater', queueCounts), true)
   assert.equal(folderMatches({ id: 'f2' }, 'a1', 'replyLater', queueCounts), true)
-  assert.equal(folderMatches({ id: 'f1' }, 'a1', 'replyLater', queueCounts), false)
+  assert.equal(folderMatches({ id: 'f1' }, 'a1', 'replyLater', queueCounts), true)
   // Counts are scoped by account.
   assert.equal(folderMatches({ id: 'f1' }, 'a2', 'readLater', queueCounts), false)
 })
@@ -66,7 +66,7 @@ test('pruning keeps matches and the ancestors they hang from', () => {
   // f1 kept directly; mid kept only as an ancestor of f3; f2 dropped.
   assert.deepEqual(
     trees.map(n => n.folder.id),
-    ['root']
+    ['root', 'f2']
   )
   assert.deepEqual(
     trees[0].children.map(n => n.folder.id),

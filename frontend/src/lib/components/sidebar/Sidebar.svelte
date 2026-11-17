@@ -1,8 +1,8 @@
 <script lang="ts">
   import Icon from '@iconify/svelte'
   import NavigationCards from './NavigationCards.svelte'
-  import { replyLaterQueue } from '$lib/stores/replyLater.svelte'
-  import { readLaterQueue } from '$lib/stores/readLater.svelte'
+  import { laterQueue as replyLaterQueue } from '$lib/stores/later.svelte'
+  import { laterQueue as readLaterQueue } from '$lib/stores/later.svelte'
   import { navigationCards } from '$lib/stores/navigationCards.svelte'
   import type { NavigationEntry } from '$lib/sidebar/cards'
   import { folderChoices, filterFolders } from '$lib/sidebar/folderSearch'
@@ -274,7 +274,6 @@
     void getUIStateVersion()
     const entries: NavigationEntry[] = [
       { id: 'inboxes', kind: 'inboxes', name: $_('navigation.allInboxes'), ...folderCounts(item => item.type === 'inbox') },
-      { id: 'replyLater', kind: 'system', folderType: 'replyLater', name: $_('replyLater.title'), count: replyLaterQueue.ready ? replyLaterQueue.count : undefined },
       { id: 'readLater', kind: 'system', folderType: 'readLater', name: $_('readLater.title'), count: readLaterQueue.ready ? readLaterQueue.count : undefined },
       { id: 'snoozed', kind: 'system', folderType: 'snoozed', name: $_('sidebar.snoozed'), count: snoozedCount },
       ...[...primaryFolders, ...secondaryFolders].map(item => ({ id: item.type, kind: 'system' as const, name: $_(item.label), folderType: item.type, ...folderCounts(folder => folder.type === item.type) })),

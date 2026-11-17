@@ -225,6 +225,7 @@ type App struct {
 	mailboxService        *mailboxServiceConnector
 	remoteServiceMode     bool
 	remoteServiceEndpoint string
+	laterMutationMu       goSync.Mutex
 	remoteSendMu          goSync.Mutex
 	remoteSendRequests    map[string]remotePreparedSend
 

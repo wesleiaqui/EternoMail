@@ -99,6 +99,8 @@ func (a *App) ChangeReplyLaterWithUndo(accountID, conversationID string, inQueue
 		}
 		return ReplyLaterChangeResult{Changed: changed, OperationID: operationID}, nil
 	}
+	a.laterMutationMu.Lock()
+	defer a.laterMutationMu.Unlock()
 	if a.replyLaterStore == nil {
 		return ReplyLaterChangeResult{}, fmt.Errorf("Reply Later queue is not ready")
 	}
@@ -136,6 +138,8 @@ func (a *App) SetReplyLaterMembership(ref replylater.Ref, inQueue bool) error {
 		}
 		return nil
 	}
+	a.laterMutationMu.Lock()
+	defer a.laterMutationMu.Unlock()
 	if a.replyLaterStore == nil {
 		return fmt.Errorf("Reply Later queue is not ready")
 	}

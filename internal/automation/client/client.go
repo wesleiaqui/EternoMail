@@ -602,6 +602,18 @@ func (c *Client) SetReadLaterWithKey(ctx context.Context, ref triage.Ref, inQueu
 	return &resp.Data, nil
 }
 
+func (c *Client) SetLaterWithKey(ctx context.Context, ref triage.Ref, inQueue bool, idempotencyKey string) (*v1.TriageMutationResponse, error) {
+	bytes, err := c.doRequest(ctx, http.MethodPost, "/v1/triage/later/mutations", v1.ReadLaterMutationRequest{Ref: ref, InQueue: inQueue}, idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	var resp v1.Response[v1.TriageMutationResponse]
+	if err := json.Unmarshal(bytes, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
 // GetSnoozedConversations lists active helper-owned Snoozes.
 func (c *Client) GetSnoozedConversations(ctx context.Context) ([]triage.Ref, error) {
 	bytes, err := c.doRequest(ctx, http.MethodGet, "/v1/triage/snoozes", nil, "")

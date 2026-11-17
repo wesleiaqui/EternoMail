@@ -2,9 +2,8 @@
   import Icon from '@iconify/svelte'
   import { _ } from '$lib/i18n'
   import { accountStore } from '$lib/stores/accounts.svelte'
-  import { replyLaterQueue, type ReplyLaterRef } from '$lib/stores/replyLater.svelte'
+  import { laterQueue as replyLaterQueue, type LaterRef as ReplyLaterRef, undoLaterChange } from '$lib/stores/later.svelte'
   import { toasts } from '$lib/stores/toast'
-  import { UndoOperation } from '../../../../wailsjs/go/app/App'
 
   let { entry }: { entry: ReplyLaterRef } = $props()
   const accountLabel = $derived.by(() => {
@@ -19,7 +18,7 @@
       if (!result?.changed) return
       toasts.success($_('replyLater.removed'), [{
         label: $_('common.undo'),
-        onClick: () => { void UndoOperation(result.operationId).catch(() => toasts.error($_('toast.undoFailed'))) },
+        onClick: () => { void undoLaterChange(result).catch(() => toasts.error($_('toast.undoFailed'))) },
       }])
     } catch (err) {
       toasts.error(`${$_('replyLater.failed')}: ${String(err)}`)

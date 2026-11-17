@@ -16,6 +16,7 @@ type Ref struct {
 	AccountID      string    `json:"accountId"`
 	ConversationID string    `json:"conversationId"`
 	WakeAt         time.Time `json:"wakeAt,omitempty"`
+	Indexed        *bool     `json:"indexed,omitempty"`
 }
 
 type Store struct{ db *database.DB }
@@ -57,7 +58,7 @@ func (s *Store) IsReadLater(accountID, conversationID string) (bool, error) {
 }
 
 func (s *Store) ListReadLater() ([]Ref, error) {
-	rows, err := s.db.QueryContext(context.Background(), `SELECT account_id,conversation_id FROM read_later_queue ORDER BY added_at DESC`)
+	rows, err := s.db.QueryContext(context.Background(), `SELECT account_id,conversation_id, EXISTS(SELECT 1 FROM messages m WHERE m.account_id=rl.account_id AND COALESCE(m.thread_id,m.id)=rl.conversation_id) FROM read_later_queue rl ORDER BY added_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +66,7 @@ func (s *Store) ListReadLater() ([]Ref, error) {
 	var refs []Ref
 	for rows.Next() {
 		var ref Ref
-		if err := rows.Scan(&ref.AccountID, &ref.ConversationID); err != nil {
+		if err := rows.Scan(&ref.AccountID, &ref.ConversationID, &ref.Indexed); err != nil {
 			return nil, err
 		}
 		refs = append(refs, ref)

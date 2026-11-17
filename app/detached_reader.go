@@ -288,6 +288,7 @@ func (a *App) readerMethods() map[string]any {
 		"GetComposerSendReceipt":        a.GetComposerSendReceipt,
 		"SearchContacts":                a.SearchContacts,
 		"SendMessage":                   a.SendMessage,
+		"ChangeLaterWithUndo":           a.ChangeLaterWithUndo,
 		"ChangeReadLaterWithUndo":       a.ChangeReadLaterWithUndo,
 		"SnoozeConversationWithUndo":    a.SnoozeConversationWithUndo,
 		"UnsnoozeConversationWithUndo":  a.UnsnoozeConversationWithUndo,

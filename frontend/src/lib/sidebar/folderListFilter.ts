@@ -1,6 +1,5 @@
 // Folder-list filtering for the Kaikki kansiot panel: while the folder panel
-// is open, the four quick-filter buttons (all / unread / read later / reply
-// later) prune the folder tree instead of the message list. Pure logic lives
+// is open, the three quick-filter buttons (all / unread / later) prune the folder tree instead of the message list. Pure logic lives
 // here so it is testable without mounting Svelte components.
 
 export type FolderListFilter = '' | 'unread' | 'readLater' | 'replyLater'
@@ -26,7 +25,7 @@ export interface FilterableTree {
 export function folderMatches(f: FilterableFolder, accountId: string, filter: FolderListFilter, queueCounts: QueueCountsByFilter = {}): boolean {
   if (!filter) return true
   if (filter === 'unread') return (f.unreadCount ?? 0) > 0
-  return (queueCounts[filter]?.[accountId]?.[f.id] ?? 0) > 0
+  return (queueCounts.readLater?.[accountId]?.[f.id] ?? 0) > 0 || (queueCounts.replyLater?.[accountId]?.[f.id] ?? 0) > 0
 }
 
 export interface PrunedFolderTree<T extends FilterableTree> {

@@ -76,8 +76,7 @@ On macOS, `⌘` works wherever `Ctrl` is listed below, unless macOS reserves the
 | `Ctrl+A` (macOS `⌘A`) | Select all messages |
 | `Ctrl+Alt+1` (macOS `⌘⌥1`) | Filter: All messages |
 | `Ctrl+Alt+2` (macOS `⌘⌥2`) | Filter: Unread |
-| `Ctrl+Alt+3` (macOS `⌘⌥3`) | Filter: Reply Later |
-| `Ctrl+Alt+4` (macOS `⌘⌥4`) | Filter: Read Later |
+| `Ctrl+Alt+4` (macOS `⌘⌥4`) / `Ctrl+Alt+3` (macOS `⌘⌥3`) | Filter: Later |
 | `Menu` / `Right Alt` (macOS `Right ⌥`) | Context menu |
 | `Esc` / `u` | Clear checked messages, then close conversation |
 
@@ -89,8 +88,7 @@ On macOS, `⌘` works wherever `Ctrl` is listed below, unless macOS reserves the
 | `Ctrl+Shift+R` (macOS `⌘⇧R`) / `a` | Reply all |
 | `f` / `Ctrl+L` (macOS `⌘L`) | Forward |
 | `e` / `Ctrl+E` (macOS `⌘E`) | Archive and mark as read |
-| `l` / `Ctrl+U` (macOS `⌘U`) | Add to Read Later |
-| `Shift+L` (macOS `⇧L`) / `Ctrl+I` (macOS `⌘I`) | Add to Reply Later |
+| `l` / `Ctrl+U` (macOS `⌘U`) / `Shift+L` (macOS `⇧L`) / `Ctrl+I` (macOS `⌘I`) | Save for later |
 | `h` | Snooze conversation |
 | `!` / `Ctrl+J` (macOS `⌘J`) | Mark as spam |
 | `#` / `Delete` (macOS `⌦`) / `Backspace` (macOS `⌫`) / `d` | Move to trash |

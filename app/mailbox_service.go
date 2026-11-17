@@ -989,6 +989,17 @@ func (c *mailboxServiceConnector) setReadLaterWithReceipt(ctx context.Context, r
 	})
 }
 
+func (c *mailboxServiceConnector) setLaterWithReceipt(ctx context.Context, ref triage.Ref, inQueue bool) (*v1.TriageMutationResponse, error) {
+	client, err := c.getClient()
+	if err != nil {
+		return nil, err
+	}
+	request := v1.ReadLaterMutationRequest{Ref: ref, InQueue: inQueue}
+	return c.mutateTriageWithReceipt(ctx, "/v1/triage/later/mutations", request, func(key string) (*v1.TriageMutationResponse, error) {
+		return client.SetLaterWithKey(ctx, ref, inQueue, key)
+	})
+}
+
 func (c *mailboxServiceConnector) snoozedConversations(ctx context.Context) ([]triage.Ref, error) {
 	client, err := c.getClient()
 	if err != nil {

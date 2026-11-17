@@ -1086,8 +1086,7 @@ ${processedHtml}
       role="menu"
     >
       {#if conversationId && accountId}
-        <LaterQueueButton {accountId} {conversationId} kind="readLater" variant="menu" onComplete={() => ctxMenuVisible = false} />
-        <LaterQueueButton {accountId} {conversationId} kind="replyLater" variant="menu" onComplete={() => ctxMenuVisible = false} />
+        <LaterQueueButton {accountId} {conversationId} variant="menu" onComplete={() => ctxMenuVisible = false} />
       {/if}
       {#if ctxMenuText}
         <button

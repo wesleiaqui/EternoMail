@@ -12,6 +12,7 @@ import (
 	"github.com/hkdb/aerion/internal/folder"
 	"github.com/hkdb/aerion/internal/mailservice"
 	"github.com/hkdb/aerion/internal/message"
+	"github.com/hkdb/aerion/internal/replylater"
 	"github.com/hkdb/aerion/internal/views"
 )
 
@@ -306,6 +307,18 @@ func (o *mailboxReadOperations) messageInScope(msg *message.Message, scope views
 	case views.ScopeFolder:
 		return msg.AccountID == scope.AccountID && msg.FolderID == scope.FolderID, nil
 	case views.ScopeUnifiedFolder:
+		if scope.FolderType == "readLater" || scope.FolderType == "replyLater" {
+			id := msg.ThreadID
+			if id == "" {
+				id = msg.ID
+			}
+			read, err := o.runtime.triage.IsReadLater(msg.AccountID, id)
+			if err != nil {
+				return false, err
+			}
+			reply, err := o.runtime.replyLater.Contains(replylater.Ref{AccountID: msg.AccountID, ConversationID: id})
+			return read || reply, err
+		}
 		typeValue, err := parseUnifiedFolderType(scope.FolderType)
 		if err != nil {
 			return false, err

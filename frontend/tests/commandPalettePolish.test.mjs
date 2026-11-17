@@ -38,7 +38,7 @@ test('repeatable commands keep the palette open', () => {
 })
 
 test('lesser-used mail commands are in the palette; permanent delete stays out', () => {
-  for (const id of ['mail.toggleRead', 'mail.readLater', 'mail.replyLater', 'mail.moveTo', 'mail.copyTo']) {
+  for (const id of ['mail.toggleRead', 'mail.readLater', 'mail.moveTo', 'mail.copyTo']) {
     assert.doesNotMatch(commandLine(id), /palette: false/, id)
     assert.match(commandLine(id), /category: 'commandPalette\.categories\.mail'/, id)
   }

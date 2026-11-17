@@ -16,31 +16,30 @@ const focusSupport = 'let focusedRowIdentity=null; const accountId="unified",fol
 
 const menu = await read(base+'common/MessageContextMenu.svelte')
 const button = await read(base+'common/LaterQueueButton.svelte')
-test('reader toolbar, per-message header and row quick actions include both queues', () => {
-  assert.equal((viewer.match(/kind="readLater"/g)||[]).length, 3)
-  assert.equal((viewer.match(/kind="replyLater"/g)||[]).length, 3)
-  for (const kind of ['readLater','replyLater']) assert.ok(row.includes(`kind="${kind}" variant="row"`))
+test('reader toolbar, per-message header and row quick actions include one Later action', () => {
+  assert.equal((viewer.match(/<LaterQueueButton /g)||[]).length, 3)
+  assert.equal((viewer.match(/kind="replyLater"/g)||[]).length, 0)
+  assert.equal((row.match(/<LaterQueueButton /g)||[]).length, 1)
   assert.match(viewer, /conversationId=\{msg.threadId \|\| threadId \|\| ''\}/)
   assert.match(viewer, /accountId=\{msg.accountId \|\| accountId \|\| ''\}/)
 })
 test('snoozed and multi-selected context menus keep both account-qualified queue actions', () => {
   const queueMenu = menu.slice(menu.indexOf('{#if queueTargets.length > 0}'), menu.indexOf('<!-- Move/Delete actions -->'))
   assert.ok(queueMenu.indexOf("toggleLater('readLater')") < queueMenu.indexOf("folderType === 'snoozed'"))
-  assert.ok(queueMenu.indexOf("toggleLater('replyLater')") < queueMenu.indexOf("folderType === 'snoozed'"))
+  assert.ok(!queueMenu.includes("toggleLater('replyLater')"))
   assert.match(row, /laterTargets=\{useMultiSelect \? selectedQueueRefs : undefined\}/)
   assert.equal((list.match(/\{selectedQueueRefs\}/g)||[]).length, 4)
   assert.match(menu, /queueTargets.map\(ref => \(\{ \.\.\.ref \}\)\)/)
   assert.match(menu, /setWithUndo\(ref.accountId, ref.conversationId, inQueue\)/)
-  assert.match(menu, /replyLaterQueue.set\(ref.accountId, ref.conversationId, inQueue\)/)
 })
-test('HTML-body menus receive the conversation target and include both actions', async () => {
+test('HTML-body menus receive the conversation target and include one Later action', async () => {
   const body = await read(base+'viewer/EmailBody.svelte')
   const message = await read(base+'viewer/ConversationMessage.svelte')
   assert.equal((message.match(/\{conversationId\}/g)||[]).length, 2)
-  for (const kind of ['readLater','replyLater']) assert.ok(body.includes(`kind="${kind}" variant="menu"`))
+  assert.equal((body.match(/<LaterQueueButton /g)||[]).length, 1)
 })
 test('queue buttons share existing APIs, labels, ready/busy guards, hints and operation-specific Undo', async () => {
-  for (const part of ['readLaterQueue.setWithUndo(accountId, conversationId, target)', 'replyLaterQueue.set(accountId, conversationId, target)', 'UndoOperation(result.operationId)', 'aria-pressed={inQueue}', '!queue.ready', 'withShortcut(label, shortcut)', 'ariaKeyshortcuts(shortcut)']) assert.ok(button.includes(part), part)
+  for (const part of ['laterQueue.setWithUndo(accountId, conversationId, target)', 'undoLaterChange(result)', 'aria-pressed={inQueue}', '!queue.ready', 'withShortcut(label, shortcut)', 'ariaKeyshortcuts(shortcut)']) assert.ok(button.includes(part), part)
   for (const locale of ['en','fi']) {
     const values = JSON.parse(await read('../src/lib/i18n/locales/'+locale+'.json'))
     for (const kind of ['readLater','replyLater']) for (const key of ['add','remove','added','removed','failed']) assert.ok(values[kind][key], `${locale}.${kind}.${key}`)
@@ -82,7 +81,7 @@ test('queue readiness never removes ordinary checked message refs and disables m
   const ordinary = list.slice(list.indexOf('  const selectedMessageRefs'), list.indexOf('  const selectedQueueReady'))
   assert.doesNotMatch(ordinary, /_queueCanonical/)
   assert.match(list, /if \(!selectedQueueReady \|\| laterQueueMutationInFlight/)
-  assert.equal((list.match(/disabled: !selectedQueueReady/g)||[]).length, 2)
+  assert.equal((list.match(/disabled: !selectedQueueReady/g)||[]).length, 1)
   assert.equal((list.match(/\{selectedQueueReady\}/g)||[]).length,4)
   assert.match(row,/laterActionsEnabled=\{useMultiSelect \? selectedQueueReady : queueActionsEnabled\}/)
   const bar = await read(base+'kit/ActionBar.svelte')

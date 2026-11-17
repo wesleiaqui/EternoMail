@@ -21,7 +21,7 @@ const mailWindowEventType = "mail_window_event"
 var mailWindowEvents = []string{
 	"folder:synced", "folder:syncError", "folders:countsChanged", "messages:updated",
 	"messages:readChanged", "messages:starredChanged", "messages:moved", "messages:deleted",
-	"replyLater:changed",
+	"replyLater:changed", "replyLater:refresh", "replyLater:synced", "readLater:changed", "readLater:refresh", "readLater:synced",
 	"sync:progress", "fts:progress", "fts:complete", "fts:indexing", "contacts:changed",
 	"sent:synced", "network:online", "network:offline",
 	"virtualfolder:cacheUpdated",
@@ -181,6 +181,8 @@ func (a *App) mailWindowMethods() map[string]any {
 		"GetUnifiedFolderCount":         a.GetUnifiedFolderCount,
 		"GetVirtualFolders":             a.GetVirtualFolders,
 		"GetVirtualFolderUnreadCounts":  a.GetVirtualFolderUnreadCounts,
+		"GetReadLaterQueue":             a.GetReadLaterQueue,
+		"ChangeReadLaterWithUndo":       a.ChangeReadLaterWithUndo,
 		"GetReplyLaterQueue":            a.GetReplyLaterQueue,
 		"ChangeReplyLaterWithUndo":      a.ChangeReplyLaterWithUndo,
 		"GetReplyLaterCount":            a.GetReplyLaterCount,

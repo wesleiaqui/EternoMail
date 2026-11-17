@@ -1,7 +1,7 @@
 import { ChangeReadLaterWithUndo, GetReadLaterQueue } from '../../../wailsjs/go/app/App'
 import { EventsOn } from '../../../wailsjs/runtime/runtime'
 
-export interface ReadLaterRef { accountId: string; conversationId: string }
+export interface ReadLaterRef { accountId: string; conversationId: string; indexed?: boolean }
 type MembershipEvent = ReadLaterRef & { inQueue: boolean }
 const key = (ref: ReadLaterRef) => JSON.stringify([ref.accountId, ref.conversationId])
 let refs = $state<ReadLaterRef[]>([])

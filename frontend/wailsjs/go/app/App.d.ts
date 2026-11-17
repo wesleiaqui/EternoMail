@@ -986,3 +986,5 @@ export function IsRemoteServiceMode():Promise<boolean>;
 export function SendMessageWithRequestID(arg1:string,arg2:smtp.ComposeMessage,arg3:string):Promise<void>;
 
 export function DispatchRemotePendingSend(arg1:string):Promise<boolean>;
+
+export function ChangeLaterWithUndo(arg1:string,arg2:string,arg3:boolean):Promise<app.TriageChangeResult>;

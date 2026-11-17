@@ -229,13 +229,7 @@
             "shortcutId": "list.filterUnread"
           },
           {
-            "label": "Reply Later",
-            "id": "filter.replyLater",
-            "key": "⌘⌥3",
-            "shortcutId": "list.filterReplyLater"
-          },
-          {
-            "label": "Read Later",
+            "label": "Later",
             "id": "filter.readLater",
             "key": "⌘⌥4",
             "shortcutId": "list.filterReadLater"
@@ -335,16 +329,10 @@
         "shortcutId": "mail.archiveAndMarkRead"
       },
       {
-        "label": "Read Later",
+        "label": "Later",
         "id": "mail.readLater",
         "key": "l",
         "shortcutId": "mail.readLater"
-      },
-      {
-        "label": "Reply Later",
-        "id": "mail.replyLater",
-        "key": "⇧L",
-        "shortcutId": "mail.replyLater"
       },
       {
         "label": "Snooze…",

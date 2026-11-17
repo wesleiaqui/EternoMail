@@ -19,14 +19,16 @@ type triageActionUndoSnapshot struct {
 }
 
 type triageActionUndoSnapshotEntry struct {
-	AccountID       string `json:"accountId"`
-	ConversationID  string `json:"conversationId"`
-	PriorInQueue    bool   `json:"priorInQueue,omitempty"`
-	ExpectedInQueue bool   `json:"expectedInQueue,omitempty"`
-	PriorWakeAt     string `json:"priorWakeAt,omitempty"`
-	ExpectedWakeAt  string `json:"expectedWakeAt,omitempty"`
-	PriorSnoozed    bool   `json:"priorSnoozed,omitempty"`
-	ExpectedSnoozed bool   `json:"expectedSnoozed,omitempty"`
+	PriorLater      *triage.LaterState `json:"priorLater,omitempty"`
+	ExpectedLater   *triage.LaterState `json:"expectedLater,omitempty"`
+	AccountID       string             `json:"accountId"`
+	ConversationID  string             `json:"conversationId"`
+	PriorInQueue    bool               `json:"priorInQueue,omitempty"`
+	ExpectedInQueue bool               `json:"expectedInQueue,omitempty"`
+	PriorWakeAt     string             `json:"priorWakeAt,omitempty"`
+	ExpectedWakeAt  string             `json:"expectedWakeAt,omitempty"`
+	PriorSnoozed    bool               `json:"priorSnoozed,omitempty"`
+	ExpectedSnoozed bool               `json:"expectedSnoozed,omitempty"`
 }
 
 func (r *SyncRuntime) ApplyTriageMutation(ctx context.Context, request v1.TriageMutationRequest, reserve func([]byte) error) (bool, []byte, error) {
@@ -60,6 +62,17 @@ func (r *SyncRuntime) ApplyTriageMutation(ctx context.Context, request v1.Triage
 		return false, snapshot, nil
 	}
 
+	if request.UnifiedLater {
+		var state triageActionUndoSnapshot
+		if err := json.Unmarshal(snapshot, &state); err != nil {
+			return false, nil, err
+		}
+		e := state.Entries[0]
+		err := r.triage.SetLaterState(ctx, triage.Ref{AccountID: request.AccountID, ConversationID: request.ConversationID}, *e.PriorLater, *e.ExpectedLater, func(queue string, on bool) error {
+			return r.setGmailTriageLabel(ctx, request.AccountID, request.ConversationID, queue, on)
+		})
+		return err == nil, snapshot, err
+	}
 	if err := r.applyTriageState(ctx, request); err != nil {
 		return false, nil, err
 	}
@@ -69,6 +82,24 @@ func (r *SyncRuntime) ApplyTriageMutation(ctx context.Context, request v1.Triage
 func (r *SyncRuntime) captureTriageMutation(ctx context.Context, request v1.TriageMutationRequest) ([]byte, bool, error) {
 	entry := triageActionUndoSnapshotEntry{AccountID: request.AccountID, ConversationID: request.ConversationID}
 	changed := false
+	if request.UnifiedLater {
+		ref := triage.Ref{AccountID: request.AccountID, ConversationID: request.ConversationID}
+		prior, err := r.triage.LaterState(ref)
+		if err != nil {
+			return nil, false, err
+		}
+		expected := triage.LaterState{}
+		if request.InQueue {
+			expected = prior
+			if !prior.Read && !prior.Reply {
+				expected.Read = true
+			}
+		}
+		entry.PriorLater = &prior
+		entry.ExpectedLater = &expected
+		payload, err := json.Marshal(triageActionUndoSnapshot{Version: 2, Action: request.Action, Entries: []triageActionUndoSnapshotEntry{entry}})
+		return payload, prior != expected, err
+	}
 	switch request.Action {
 	case v1.ActionReplyLaterAdd, v1.ActionReplyLaterRemove:
 		ref := replylater.Ref{AccountID: request.AccountID, ConversationID: request.ConversationID}
@@ -181,11 +212,14 @@ func (o *mailboxActionOperations) ActionUndoTriageRefs(ctx context.Context, payl
 	if err := json.Unmarshal(payload, &snapshot); err != nil {
 		return nil, fmt.Errorf("decode triage undo snapshot: %w", err)
 	}
-	if snapshot.Version != 1 || len(snapshot.Entries) != 1 {
+	if !validTriageSnapshot(snapshot) {
 		return nil, errors.New("triage undo snapshot does not match operation")
 	}
 	entry := snapshot.Entries[0]
 	ref := v1.AffectedTriageRef{AccountID: entry.AccountID, ConversationID: entry.ConversationID, Known: true}
+	if entry.PriorLater != nil && entry.ExpectedLater != nil {
+		return laterAffectedRefs(entry.AccountID, entry.ConversationID, *entry.PriorLater, true), nil
+	}
 	switch snapshot.Action {
 	case v1.ActionReplyLaterAdd, v1.ActionReplyLaterRemove:
 		ref.Queue = "replyLater"
@@ -217,7 +251,7 @@ func (o *mailboxActionOperations) undoTriageAction(ctx context.Context, action v
 	if err := json.Unmarshal(payload, &snapshot); err != nil {
 		return fmt.Errorf("decode triage undo snapshot: %w", err)
 	}
-	if snapshot.Version != 1 || snapshot.Action != action || len(snapshot.Entries) != 1 {
+	if !validTriageSnapshot(snapshot) || snapshot.Action != action {
 		return errors.New("triage undo snapshot does not match operation")
 	}
 	entry := snapshot.Entries[0]
@@ -226,6 +260,11 @@ func (o *mailboxActionOperations) undoTriageAction(ctx context.Context, action v
 	}
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if entry.PriorLater != nil && entry.ExpectedLater != nil {
+		return r.triage.SetLaterState(ctx, triage.Ref{AccountID: entry.AccountID, ConversationID: entry.ConversationID}, *entry.ExpectedLater, *entry.PriorLater, func(queue string, on bool) error {
+			return r.setGmailTriageLabel(ctx, entry.AccountID, entry.ConversationID, queue, on)
+		})
 	}
 	switch action {
 	case v1.ActionReplyLaterAdd, v1.ActionReplyLaterRemove:
@@ -288,3 +327,18 @@ func (o *mailboxActionOperations) undoTriageAction(ctx context.Context, action v
 
 var _ v1.TriageMutationOperations = (*SyncRuntime)(nil)
 var _ v1.ActionUndoTriageRefReader = (*mailboxActionOperations)(nil)
+
+func laterAffectedRefs(accountID, conversationID string, state triage.LaterState, known bool) []v1.AffectedTriageRef {
+	return []v1.AffectedTriageRef{{AccountID: accountID, ConversationID: conversationID, Queue: "readLater", InQueue: state.Read, Known: known}, {AccountID: accountID, ConversationID: conversationID, Queue: "replyLater", InQueue: state.Reply, Known: known}}
+}
+
+func validTriageSnapshot(s triageActionUndoSnapshot) bool {
+	if len(s.Entries) != 1 {
+		return false
+	}
+	e := s.Entries[0]
+	if s.Version == 1 {
+		return e.PriorLater == nil && e.ExpectedLater == nil
+	}
+	return s.Version == 2 && e.PriorLater != nil && e.ExpectedLater != nil && (s.Action == v1.ActionReadLaterAdd || s.Action == v1.ActionReadLaterRemove)
+}

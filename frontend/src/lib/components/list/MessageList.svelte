@@ -51,8 +51,8 @@
   import { domainFromEmail, senderLogos } from '$lib/stores/senderLogos.svelte'
   import { accountStore } from '$lib/stores/accounts.svelte'
   import { virtualFoldersStore } from '$lib/stores/virtualFolders.svelte'
-  import { replyLaterQueue } from '$lib/stores/replyLater.svelte'
-  import { readLaterQueue } from '$lib/stores/readLater.svelte'
+  import { laterQueue as replyLaterQueue } from '$lib/stores/later.svelte'
+  import { laterQueue as readLaterQueue, undoLaterChange } from '$lib/stores/later.svelte'
   import { getLayoutMode, hideViewer } from '$lib/stores/layout.svelte'
   import { isDialogGuardActive, onDialogGuardChange } from '$lib/stores/dialogGuard'
   import { captureAutoSelectNext, findAutoSelectNext, flattenVisibleInboxGroups } from './autoSelectNext'
@@ -522,7 +522,6 @@
   const filterOptions = $derived([
     { value: '', label: $_('messageList.filterAll') },
     { value: 'unread', label: $_('messageList.filterUnread'), separator: true },
-    { value: 'replyLater', label: $_('messageList.filterReplyLater') },
     { value: 'readLater', label: $_('messageList.filterReadLater') },
     { value: 'starred', label: $_('messageList.filterStarred') },
     { value: 'attachments', label: $_('messageList.filterAttachments') },
@@ -709,17 +708,17 @@
     })
 
     stopReplyLaterListener = EventsOn('replyLater:changed', () => {
-      if (filterMode === 'replyLater' || (isUnifiedView && folderId === 'replyLater')) scheduleReload()
+      if (['readLater', 'replyLater'].includes(filterMode) || (isUnifiedView && ['readLater', 'replyLater'].includes(folderId || ''))) scheduleReload()
     })
     EventsOn('replyLater:refresh', () => {
-      if (filterMode === 'replyLater' || (isUnifiedView && folderId === 'replyLater')) scheduleReload()
+      if (['readLater', 'replyLater'].includes(filterMode) || (isUnifiedView && ['readLater', 'replyLater'].includes(folderId || ''))) scheduleReload()
     })
 
     EventsOn('readLater:changed', () => {
-      if (filterMode === 'readLater' || (isUnifiedView && folderId === 'readLater')) scheduleReload()
+      if (['readLater', 'replyLater'].includes(filterMode) || (isUnifiedView && ['readLater', 'replyLater'].includes(folderId || ''))) scheduleReload()
     })
     EventsOn('readLater:refresh', () => {
-      if (filterMode === 'readLater' || (isUnifiedView && folderId === 'readLater')) scheduleReload()
+      if (['readLater', 'replyLater'].includes(filterMode) || (isUnifiedView && ['readLater', 'replyLater'].includes(folderId || ''))) scheduleReload()
     })
     EventsOn('snooze:changed', () => scheduleReload())
     EventsOn('snooze:refresh', () => scheduleReload())
@@ -1026,9 +1025,6 @@
 
   const selectedAllReadLater = $derived(
     selectedQueueRefs.length > 0 && selectedQueueRefs.every(ref => readLaterQueue.has(ref.accountId, ref.conversationId))
-  )
-  const selectedAllReplyLater = $derived(
-    selectedQueueRefs.length > 0 && selectedQueueRefs.every(ref => replyLaterQueue.has(ref.accountId, ref.conversationId))
   )
 
   // Aggregated star/read state for multi-select context menu
@@ -1729,7 +1725,7 @@
 
   // Check if we're in search mode with results
   const unavailableReplyLaterRefs = $derived(
-    isUnifiedView && folderId === 'replyLater' && !isSearchMode && replyLaterQueue.ready
+    isUnifiedView && (folderId === 'readLater' || folderId === 'replyLater') && !isSearchMode && replyLaterQueue.ready
       ? replyLaterQueue.refs.filter(ref => ref.indexed === false)
       : []
   )
@@ -2792,22 +2788,20 @@
     if (!selectedQueueReady || laterQueueMutationInFlight || selectedQueueRefs.length === 0) return
     laterQueueMutationInFlight = true
     try {
-      const queue = kind === 'readLater' ? readLaterQueue : replyLaterQueue
+      const queue = readLaterQueue
       await queue.load()
       const inQueue = !selectedQueueRefs.every(ref => queue.has(ref.accountId, ref.conversationId))
       let changed = 0
       let failed = 0
       for (const ref of selectedQueueRefs) {
         try {
-          const result = kind === 'readLater'
-            ? await readLaterQueue.setWithUndo(ref.accountId, ref.conversationId, inQueue)
-            : await replyLaterQueue.set(ref.accountId, ref.conversationId, inQueue)
+          const result = await readLaterQueue.setWithUndo(ref.accountId, ref.conversationId, inQueue)
           if (!result?.changed) continue
           changed += 1
           const operationId = result.operationId
           toasts.success($_(inQueue ? `${kind}.added` : `${kind}.removed`), operationId ? [{
             label: $_('common.undo'),
-            onClick: () => { void UndoOperation(operationId).catch(() => toasts.error($_('toast.undoFailed'))) },
+            onClick: () => { void undoLaterChange(result).catch(() => toasts.error($_('toast.undoFailed'))) },
           }] : undefined)
         } catch (err) {
           failed += 1
@@ -2830,13 +2824,6 @@
         label: $_(selectedHasUnread ? 'viewer.markAsRead' : 'viewer.markAsUnread'),
         icon: selectedHasUnread ? 'mdi:email-open-outline' : 'mdi:email-outline',
         shortcut: selectedHasUnread ? 'mail.markRead' : 'mail.markUnread',
-      },
-      {
-        id: 'mail.replyLater',
-        label: $_(selectedAllReplyLater ? 'replyLater.remove' : 'replyLater.add'),
-        icon: 'mdi:clock-outline',
-        shortcut: 'mail.replyLater',
-        disabled: !selectedQueueReady,
       },
       {
         id: 'mail.readLater',
@@ -3120,15 +3107,7 @@
         <Icon icon="mdi:email-outline" class="h-3.5 w-3.5" />
         {$_('messageList.filterUnread')}
       </button>
-      <button
-        type="button"
-        class="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors {filterMode === 'replyLater' ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}"
-        aria-pressed={filterMode === 'replyLater'}
-        onclick={() => setFilter(filterMode === 'replyLater' ? '' : 'replyLater')}
-      >
-        <Icon icon="mdi:reply-outline" class="h-3.5 w-3.5" />
-        {$_('messageList.filterReplyLater')}
-      </button>
+
     </div>
   {/if}
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/hkdb/aerion/internal/replylater"
+	"github.com/hkdb/aerion/internal/triage"
 )
 
 // Durable command types stored in mailbox_undo_commands.type.
@@ -14,6 +15,7 @@ const (
 	commandTypeFlag       = "flag"
 	commandTypeMove       = "move"
 	commandTypeReplyLater = "reply-later"
+	commandTypeLater      = "later"
 )
 
 type flagPayload struct {
@@ -41,6 +43,14 @@ type replyLaterPayload struct {
 	Previous    bool           `json:"previous"`
 	Description string         `json:"description"`
 	CreatedAt   time.Time      `json:"createdAt"`
+}
+
+type laterPayload struct {
+	Ref         triage.Ref        `json:"ref"`
+	Before      triage.LaterState `json:"before"`
+	After       triage.LaterState `json:"after"`
+	Description string            `json:"description"`
+	CreatedAt   time.Time         `json:"createdAt"`
 }
 
 // marshalCommand converts a command to its durable type tag + JSON payload.
@@ -75,6 +85,12 @@ func marshalCommand(cmd Command) (string, []byte, bool) {
 			return "", nil, false
 		}
 		return commandTypeMove, payload, true
+	case *LaterChangeCommand:
+		payload, err := json.Marshal(laterPayload{Ref: c.ref, Before: c.before, After: c.after, Description: c.description, CreatedAt: c.createdAt})
+		if err != nil {
+			return "", nil, false
+		}
+		return commandTypeLater, payload, true
 	case *ReplyLaterChangeCommand:
 		payload, err := json.Marshal(replyLaterPayload{
 			Ref: c.ref, Previous: c.inQueue, Description: c.description, CreatedAt: c.createdAt,
@@ -108,6 +124,18 @@ func rehydrateCommand(cmdType string, payload []byte, ctx context.Context, undoC
 			return nil, fmt.Errorf("decode move command: %w", err)
 		}
 		cmd := NewMoveCommand(undoCtx, p.AccountID, p.Identities, p.SourceFolderID, p.DestFolderID, p.Description)
+		cmd.createdAt = p.CreatedAt
+		return cmd, nil
+	case commandTypeLater:
+		var p laterPayload
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, err
+		}
+		laterCtx, ok := undoCtx.(LaterContext)
+		if !ok {
+			return nil, fmt.Errorf("undo context does not support Later")
+		}
+		cmd := NewLaterChangeCommand(laterCtx, p.Ref, p.Before, p.After, p.Description)
 		cmd.createdAt = p.CreatedAt
 		return cmd, nil
 	case commandTypeReplyLater:
