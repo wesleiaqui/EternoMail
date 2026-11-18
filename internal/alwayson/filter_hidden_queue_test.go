@@ -33,11 +33,11 @@ func TestHiddenDestinationPausesQueuedJobAndShowResumes(t *testing.T) {
 	folders := folder.NewStore(db)
 	rules := mailfilter.NewStore(db)
 	jobs := mailfilter.NewJobStore(db)
-	m := &message.Message{ID: "m", AccountID: "a", FolderID: "source", UID: 10, Date: time.Now()}
+	m := &message.Message{ID: "m", AccountID: "a", FolderID: "source", UID: 10, FromEmail: "sender@example.com", Date: time.Now()}
 	if err := messages.Create(m); err != nil {
 		t.Fatal(err)
 	}
-	rule := &mailfilter.Rule{ID: "rule", Name: "Route", Enabled: true, DestFolderID: "destination"}
+	rule := &mailfilter.Rule{ID: "rule", Name: "Route", Enabled: true, FromContains: []string{"sender@example.com"}, DestFolderID: "destination"}
 	if err := rules.Create(rule); err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestHiddenDestinationPausesQueuedJobAndShowResumes(t *testing.T) {
 		t.Fatal(err)
 	}
 	moves := 0
-	r := &SyncRuntime{rules: rules, folders: folders, filterJobs: jobs, filterOp: mailmove.FilterOperation{Messages: messages, Move: func(context.Context, string, *message.Message, *folder.Folder) error { moves++; return nil }}}
+	r := &SyncRuntime{messages: messages, rules: rules, folders: folders, filterJobs: jobs, filterOp: mailmove.FilterOperation{Messages: messages, Move: func(context.Context, string, *message.Message, *folder.Folder) error { moves++; return nil }}}
 	job, err := jobs.ClaimNext()
 	if err != nil || job == nil {
 		t.Fatalf("claim %+v %v", job, err)

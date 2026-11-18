@@ -61,6 +61,7 @@ type testIMAPSession struct {
 	messages     map[uint32][]byte // UID -> raw RFC822
 	nextUID      uint32
 	selected     string
+	storeDelay   time.Duration
 	rejectAppend bool // when true, Append is rejected after recording the attempt
 }
 
@@ -204,6 +205,8 @@ func (s *testIMAPSession) Copy(numSet imap.NumSet, dest string) (*imap.CopyData,
 }
 
 func (s *testIMAPSession) Store(w *imapserver.FetchWriter, numSet imap.NumSet, flags *imap.StoreFlags, options *imap.StoreOptions) error {
+	time.Sleep(s.storeDelay)
+	s.ops.record("store:complete")
 	return nil
 }
 
@@ -364,7 +367,7 @@ func newFilterFixture(t *testing.T, rejectAppend bool) *filterFixture {
 		filterStore:         mailfilter.NewStore(db),
 	}
 	app.filterRouter = mailfilter.NewAutomaticRouter(app.filterStore, folderStore, func(rule *mailfilter.Rule, destination *folder.Folder, msg *message.Message) {
-		go app.applyFilterRule(rule, destination, msg)
+		go app.applyMatchedFilterRule(rule, msg)
 	})
 
 	// Pre-populate server A with the test message (UID 10 in the inbox).
@@ -558,10 +561,35 @@ func TestCreateFilterRuleValidation(t *testing.T) {
 		syncLastRequest: make(map[string]time.Time),
 	}
 
-	t.Run("same-account destination is rejected", func(t *testing.T) {
-		rule := &mailfilter.Rule{Name: "bad", AccountID: "acct-a", DestFolderID: "a-work"}
-		if err := app.CreateFilterRule(rule); err == nil {
-			t.Fatal("expected error for same-account destination")
+	t.Run("backend rejects catch-all trash create and update", func(t *testing.T) {
+		unsafe := &mailfilter.Rule{Name: "Unsafe", Enabled: true, ActionTrash: true, SubjectContains: []string{" ", "\t"}}
+		if err := app.CreateFilterRule(unsafe); err == nil {
+			t.Fatal("Wails create accepted catch-all Trash")
+		}
+		safe := &mailfilter.Rule{Name: "Safe", Enabled: true, ActionTrash: true, SubjectContains: []string{"invoice"}}
+		if err := app.CreateFilterRule(safe); err != nil {
+			t.Fatal(err)
+		}
+		safe.SubjectContains = nil
+		if err := app.UpdateFilterRule(safe); err == nil {
+			t.Fatal("Wails update accepted catch-all Trash")
+		}
+		stored, err := app.filterStore.Get(safe.ID)
+		if err != nil || len(stored.SubjectContains) != 1 {
+			t.Fatal("rejected update changed saved criteria")
+		}
+		if err := app.DeleteFilterRule(safe.ID); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("same-account destination is accepted", func(t *testing.T) {
+		rule := &mailfilter.Rule{Name: "same account", FromContains: []string{"sender@example.com"}, AccountID: "acct-a", DestFolderID: "a-work"}
+		if err := app.CreateFilterRule(rule); err != nil {
+			t.Fatal(err)
+		}
+		if err := app.DeleteFilterRule(rule.ID); err != nil {
+			t.Fatal(err)
 		}
 	})
 
@@ -592,4 +620,54 @@ func TestCreateFilterRuleValidation(t *testing.T) {
 			t.Fatalf("GetFilterRules round trip failed: %v %+v", err, rules)
 		}
 	})
+}
+
+func TestFilterWaitsForProviderReadBeforeCopy(t *testing.T) {
+	f := newFilterFixture(t, false)
+	f.serverA.sess.storeDelay = 100 * time.Millisecond
+	f.app.ownFlagChangeAt = make(map[string]time.Time)
+	rule, err := f.app.filterStore.Get(f.rule.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule.ActionMarkRead = true
+	if err := f.app.UpdateFilterRule(rule); err != nil {
+		t.Fatal(err)
+	}
+	m, err := f.app.messageStore.Get("msg-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.app.applyFilterActions(rule, []string{m.ID}, m); err != nil {
+		t.Fatal(err)
+	}
+	store := f.ops.indexOf("store:complete")
+	copy := f.ops.indexOf("append:")
+	if store < 0 || copy < 0 || store > copy {
+		t.Fatalf("read not confirmed before copy: store %d append %d", store, copy)
+	}
+}
+
+func TestReadOnlyFilterRefreshesFolderBadge(t *testing.T) {
+	f := newFilterFixture(t, false)
+	f.app.ownFlagChangeAt = make(map[string]time.Time)
+	if err := f.app.folderStore.UpdateCounts("a-inbox", 1, 1); err != nil {
+		t.Fatal(err)
+	}
+	countEvents := 0
+	f.app.runtimeEventEmitter = func(name string, args ...interface{}) {
+		if name == "folders:countsChanged" {
+			countEvents++
+		}
+	}
+	rule := *f.rule
+	rule.DestFolderID = ""
+	rule.ActionMarkRead = true
+	if n, err := f.app.applyFilterActions(&rule, []string{f.message.ID}, f.message); err != nil || n != 1 {
+		t.Fatalf("apply %d %v", n, err)
+	}
+	folder, err := f.app.folderStore.Get("a-inbox")
+	if err != nil || folder.UnreadCount != 0 || countEvents != 1 {
+		t.Fatalf("badge not refreshed: %+v events %d error %v", folder, countEvents, err)
+	}
 }

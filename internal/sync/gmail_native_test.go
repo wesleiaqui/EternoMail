@@ -7,6 +7,7 @@ import (
 	"github.com/hkdb/aerion/internal/account"
 	"github.com/hkdb/aerion/internal/database"
 	"github.com/hkdb/aerion/internal/folder"
+	"github.com/hkdb/aerion/internal/mailfilter"
 	"github.com/hkdb/aerion/internal/message"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestNativeGmailEmptyCacheSyncAndOnDemandBodyWithoutIMAP(t *testing.T) {
@@ -82,8 +84,35 @@ func TestNativeGmailEmptyCacheSyncAndOnDemandBodyWithoutIMAP(t *testing.T) {
 	engine := NewEngine(nil, account.NewStore(db), folder.NewStore(db), store, message.NewAttachmentStore(db))
 	engine.gmailBaseURL = server.URL
 	engine.SetGmailTokenSource(func(context.Context, string, bool) (string, error) { return "token", nil })
+	callbacks := make(chan *message.Message, 1)
+	engine.SetNewMessageHandler(func(_, _ string, m *message.Message) { callbacks <- m })
 	if err = engine.SyncMessages(context.Background(), "g", "inbox", 0, false); err != nil {
 		t.Fatal(err)
+	}
+	select {
+	case snapshot := <-callbacks:
+		stored, err := store.Get(snapshot.ID)
+		if err != nil || snapshot.UID == 0 || snapshot.UID != stored.UID {
+			t.Fatalf("callback identity mismatch: %+v stored %+v error %v", snapshot, stored, err)
+		}
+		rules := mailfilter.NewStore(db)
+		rule := &mailfilter.Rule{ID: "gmail-arrival", Name: "Read arrival", Enabled: true, ActionMarkRead: true}
+		if err := rules.Create(rule); err != nil {
+			t.Fatal(err)
+		}
+		jobs := mailfilter.NewJobStore(db)
+		router := mailfilter.NewAutomaticRouter(rules, folder.NewStore(db), func(rule *mailfilter.Rule, _ *folder.Folder, m *message.Message) {
+			if err := jobs.Enqueue(rule, "", m); err != nil {
+				t.Error(err)
+			}
+		})
+		router.Route(snapshot)
+		job, err := jobs.ClaimNext()
+		if err != nil || job == nil || job.SourceUID != stored.UID {
+			t.Fatalf("Gmail arrival not queued: %+v %v", job, err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("missing Gmail arrival callback")
 	}
 	conversations, err := store.ListConversationsByFolder("inbox", 0, 50, "newest", "")
 	if err != nil || len(conversations) != 1 {

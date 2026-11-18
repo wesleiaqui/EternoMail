@@ -2,6 +2,7 @@ package mailfilter
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -10,7 +11,25 @@ import (
 	"github.com/hkdb/aerion/internal/message"
 )
 
-// FilterJob is the durable input needed to resume an automatic filter move
+// RuleActions is the snapshot of a rule's non-move actions persisted with a
+// durable job. Execution compares it with the current rule and skips jobs
+// whose actions were edited, rather than combining new and old actions.
+type RuleActions struct {
+	ApplyExisting bool `json:"applyExisting,omitempty"`
+	MarkRead      bool `json:"markRead,omitempty"`
+	Archive       bool `json:"archive,omitempty"`
+	Trash         bool `json:"trash,omitempty"`
+}
+
+// actionsOf extracts the action snapshot from a rule.
+func actionsOf(rule *Rule) RuleActions {
+	if rule == nil {
+		return RuleActions{}
+	}
+	return RuleActions{MarkRead: rule.ActionMarkRead, Archive: rule.ActionArchive, Trash: rule.ActionTrash}
+}
+
+// FilterJob is the durable input needed to resume automatic filter actions
 // that had not started before the service stopped.
 type FilterJob struct {
 	ID                  string
@@ -20,6 +39,7 @@ type FilterJob struct {
 	SourceAccountID     string
 	SourceFolderID      string
 	SourceUID           uint32
+	Actions             RuleActions
 }
 
 // FilterJobInspection contains the metadata needed to reconcile an uncertain
@@ -46,22 +66,55 @@ type JobStore struct{ db *database.DB }
 // the database migration run before the service starts.
 func NewJobStore(db *database.DB) *JobStore { return &JobStore{db: db} }
 
-// Enqueue records a matched automatic move. Duplicate sync callbacks for the
-// same rule, message and source location collapse to one job.
-func (s *JobStore) Enqueue(rule *Rule, destinationFolderID string, msg *message.Message) error {
-	if s == nil || s.db == nil || rule == nil || msg == nil || rule.ID == "" || destinationFolderID == "" || msg.ID == "" || msg.AccountID == "" || msg.FolderID == "" || msg.UID == 0 {
-		return errors.New("automatic filter job is missing required identifiers")
+// Enqueue records a matched rule application. Duplicate sync callbacks for
+// the same rule, message, source location and destination collapse to one
+// job. destinationFolderID may be empty when the rule has no move action.
+func (s *JobStore) Enqueue(rule *Rule, destinationFolderID string, msg *message.Message, applyExisting ...bool) error {
+	return s.EnqueueBatch(rule, destinationFolderID, []*message.Message{msg}, len(applyExisting) > 0 && applyExisting[0])
+}
+
+// EnqueueBatch commits the entire explicit selection or none of it, so an HTTP
+// error can never leave an undisclosed partial batch behind.
+func (s *JobStore) EnqueueBatch(rule *Rule, destinationFolderID string, messages []*message.Message, applyExisting bool) error {
+	if s == nil || s.db == nil || rule == nil || rule.ID == "" {
+		return errors.New("automatic filter job is missing its rule")
 	}
-	_, err := s.db.Exec(`
-		INSERT INTO automatic_filter_jobs
-		(id, rule_id, destination_folder_id, message_id, source_account_id, source_folder_id, source_uid, state)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
-		ON CONFLICT(rule_id, message_id, source_folder_id, destination_folder_id) DO NOTHING
-	`, uuid.NewString(), rule.ID, destinationFolderID, msg.ID, msg.AccountID, msg.FolderID, msg.UID)
+	for _, msg := range messages {
+		if msg == nil || msg.ID == "" || msg.AccountID == "" || msg.FolderID == "" || msg.UID == 0 {
+			return errors.New("automatic filter job is missing required message identifiers")
+		}
+	}
+	snapshot := actionsOf(rule)
+	snapshot.ApplyExisting = applyExisting
+	actions, err := json.Marshal(snapshot)
 	if err != nil {
-		return fmt.Errorf("persist automatic filter job: %w", err)
+		return err
 	}
-	return nil
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if applyExisting {
+		for _, msg := range messages {
+			var processing int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM automatic_filter_jobs WHERE rule_id=? AND message_id=? AND source_folder_id=? AND destination_folder_id=? AND state IN ('processing','outcome_unknown')`, rule.ID, msg.ID, msg.FolderID, destinationFolderID).Scan(&processing); err != nil {
+				return err
+			}
+			if processing > 0 {
+				return errors.New("filtering is in progress or has an uncertain outcome for this selection; inspect its status before applying again")
+			}
+		}
+	}
+	for _, msg := range messages {
+		_, err = tx.Exec(`INSERT INTO automatic_filter_jobs
+   (id,rule_id,destination_folder_id,message_id,source_account_id,source_folder_id,source_uid,state,actions)
+   VALUES (?,?,?,?,?,?,?,'pending',?) ON CONFLICT(rule_id,message_id,source_folder_id,destination_folder_id) DO UPDATE SET actions=excluded.actions,source_uid=excluded.source_uid,source_account_id=excluded.source_account_id,updated_at=datetime('now') WHERE automatic_filter_jobs.state='pending' AND ?`, uuid.NewString(), rule.ID, destinationFolderID, msg.ID, msg.AccountID, msg.FolderID, msg.UID, string(actions), applyExisting)
+		if err != nil {
+			return fmt.Errorf("persist automatic filter job: %w", err)
+		}
+	}
+	return tx.Commit()
 }
 
 // ClaimNext atomically changes the oldest pending job to processing.
@@ -72,10 +125,11 @@ func (s *JobStore) ClaimNext() (*FilterJob, error) {
 	}
 	defer func() { _ = tx.Rollback() }()
 	job := &FilterJob{}
+	var actionsJSON string
 	err = tx.QueryRow(`
-		SELECT id, rule_id, destination_folder_id, message_id, source_account_id, source_folder_id, source_uid
+		SELECT id, rule_id, destination_folder_id, message_id, source_account_id, source_folder_id, source_uid, actions
 		FROM automatic_filter_jobs WHERE state='pending' AND updated_at<=datetime('now') ORDER BY created_at, id LIMIT 1
-	`).Scan(&job.ID, &job.RuleID, &job.DestinationFolderID, &job.MessageID, &job.SourceAccountID, &job.SourceFolderID, &job.SourceUID)
+	`).Scan(&job.ID, &job.RuleID, &job.DestinationFolderID, &job.MessageID, &job.SourceAccountID, &job.SourceFolderID, &job.SourceUID, &actionsJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -87,6 +141,10 @@ func (s *JobStore) ClaimNext() (*FilterJob, error) {
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit automatic filter claim: %w", err)
+	}
+	if err := json.Unmarshal([]byte(actionsJSON), &job.Actions); err != nil {
+		_ = s.MarkOutcomeUnknown(job.ID, "invalid action snapshot")
+		return nil, fmt.Errorf("decode filter actions: %w", err)
 	}
 	return job, nil
 }

@@ -28,6 +28,50 @@ type FilterRuleOperations interface {
 
 // MountFilterRuleRoutes mounts read and mutation routes for automatic filters.
 func MountFilterRuleRoutes(mux *http.ServeMux, ops FilterRuleOperations, requireCap func(http.ResponseWriter, *http.Request, Capability) bool) {
+	mux.HandleFunc("/v1/filters/evaluate", func(w http.ResponseWriter, r *http.Request) {
+		if !requireCap(w, r, CapabilityMailRead) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeFilterRuleError(w, r, 405, CodeInvalidRequest, "Method not allowed")
+			return
+		}
+		var req FilterRuleMutationRequest
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+			writeFilterRuleError(w, r, 400, CodeInvalidRequest, "Malformed request")
+			return
+		}
+		extended, ok := ops.(interface {
+			PreviewFilterRule(*mailfilter.Rule) (int, error)
+			ApplyFilterRuleToExisting(string) (int, error)
+			GetMessageListID(string) (string, error)
+		})
+		if !ok {
+			writeFilterRuleError(w, r, 501, CodeInternal, "Filter evaluation unavailable")
+			return
+		}
+		var result any
+		var err error
+		switch req.Operation {
+		case "preview":
+			result, err = extended.PreviewFilterRule(req.Rule)
+		case "apply":
+			if !requireCap(w, r, CapabilityMailWrite) {
+				return
+			}
+			result, err = extended.ApplyFilterRuleToExisting(req.ID)
+		case "list-id":
+			result, err = extended.GetMessageListID(req.ID)
+		default:
+			err = fmt.Errorf("unknown evaluation operation")
+		}
+		if err != nil {
+			writeFilterRuleError(w, r, 400, CodeInvalidRequest, err.Error())
+			return
+		}
+		writeFilterRuleResponse(w, r, result)
+	})
+
 	mux.HandleFunc("/v1/filters", func(w http.ResponseWriter, r *http.Request) {
 		if !requireCap(w, r, CapabilityMailRead) {
 			return

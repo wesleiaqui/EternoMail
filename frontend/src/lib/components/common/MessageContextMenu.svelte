@@ -34,6 +34,7 @@
   import { ConfirmDialog } from '$lib/components/ui/confirm-dialog'
   import FolderPickerDialog from './FolderPickerDialog.svelte'
   import SnoozeDialog from './SnoozeDialog.svelte'
+  import FilterDialog from './FilterDialog.svelte'
   import type { Snippet } from 'svelte'
   import { _ } from '$lib/i18n'
   import { dialogGuardOpen, dialogGuardClose } from '$lib/stores/dialogGuard'
@@ -87,6 +88,7 @@
   let accountsLoaded = $state(false)
   let accountsLoading = $state(false)
   let showSnoozeDialog = $state(false)
+  let showFilterDialog = $state(false)
   const snoozeTargets = $derived(conversationId ? [{ accountId, conversationId }] : [])
 
   // Permanent delete confirmation
@@ -418,6 +420,8 @@
     return showFolderPicker
   }
 
+  export function openCreateFilter() { if (replyTargetMessageId) showFilterDialog = true }
+
   export function toggleFolderPicker(mode: 'move' | 'copy') {
     if (showFolderPicker && folderPickerMode === mode) {
       showFolderPicker = false
@@ -568,6 +572,12 @@
       <ShortcutHint id="mail.copyTo" />
     </ContextMenuItem>
 
+    <!-- Filter creation derives from the single message/reply target. -->
+    <ContextMenuItem disabled={!replyTargetMessageId} onSelect={() => { showFilterDialog = true }}>
+      <Icon icon="mdi:filter-outline" class="mr-2 h-4 w-4" />
+      {$_('filters.createMenu')}
+    </ContextMenuItem>
+
     <ContextMenuSeparator />
 
     <!-- Flag actions -->
@@ -612,3 +622,7 @@
   excludeFolderId={currentFolderId}
   onSelect={handleFolderSelected}
 />
+
+{#if showFilterDialog}
+  <FilterDialog bind:open={showFilterDialog} messageId={replyTargetMessageId} {accountId} />
+{/if}

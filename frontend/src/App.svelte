@@ -1234,6 +1234,13 @@
       if (getFocusedPane() === 'viewer' && selectedThreadId) viewerRef?.toggleFolderPicker('move')
       else messageListRef?.toggleMoveToDialog()
     })
+    registerCommand('mail.createFilter', () => {
+      if (getFocusedPane() === 'viewer' && selectedThreadId) {
+        viewerRef?.openCreateFilter()
+        return
+      }
+      messageListRef?.openCreateFilter()
+    }, () => selectedThreadId !== null)
     registerCommand('mail.copyTo', () => {
       if (getFocusedPane() === 'viewer' && selectedThreadId) viewerRef?.toggleFolderPicker('copy')
       else messageListRef?.toggleCopyToDialog()
@@ -1282,7 +1289,7 @@
     add('edit.history', () => { showUndoHistory = true }, mail)
     add('app.find', findInMessage, mail)
     add('app.close', () => closeWorkspaceTab(activeMailWorkspace), () => noComposer() && getActiveExtension()==='mail' && activeMailWorkspace !== 'primary')
-    for (const id of ['mail.archive','mail.archiveAndMarkRead','mail.spam','mail.trash','mail.star','mail.markRead','mail.markUnread','mail.toggleRead','mail.deletePermanently','mail.moveTo','mail.copyTo','mail.readLater','mail.snooze','mail.reply','mail.replyAll','mail.forward'] as const) {
+    for (const id of ['mail.archive','mail.archiveAndMarkRead','mail.spam','mail.trash','mail.star','mail.markRead','mail.markUnread','mail.toggleRead','mail.deletePermanently','mail.moveTo','mail.copyTo','mail.createFilter','mail.readLater','mail.snooze','mail.reply','mail.replyAll','mail.forward'] as const) {
       add(id, () => {
         if (getFocusedPane()==='viewer' && selectedThreadId && viewerRef) {
           if (id==='mail.markRead'||id==='mail.markUnread') return viewerRef.requestReadState(id==='mail.markRead')

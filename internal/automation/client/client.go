@@ -1077,3 +1077,16 @@ func (c *Client) SetFolderVisibility(ctx context.Context, req v1.FolderVisibilit
 	_, err := c.doRequest(ctx, http.MethodPost, "/v1/folders/visibility", req, "")
 	return err
 }
+
+// EvaluateFilterRule executes helper-owned preview, header lookup, or explicit application.
+func (c *Client) EvaluateFilterRule(ctx context.Context, req v1.FilterRuleMutationRequest, result any) error {
+	data, err := c.doRequest(ctx, http.MethodPost, "/v1/filters/evaluate", req, "")
+	if err != nil {
+		return err
+	}
+	var response v1.Response[json.RawMessage]
+	if err := json.Unmarshal(data, &response); err != nil {
+		return err
+	}
+	return json.Unmarshal(response.Data, result)
+}

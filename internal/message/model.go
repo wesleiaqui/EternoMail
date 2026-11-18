@@ -81,6 +81,14 @@ type Message struct {
 
 	// Timestamps
 	ReceivedAt time.Time `json:"receivedAt"`
+
+	// ListID is the message's List-ID header value, captured when sync parses
+	// the message's headers. It is transient on this struct (json:"-" so it
+	// is not part of the frontend model): the durable copy lives in the
+	// message_list_ids table, written at the same time. Filter matching on
+	// newly synced mail reads it here; matching over stored mail joins the
+	// table instead.
+	ListID string `json:"-"`
 }
 
 // Address represents an email address

@@ -2684,11 +2684,16 @@ export namespace mailfilter {
 	    enabled: boolean;
 	    orderIndex: number;
 	    accountId: string;
+	    accountIds: string[];
 	    folderIds: string[];
 	    fromContains: string[];
 	    toContains: string[];
 	    subjectContains: string[];
+	    listIdContains: string[];
 	    destFolderId: string;
+	    actionMarkRead: boolean;
+	    actionArchive: boolean;
+	    actionTrash: boolean;
 	    // Go type: time
 	    createdAt: any;
 	    // Go type: time
@@ -2705,11 +2710,16 @@ export namespace mailfilter {
 	        this.enabled = source["enabled"];
 	        this.orderIndex = source["orderIndex"];
 	        this.accountId = source["accountId"];
+	        this.accountIds = source["accountIds"];
 	        this.folderIds = source["folderIds"];
 	        this.fromContains = source["fromContains"];
 	        this.toContains = source["toContains"];
 	        this.subjectContains = source["subjectContains"];
+	        this.listIdContains = source["listIdContains"];
 	        this.destFolderId = source["destFolderId"];
+	        this.actionMarkRead = source["actionMarkRead"];
+	        this.actionArchive = source["actionArchive"];
+	        this.actionTrash = source["actionTrash"];
 	        this.createdAt = this.convertValues(source["createdAt"], null);
 	        this.updatedAt = this.convertValues(source["updatedAt"], null);
 	    }

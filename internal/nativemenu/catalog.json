@@ -409,6 +409,10 @@
         "shortcutId": "mail.copyTo"
       },
       {
+        "label": "Create Filter…",
+        "id": "mail.createFilter"
+      },
+      {
         "label": "-"
       },
       {

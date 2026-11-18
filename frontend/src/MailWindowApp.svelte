@@ -343,6 +343,7 @@
     }
     removes.push(registerMenuAction('mail.deletePermanently',()=>bulkAction('mail.trash',{permanent:true},ids()),()=>listActive()&&ids().length>0))
     removes.push(registerMenuAction('mail.moveTo',()=>list?.toggleMoveToDialog(),()=>listActive()&&ids().length>0))
+    removes.push(registerMenuAction('mail.createFilter',()=>list?.openCreateFilter(),()=>listActive()&&ids().length>0))
     removes.push(registerMenuAction('mail.copyTo',()=>list?.toggleCopyToDialog(),()=>listActive()&&ids().length>0))
     removes.push(registerMenuAction('mail.snooze',()=>list?.snoozeSelection(),()=>listActive()&&ids().length>0))
 

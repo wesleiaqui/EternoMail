@@ -1920,4 +1920,25 @@ var migrations = []Migration{
  DELETE FROM virtual_folder_cache_meta WHERE virtual_folder_id IN (SELECT id FROM virtual_folders WHERE search_query != '');
 
  `},
+	{Version: 82, SQL: `
+		-- Create filter UI: rules gain multi-account scope, List-ID matching and
+		-- mark-read/archive/trash actions alongside the existing move action.
+		ALTER TABLE mail_filter_rules ADD COLUMN account_ids TEXT NOT NULL DEFAULT '[]';
+		ALTER TABLE mail_filter_rules ADD COLUMN list_id_contains TEXT NOT NULL DEFAULT '[]';
+		ALTER TABLE mail_filter_rules ADD COLUMN action_mark_read INTEGER NOT NULL DEFAULT 0;
+		ALTER TABLE mail_filter_rules ADD COLUMN action_archive INTEGER NOT NULL DEFAULT 0;
+		ALTER TABLE mail_filter_rules ADD COLUMN action_trash INTEGER NOT NULL DEFAULT 0;
+
+		-- Persisted List-ID header values so List-ID rules match stored mail in
+		-- preview and apply-to-existing runs. Populated when sync parses a
+		-- message's headers; messages synced before this table have no row.
+		CREATE TABLE IF NOT EXISTS message_list_ids (
+			message_id TEXT PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+			list_id TEXT NOT NULL DEFAULT ''
+		);
+
+		-- Durable automatic filter jobs snapshot the rule's non-move actions at
+		-- match time; edited actions cause an unstarted job to be skipped.
+		ALTER TABLE automatic_filter_jobs ADD COLUMN actions TEXT NOT NULL DEFAULT '{}';
+	`},
 }

@@ -2614,6 +2614,8 @@
     getMoveTargetRowRef()?.toggleFolderPicker('move')
   }
 
+  export function openCreateFilter() { getMoveTargetRowRef()?.openCreateFilter() }
+
   export function toggleCopyToDialog() {
     getMoveTargetRowRef()?.toggleFolderPicker('copy')
   }

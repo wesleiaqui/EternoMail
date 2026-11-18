@@ -10,10 +10,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/hkdb/aerion/internal/database"
 	"github.com/hkdb/aerion/internal/logging"
+	"github.com/hkdb/aerion/internal/message"
 	"github.com/rs/zerolog"
 )
 
-// Store provides persistence operations for local cross-account filter rules.
+// ruleColumns is the select list shared by every rule read; keep scanRule in
+// the same order.
+const ruleColumns = `id, name, enabled, order_index, account_id, account_ids, folder_ids, from_contains, to_contains, subject_contains, list_id_contains, dest_folder_id, action_mark_read, action_archive, action_trash, created_at, updated_at`
+
+// Store provides persistence operations for local filter rules.
 type Store struct {
 	db  *database.DB
 	log zerolog.Logger
@@ -65,19 +70,24 @@ func (s *Store) Create(rule *Rule) error {
 	rule.UpdatedAt = now
 
 	_, err := s.db.Exec(`
-		INSERT INTO mail_filter_rules (id, name, enabled, order_index, account_id, folder_ids, from_contains, to_contains, subject_contains, dest_folder_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO mail_filter_rules (id, name, enabled, order_index, account_id, account_ids, folder_ids, from_contains, to_contains, subject_contains, list_id_contains, dest_folder_id, action_mark_read, action_archive, action_trash, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		rule.ID,
 		rule.Name,
 		boolToInt(rule.Enabled),
 		rule.OrderIndex,
 		rule.AccountID,
+		marshalStrings(rule.AccountIDs),
 		marshalStrings(rule.FolderIDs),
 		marshalStrings(rule.FromContains),
 		marshalStrings(rule.ToContains),
 		marshalStrings(rule.SubjectContains),
+		marshalStrings(rule.ListIDContains),
 		rule.DestFolderID,
+		boolToInt(rule.ActionMarkRead),
+		boolToInt(rule.ActionArchive),
+		boolToInt(rule.ActionTrash),
 		rule.CreatedAt,
 		rule.UpdatedAt,
 	)
@@ -89,21 +99,13 @@ func (s *Store) Create(rule *Rule) error {
 
 // Get returns a single filter rule by its ID, or nil when not found.
 func (s *Store) Get(id string) (*Rule, error) {
-	row := s.db.QueryRow(`
-		SELECT id, name, enabled, order_index, account_id, folder_ids, from_contains, to_contains, subject_contains, dest_folder_id, created_at, updated_at
-		FROM mail_filter_rules
-		WHERE id = ?
-	`, id)
+	row := s.db.QueryRow(`SELECT `+ruleColumns+` FROM mail_filter_rules WHERE id = ?`, id)
 	return scanRule(row)
 }
 
 // List returns all filter rules ordered by priority (order_index, then name).
 func (s *Store) List() ([]*Rule, error) {
-	rows, err := s.db.Query(`
-		SELECT id, name, enabled, order_index, account_id, folder_ids, from_contains, to_contains, subject_contains, dest_folder_id, created_at, updated_at
-		FROM mail_filter_rules
-		ORDER BY order_index ASC, name ASC
-	`)
+	rows, err := s.db.Query(`SELECT ` + ruleColumns + ` FROM mail_filter_rules ORDER BY order_index ASC, name ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list filter rules: %w", err)
 	}
@@ -113,12 +115,7 @@ func (s *Store) List() ([]*Rule, error) {
 // ListEnabled returns only the enabled filter rules in priority order. This is
 // the hot path used for every newly synced message, so it filters in SQL.
 func (s *Store) ListEnabled() ([]*Rule, error) {
-	rows, err := s.db.Query(`
-		SELECT id, name, enabled, order_index, account_id, folder_ids, from_contains, to_contains, subject_contains, dest_folder_id, created_at, updated_at
-		FROM mail_filter_rules
-		WHERE enabled = 1
-		ORDER BY order_index ASC, name ASC
-	`)
+	rows, err := s.db.Query(`SELECT ` + ruleColumns + ` FROM mail_filter_rules WHERE enabled = 1 ORDER BY order_index ASC, name ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list enabled filter rules: %w", err)
 	}
@@ -141,18 +138,23 @@ func (s *Store) Update(rule *Rule) error {
 
 	result, err := s.db.Exec(`
 		UPDATE mail_filter_rules
-		SET name = ?, enabled = ?, order_index = ?, account_id = ?, folder_ids = ?, from_contains = ?, to_contains = ?, subject_contains = ?, dest_folder_id = ?, updated_at = ?
+		SET name = ?, enabled = ?, order_index = ?, account_id = ?, account_ids = ?, folder_ids = ?, from_contains = ?, to_contains = ?, subject_contains = ?, list_id_contains = ?, dest_folder_id = ?, action_mark_read = ?, action_archive = ?, action_trash = ?, updated_at = ?
 		WHERE id = ?
 	`,
 		rule.Name,
 		boolToInt(rule.Enabled),
 		rule.OrderIndex,
 		rule.AccountID,
+		marshalStrings(rule.AccountIDs),
 		marshalStrings(rule.FolderIDs),
 		marshalStrings(rule.FromContains),
 		marshalStrings(rule.ToContains),
 		marshalStrings(rule.SubjectContains),
+		marshalStrings(rule.ListIDContains),
 		rule.DestFolderID,
+		boolToInt(rule.ActionMarkRead),
+		boolToInt(rule.ActionArchive),
+		boolToInt(rule.ActionTrash),
 		rule.UpdatedAt,
 		rule.ID,
 	)
@@ -211,24 +213,65 @@ func (s *Store) Reorder(ids []string) error {
 	return nil
 }
 
+// MatchingMessageIDs uses the same matcher as incoming mail, including Unicode
+// and decoded recipient semantics. Iterate headers rather than duplicating the
+// matcher in SQLite, whose built-in LOWER only folds ASCII.
+func (s *Store) MatchingMessageIDs(rule *Rule, limit int) ([]string, error) {
+	if rule == nil {
+		return nil, fmt.Errorf("filter rule cannot be nil")
+	}
+	rows, err := s.db.Query(`SELECT m.id, m.account_id, m.folder_id, COALESCE(m.from_name,''), COALESCE(m.from_email,''), COALESCE(m.to_list,''), COALESCE(m.cc_list,''), COALESCE(m.subject,''), COALESCE(li.list_id,'') FROM messages m LEFT JOIN message_list_ids li ON li.message_id=m.id WHERE m.is_deleted=0 AND m.is_draft=0 ORDER BY m.date DESC, m.id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	effective := *rule
+	effective.Enabled = true
+	var ids []string
+	for rows.Next() {
+		var m message.Message
+		if err := rows.Scan(&m.ID, &m.AccountID, &m.FolderID, &m.FromName, &m.FromEmail, &m.ToList, &m.CcList, &m.Subject, &m.ListID); err != nil {
+			return nil, err
+		}
+		if Match(&effective, FromMessage(&m)) {
+			ids = append(ids, m.ID)
+			if limit > 0 && len(ids) >= limit {
+				break
+			}
+		}
+	}
+	return ids, rows.Err()
+}
+
+// CountMatching counts stored messages matching the same criteria as incoming mail.
+func (s *Store) CountMatching(rule *Rule) (int, error) {
+	ids, err := s.MatchingMessageIDs(rule, 0)
+	return len(ids), err
+}
+
 // scanRule reads one rule from a row-scan source.
 func scanRule(row interface {
 	Scan(dest ...any) error
 }) (*Rule, error) {
 	rule := &Rule{}
-	var enabled int
-	var folderIDs, fromContains, toContains, subjectContains string
+	var enabled, markRead, archive, trash int
+	var accountIDs, folderIDs, fromContains, toContains, subjectContains, listIDContains string
 	err := row.Scan(
 		&rule.ID,
 		&rule.Name,
 		&enabled,
 		&rule.OrderIndex,
 		&rule.AccountID,
+		&accountIDs,
 		&folderIDs,
 		&fromContains,
 		&toContains,
 		&subjectContains,
+		&listIDContains,
 		&rule.DestFolderID,
+		&markRead,
+		&archive,
+		&trash,
 		&rule.CreatedAt,
 		&rule.UpdatedAt,
 	)
@@ -239,10 +282,15 @@ func scanRule(row interface {
 		return nil, fmt.Errorf("failed to scan filter rule: %w", err)
 	}
 	rule.Enabled = enabled != 0
+	rule.AccountIDs = unmarshalStrings(accountIDs)
 	rule.FolderIDs = unmarshalStrings(folderIDs)
 	rule.FromContains = unmarshalStrings(fromContains)
 	rule.ToContains = unmarshalStrings(toContains)
 	rule.SubjectContains = unmarshalStrings(subjectContains)
+	rule.ListIDContains = unmarshalStrings(listIDContains)
+	rule.ActionMarkRead = markRead != 0
+	rule.ActionArchive = archive != 0
+	rule.ActionTrash = trash != 0
 	return rule, nil
 }
 

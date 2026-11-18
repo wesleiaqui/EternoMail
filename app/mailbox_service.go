@@ -1532,3 +1532,11 @@ func (a *App) EnableMailboxServiceSending() (MailboxServiceStatus, error) {
 	}
 	return a.mailboxService.status(ctx), nil
 }
+
+func (c *mailboxServiceConnector) evaluateFilterRule(ctx context.Context, req v1.FilterRuleMutationRequest, result any) error {
+	client, err := c.getClient()
+	if err != nil {
+		return err
+	}
+	return client.EvaluateFilterRule(ctx, req, result)
+}

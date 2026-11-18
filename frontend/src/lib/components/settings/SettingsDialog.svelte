@@ -21,6 +21,7 @@
   import ContactsTab from './ContactsTab.svelte'
   import ExtensionsTab from './ExtensionsTab.svelte'
   import AboutTab from './AboutTab.svelte'
+  import FiltersTab from './FiltersTab.svelte'
 
   interface Props {
     /** Whether the dialog is open */
@@ -309,6 +310,10 @@
             <span class="inline-flex w-4 h-4 items-center justify-center shrink-0"><Icon icon="lucide:inbox" width="16" height="16" /></span>
             {$_('settings.inbox')}
           </Tabs.Trigger>
+          <Tabs.Trigger value="filters" class="settings-navigation-item">
+            <span class="inline-flex w-4 h-4 items-center justify-center shrink-0"><Icon icon="mdi:filter-outline" width="16" height="16" /></span>
+            {$_('filters.title')}
+          </Tabs.Trigger>
           <Tabs.Trigger value="extensions" class="settings-navigation-item">
             <span class="inline-flex w-4 h-4 items-center justify-center shrink-0"><Icon icon="lucide:puzzle" width="16" height="16" /></span>
             {$_('settings.extensions')}
@@ -384,6 +389,10 @@
 
           <Tabs.Content value="inbox" class="mt-0">
             <InboxTab />
+          </Tabs.Content>
+
+          <Tabs.Content value="filters" class="mt-0">
+            <FiltersTab />
           </Tabs.Content>
 
           <Tabs.Content value="extensions" class="mt-0">

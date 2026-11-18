@@ -353,6 +353,12 @@ export function GetFTSIndexStatusAll():Promise<Record<string, message.FTSIndexSt
 
 export function GetFilterRules():Promise<Array<mailfilter.Rule>>;
 
+export function PreviewFilterRule(arg1:mailfilter.Rule):Promise<number>;
+
+export function ApplyFilterRuleToExisting(arg1:string):Promise<number>;
+
+export function GetMessageListID(arg1:string):Promise<string>;
+
 export function GetFolderContentPolicy(arg1:string,arg2:string):Promise<app.FolderContentPolicy>;
 
 export function GetFolderTree(arg1:string):Promise<Array<folder.FolderTree>>;

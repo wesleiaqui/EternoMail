@@ -1022,7 +1022,7 @@ func (s *Store) Upsert(m *Message) error {
 		m.ID, m.AccountID, m.FolderID, m.UID,
 		nullString(m.MessageID), nullString(m.InReplyTo), nullString(m.References), nullString(m.ThreadID),
 		m.Subject, m.FromName, m.FromEmail,
-		nullString(m.ToList), nullString(m.CcList), nullString(m.BccList), nullString(m.ReplyTo), nullString(m.InboxCategory),
+		nullString(m.ToList), nullString(m.CcList), nullString(m.BccList), nullString(m.ReplyTo), m.InboxCategory,
 		m.Date, nullString(m.Snippet),
 		m.IsRead, m.IsStarred, m.IsAnswered, m.IsForwarded, m.IsDraft, m.IsDeleted,
 		m.Size, m.HasAttachments,
@@ -1040,7 +1040,9 @@ func (s *Store) Upsert(m *Message) error {
 		return fmt.Errorf("failed to upsert message: %w", err)
 	}
 
-	return nil
+	// Conflict updates retain the existing row ID. Return that canonical ID
+	// so auxiliary headers and callback snapshots refer to the persisted row.
+	return s.db.QueryRow(`SELECT id FROM messages WHERE folder_id=? AND uid=?`, m.FolderID, m.UID).Scan(&m.ID)
 }
 
 // Update updates an existing message

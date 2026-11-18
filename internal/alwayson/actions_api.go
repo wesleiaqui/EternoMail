@@ -19,6 +19,7 @@ import (
 )
 
 type mailboxActionOperations struct {
+	contextOverride      context.Context
 	runtime              *SyncRuntime
 	gmailClientFunc      func(accountID string) (*gmail.Client, bool, error)
 	setIMAPFlagsFunc     func(accountID, folderID string, messages []*message.Message, kind string, enabled bool) error
@@ -784,6 +785,9 @@ func (o *mailboxActionOperations) gmailClient(accountID string) (*gmail.Client, 
 }
 
 func (o *mailboxActionOperations) operationContext() context.Context {
+	if o != nil && o.contextOverride != nil {
+		return o.contextOverride
+	}
 	if o == nil || o.runtime == nil {
 		return context.Background()
 	}

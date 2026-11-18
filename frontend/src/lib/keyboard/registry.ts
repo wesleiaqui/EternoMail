@@ -171,6 +171,7 @@ export const CORE_COMMANDS = [
   { id: 'mail.readLater', category: 'commandPalette.categories.mail', shortcutId: 'mail.readLater' },
   { id: 'mail.snooze', category: 'commandPalette.categories.mail', shortcutId: 'mail.snooze' },
   { id: 'mail.moveTo', category: 'commandPalette.categories.mail', shortcutId: 'mail.moveTo' },
+  { id: 'mail.createFilter', category: 'commandPalette.categories.mail', titleKey: 'filters.createMenu', icon: 'mdi:filter-outline' },
   { id: 'mail.copyTo', category: 'commandPalette.categories.mail', shortcutId: 'mail.copyTo' },
   { id: 'mail.deletePermanently', palette: false, shortcutId: 'mail.deletePermanently' },
 ] as const satisfies readonly CommandDefinition[]

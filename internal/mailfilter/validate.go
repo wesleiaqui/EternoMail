@@ -8,8 +8,11 @@ import (
 	"github.com/hkdb/aerion/internal/folder"
 )
 
-// ValidateRule checks the cross-account destination invariant against the
-// account and folder catalogs owned by the caller.
+// ValidateRule checks a rule's structure against the account and folder
+// catalogs owned by the caller: the rule must have a name, at least one
+// action, at most one relocation action, an existing destination folder when
+// it moves, and existing accounts for every scoped account. Same-account
+// destinations are allowed.
 func ValidateRule(rule *Rule, accounts interface {
 	Get(string) (*account.Account, error)
 }, folders interface {
@@ -21,28 +24,54 @@ func ValidateRule(rule *Rule, accounts interface {
 	if strings.TrimSpace(rule.Name) == "" {
 		return fmt.Errorf("filter rule name cannot be empty")
 	}
-	if rule.DestFolderID == "" {
-		return fmt.Errorf("filter rule destination folder is required")
+	// Normalize here, not only in the dialog: automation and Wails callers
+	// share the same safety boundary. Empty alternatives cannot create a
+	// catch-all rule accidentally.
+	rule.FromContains = cleanPatterns(rule.FromContains)
+	rule.ToContains = cleanPatterns(rule.ToContains)
+	rule.SubjectContains = cleanPatterns(rule.SubjectContains)
+	rule.ListIDContains = cleanPatterns(rule.ListIDContains)
+	if len(rule.FromContains)+len(rule.ToContains)+len(rule.SubjectContains)+len(rule.ListIDContains) == 0 {
+		return fmt.Errorf("filter rule needs at least one non-blank match condition")
 	}
-	dest, err := folders.Get(rule.DestFolderID)
-	if err != nil {
-		return fmt.Errorf("failed to load destination folder: %w", err)
+	if !rule.HasActions() {
+		return fmt.Errorf("filter rule needs at least one action")
 	}
-	if dest == nil {
-		return fmt.Errorf("destination folder not found: %s", rule.DestFolderID)
+	if rule.RelocationCount() > 1 {
+		return fmt.Errorf("filter rule can have only one of move to folder, archive, or delete to Trash")
 	}
-	if rule.AccountID == "" {
-		return nil
+	if rule.DestFolderID != "" {
+		dest, err := folders.Get(rule.DestFolderID)
+		if err != nil {
+			return fmt.Errorf("failed to load destination folder: %w", err)
+		}
+		if dest == nil {
+			return fmt.Errorf("destination folder not found: %s", rule.DestFolderID)
+		}
 	}
-	acct, err := accounts.Get(rule.AccountID)
-	if err != nil {
-		return fmt.Errorf("failed to load source account: %w", err)
+	for _, id := range rule.AccountIDs {
+		if strings.TrimSpace(id) == "" {
+			return fmt.Errorf("selected account ID cannot be empty")
+		}
 	}
-	if acct == nil {
-		return fmt.Errorf("source account not found: %s", rule.AccountID)
-	}
-	if dest.AccountID == rule.AccountID {
-		return fmt.Errorf("destination folder must be on a different account than the rule's source account")
+	for _, accountID := range rule.ScopeAccountIDs() {
+		acct, err := accounts.Get(accountID)
+		if err != nil {
+			return fmt.Errorf("failed to load source account: %w", err)
+		}
+		if acct == nil {
+			return fmt.Errorf("source account not found: %s", accountID)
+		}
 	}
 	return nil
+}
+
+func cleanPatterns(values []string) []string {
+	var out []string
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
 }

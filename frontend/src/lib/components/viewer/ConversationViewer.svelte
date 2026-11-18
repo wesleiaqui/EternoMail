@@ -32,6 +32,7 @@
   import { ConfirmDialog } from '$lib/components/ui/confirm-dialog'
   import SnoozeButton from '$lib/components/common/SnoozeButton.svelte'
   import LaterQueueButton from '$lib/components/common/LaterQueueButton.svelte'
+  import FilterDialog from '$lib/components/common/FilterDialog.svelte'
   import MessageContextMenu from '$lib/components/common/MessageContextMenu.svelte'
   import FolderPickerDialog from '$lib/components/common/FolderPickerDialog.svelte'
   import { withShortcut, ariaKeyshortcuts } from '$lib/keyboard/format'
@@ -205,6 +206,13 @@
 
   // Open the move/copy folder picker for the open conversation. Used by the
   // viewer-focused `v` / Alt+M / Alt+C shortcuts routed from App.svelte.
+  let showFilterDialog = $state(false)
+  let filterMessageId = $state('')
+  export function openCreateFilter() {
+    filterMessageId = getTargetMessageId() || ''
+    if (filterMessageId) showFilterDialog = true
+  }
+
   export function toggleFolderPicker(mode: 'move' | 'copy') {
     if (showFolderPicker && folderPickerMode === mode) {
       showFolderPicker = false
@@ -1957,7 +1965,7 @@
       'mail.archive':handleArchive,'mail.archiveAndMarkRead':handleArchiveAndMarkRead,'mail.trash':requestTrash,
       'mail.deletePermanently':requestPermanentDelete,'mail.spam':handleSpam,'mail.star':handleStar,
       'mail.markRead':()=>requestReadState(true),'mail.markUnread':()=>requestReadState(false),
-      'mail.toggleRead':handleMarkRead,'mail.moveTo':()=>toggleFolderPicker('move'),'mail.copyTo':()=>toggleFolderPicker('copy'),
+      'mail.createFilter':openCreateFilter,'mail.toggleRead':handleMarkRead,'mail.moveTo':()=>toggleFolderPicker('move'),'mail.copyTo':()=>toggleFolderPicker('copy'),
       'viewer.scrollUp':scrollUp,'viewer.scrollDown':scrollDown,
     }
     const removes = [
@@ -2864,3 +2872,7 @@
   }
 
 </style>
+
+{#if showFilterDialog}
+  <FilterDialog bind:open={showFilterDialog} messageId={filterMessageId} accountId={accountId || ''} />
+{/if}

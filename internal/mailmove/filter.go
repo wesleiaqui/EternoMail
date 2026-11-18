@@ -43,9 +43,6 @@ func (o FilterOperation) Apply(ctx context.Context, rule *mailfilter.Rule, desti
 	if msg.ID == "" || msg.AccountID == "" || msg.FolderID == "" {
 		return false, fmt.Errorf("filter move requires a message with an account and folder")
 	}
-	if msg.AccountID == destination.AccountID {
-		return false, fmt.Errorf("filter destination must be on a different account")
-	}
 	if o.Messages == nil || o.Move == nil {
 		return false, fmt.Errorf("filter move operation is not configured")
 	}
@@ -60,7 +57,10 @@ func (o FilterOperation) Apply(ctx context.Context, rule *mailfilter.Rule, desti
 	if current[0].ID != msg.ID || current[0].AccountID != msg.AccountID || current[0].FolderID != msg.FolderID {
 		return false, nil
 	}
-	if err := o.Move(ctx, rule.ID, msg, destination); err != nil {
+	if current[0].FolderID == destination.ID {
+		return true, nil
+	}
+	if err := o.Move(ctx, rule.ID, current[0], destination); err != nil {
 		return false, err
 	}
 	return true, nil

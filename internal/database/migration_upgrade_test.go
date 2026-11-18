@@ -122,7 +122,7 @@ func TestMigrationUpgradePathsMatchFreshSchema(t *testing.T) {
 	freshSchema := schemaSignature(t, fresh)
 	assertDatabaseIntegrity(t, fresh)
 
-	for _, startVersion := range []int{31, 42} {
+	for _, startVersion := range []int{31, 42, 81} {
 		t.Run(fmt.Sprintf("from_v%d", startVersion), func(t *testing.T) {
 			db := openUnmigratedTestDB(t)
 			applyMigrationsThrough(t, db, startVersion)
@@ -343,4 +343,45 @@ func TestMigrationV59AddsMailboxUndoCommands(t *testing.T) {
 	if op != "op1" {
 		t.Fatalf("operation_id = %q, want op1", op)
 	}
+}
+
+func TestFilterMigration82PreservesVersion81RulesJobsAndVisibility(t *testing.T) {
+	db := openUnmigratedTestDB(t)
+	applyMigrationsThrough(t, db, 81)
+	for _, q := range []string{
+		`INSERT INTO accounts(id,name,email,imap_host,smtp_host,username) VALUES ('a','A','a@example.com','imap','smtp','a')`,
+		`INSERT INTO folders(id,account_id,name,path,folder_type,hidden) VALUES ('destination','a','Archive','Archive','archive',1)`,
+		`INSERT INTO mail_filter_rules(id,name,account_id,from_contains,dest_folder_id,created_at,updated_at) VALUES ('legacy','Legacy','a','["sender@example.com"]','destination',datetime('now'),datetime('now'))`,
+		`INSERT INTO automatic_filter_jobs(id,rule_id,destination_folder_id,message_id,source_account_id,source_folder_id,source_uid,state) VALUES ('queued','legacy','destination','message','a','source',12,'pending')`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	var account, from, dest, accounts, list string
+	var read, archive, trash int
+	if err := db.QueryRow(`SELECT account_id,from_contains,dest_folder_id,account_ids,list_id_contains,action_mark_read,action_archive,action_trash FROM mail_filter_rules WHERE id='legacy'`).Scan(&account, &from, &dest, &accounts, &list, &read, &archive, &trash); err != nil {
+		t.Fatal(err)
+	}
+	if account != "a" || from != `["sender@example.com"]` || dest != "destination" || accounts != "[]" || list != "[]" || read != 0 || archive != 0 || trash != 0 {
+		t.Fatalf("legacy rule changed: %s %s %s %s %s %d %d %d", account, from, dest, accounts, list, read, archive, trash)
+	}
+	var actions, state string
+	var uid, hidden, version int
+	if err := db.QueryRow(`SELECT actions,state,source_uid FROM automatic_filter_jobs WHERE id='queued'`).Scan(&actions, &state, &uid); err != nil {
+		t.Fatal(err)
+	}
+	if actions != "{}" || state != "pending" || uid != 12 {
+		t.Fatalf("queued move changed: %s %s %d", actions, state, uid)
+	}
+	if err := db.QueryRow(`SELECT hidden FROM folders WHERE id='destination'`).Scan(&hidden); err != nil || hidden != 1 {
+		t.Fatalf("visibility lost: %d %v", hidden, err)
+	}
+	if err := db.QueryRow(`SELECT MAX(version) FROM migrations`).Scan(&version); err != nil || version != 82 {
+		t.Fatalf("migration 82 skipped: %d %v", version, err)
+	}
+	assertDatabaseIntegrity(t, db)
 }

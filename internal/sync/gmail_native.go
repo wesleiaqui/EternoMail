@@ -216,11 +216,15 @@ func (e *Engine) cacheGmailMetadata(accountID, folderID string, items []gmail.Me
 		}
 		header.WriteString("\r\n")
 		m.InboxCategory = classifyInboxCategory([]byte(header.String()), m)
+		m.ListID = extractListID([]byte(header.String()))
 
 		refs, _ := json.Marshal(strings.Fields(item.References))
 		m.References = string(refs)
 		if err := e.messageStore.UpsertGmail(m, item.ID); err != nil {
 			return nil, err
+		}
+		if len(item.Headers) > 0 {
+			e.persistListID(m)
 		}
 		out = append(out, m)
 	}

@@ -124,6 +124,8 @@
     return contextMenuRef?.isFolderPickerOpen() ?? false
   }
 
+  export function openCreateFilter() { contextMenuRef?.openCreateFilter() }
+
   export function toggleFolderPicker(mode: 'move' | 'copy') {
     if (!contextMenuRef) return
     // Same target rule as the Delete key: any checked messages act as a set,

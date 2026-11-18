@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/hkdb/aerion/internal/account"
 	"github.com/hkdb/aerion/internal/automation"
@@ -16,6 +17,7 @@ import (
 	"github.com/hkdb/aerion/internal/logging"
 	"github.com/hkdb/aerion/internal/mailfilter"
 	"github.com/hkdb/aerion/internal/message"
+	syncengine "github.com/hkdb/aerion/internal/sync"
 	"github.com/hkdb/aerion/internal/virtualfolder"
 )
 
@@ -700,4 +702,91 @@ func (r *SyncRuntime) MailboxReadAPIHandler() (http.Handler, error) {
 		v1.MountCalendarReadRoutes(mux, r.calendar, automation.RequireGrantCapability)
 	}
 	return mux, nil
+}
+
+// PreviewFilterRule counts stored messages without changing mail or saving the rule.
+func (r *SyncRuntime) PreviewFilterRule(rule *mailfilter.Rule) (int, error) {
+	return r.rules.CountMatching(rule)
+}
+
+// GetMessageListID returns a captured List-ID, fetching the message header if needed.
+func (r *SyncRuntime) GetMessageListID(id string) (string, error) {
+	value, err := r.messages.GetListID(id)
+	if err != nil || value != "" {
+		return value, err
+	}
+	messages, err := r.messages.GetByIDs([]string{id})
+	if err != nil {
+		return "", err
+	}
+	if len(messages) != 1 {
+		return "", errors.New("message not found")
+	}
+	m := messages[0]
+	if r.syncEngine == nil {
+		return "", nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	raw, err := r.syncEngine.FetchRawMessage(ctx, m.AccountID, m.FolderID, m.UID)
+	if err != nil {
+		return "", err
+	}
+	value = syncengine.ExtractListID(raw)
+	if err := r.messages.SetListID(id, value); err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+// ApplyFilterRuleToExisting queues explicit application using a snapshot of the saved rule.
+func (r *SyncRuntime) ApplyFilterRuleToExisting(id string) (int, error) {
+	rule, err := r.rules.Get(id)
+	if err != nil {
+		return 0, err
+	}
+	if rule == nil {
+		return 0, errors.New("filter rule not found")
+	}
+	if err := mailfilter.ValidateRule(rule, r.accounts, r.folders); err != nil {
+		return 0, err
+	}
+	if rule.DestFolderID != "" {
+		d, e := r.folders.Get(rule.DestFolderID)
+		if e != nil {
+			return 0, e
+		}
+		if d == nil || d.Hidden {
+			return 0, errors.New("filter destination unavailable or hidden")
+		}
+	}
+	ids, err := r.rules.MatchingMessageIDs(rule, 501)
+	if err != nil {
+		return 0, err
+	}
+	if len(ids) > 500 {
+		return 0, errors.New("more than 500 messages match; narrow the rule before applying to existing mail")
+	}
+	return r.applyExistingFilter(rule, ids)
+}
+
+// applyExistingFilter records explicit application in the durable queue. Provider
+// work must outlive HTTP request timeouts without encouraging duplicate retries.
+func (r *SyncRuntime) applyExistingFilter(rule *mailfilter.Rule, ids []string) (int, error) {
+	messages, err := r.messages.GetByIDs(ids)
+	if err != nil {
+		return 0, err
+	}
+	if len(messages) == 0 {
+		return 0, nil
+	}
+	if err := r.filterJobs.EnqueueBatch(rule, rule.DestFolderID, messages, true); err != nil {
+		return 0, err
+	}
+
+	select {
+	case r.filterWake <- struct{}{}:
+	default:
+	}
+	return len(messages), nil
 }

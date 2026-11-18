@@ -8,6 +8,7 @@
 - macOS shortcut hints now use AppKit's aligned right column instead of title tabs. Native hints match the same primary keyboard bindings as the in-app context menus, including v for Move, l/Shift+L for Later, ! for Spam and # for Trash. Existing webview shortcut ownership, context checks and native clipboard actions are preserved.
 - Search all mail from the rail, refine results in a temporary message-list workspace, and save explicitly as an existing-format virtual folder. Find inside open messages with Cmd/Ctrl+F; press it again to widen the query to all mail. Cmd/Ctrl+Shift+F opens all-mail search.
 - Hide folders locally from the folder menu or Account settings > Folders, with search and bulk hide/show. Hidden folders leave navigation and pickers and pause explicit refresh and body prefetch without deleting cached mail or changing provider subscriptions. Saved views keep cached mail with stale-source warnings; filters to hidden destinations pause until shown. Adds a folder visibility preference to the local database.
+- Create local mail filters from the message menu or Settings. Prefill sender, recipients, subject and List-ID; scope rules to all or chosen accounts; move, mark read, archive or move to Trash. Preview stored matches before saving. Applying to existing mail is opt-in, capped at 500 matches, and queued by the helper. List-ID matching on older mail is limited to captured headers until they refresh.
 
 ## Postilaatikko 2026.11.17.1
 

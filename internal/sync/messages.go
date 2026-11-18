@@ -1022,6 +1022,7 @@ func (e *Engine) fetchMessageHeaders(ctx context.Context, client *imapclient.Cli
 			references = e.extractReferences(headerBytes)
 			m.ReadReceiptTo = e.extractDispositionNotificationTo(headerBytes)
 			m.InboxCategory = classifyInboxCategory(headerBytes, m)
+			m.ListID = extractListID(headerBytes)
 		}
 
 		// Store references as JSON array
@@ -1047,6 +1048,9 @@ func (e *Engine) fetchMessageHeaders(ctx context.Context, client *imapclient.Cli
 		}
 		savedMessages = append(savedMessages, m)
 		fetchedCount++
+		if len(headerBytes) > 0 {
+			e.persistListID(m)
+		}
 
 		// Run the handler off the fetch loop so routing side effects (e.g. a
 		// cross-account filter move) never block the remaining header batch.

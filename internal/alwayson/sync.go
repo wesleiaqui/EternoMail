@@ -191,9 +191,11 @@ func OpenSyncRuntime(dataDirectory string, credentials IMAPConfigSource) (*SyncR
 	}
 	runtime.filterer = &mailmove.IMAPFilterMover{Messages: messages, Folders: folders, Raw: engine, Pool: pool}
 	runtime.filterOp = mailmove.FilterOperation{Messages: messages, Move: func(ctx context.Context, _ string, source *message.Message, destination *folder.Folder) error {
-		return runtime.filterer.MoveFilterMessage(ctx, source, destination.ID)
+		ops := &mailboxActionOperations{runtime: runtime, contextOverride: ctx}
+		_, err := ops.MoveMessages([]string{source.ID}, destination.ID)
+		return err
 	}}
-	router := mailfilter.NewAutomaticRouter(runtime.rules, folders, runtime.enqueueFilter)
+	router := mailfilter.NewAutomaticRouter(runtime.rules, folders, func(rule *mailfilter.Rule, _ *folder.Folder, msg *message.Message) { runtime.enqueueFilter(rule, msg) })
 	engine.SetNewMessageHandler(func(_ string, _ string, msg *message.Message) { router.Route(msg) })
 	return runtime, nil
 }

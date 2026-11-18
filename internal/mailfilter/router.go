@@ -39,7 +39,7 @@ func NewAutomaticRouter(rules EnabledRuleLister, folders FolderGetter, apply Rul
 // It is safe to call from a sync callback; implementations can enqueue the
 // potentially slow move through RuleApplier.
 func (r *AutomaticRouter) Route(msg *message.Message) {
-	if r == nil || msg == nil || r.rules == nil || r.folders == nil || r.apply == nil {
+	if r == nil || msg == nil || msg.IsDeleted || msg.IsDraft || r.rules == nil || r.folders == nil || r.apply == nil {
 		return
 	}
 	log := logging.WithComponent("mailfilter.router")
@@ -53,18 +53,15 @@ func (r *AutomaticRouter) Route(msg *message.Message) {
 		if rule == nil {
 			continue
 		}
-		destination, err := r.folders.Get(rule.DestFolderID)
-		if err != nil {
-			log.Warn().Err(err).Str("ruleID", rule.ID).Msg("Filter rule destination lookup failed")
-			continue
+
+		var destination *folder.Folder
+		if rule.DestFolderID != "" {
+			destination, err = r.folders.Get(rule.DestFolderID)
+			if err != nil || destination == nil || destination.Hidden {
+				continue
+			}
 		}
-		if destination == nil || destination.Hidden {
-			// Missing destinations need repair. Hidden destinations pause dynamically
-			// without changing the persisted Enabled choice.
-			log.Debug().Str("ruleID", rule.ID).Str("destFolderID", rule.DestFolderID).Msg("Filter rule destination missing or hidden, skipping rule")
-			continue
-		}
-		if !Match(rule, criteria, destination.AccountID) {
+		if !Match(rule, criteria) {
 			continue
 		}
 		r.apply(rule, destination, msg)

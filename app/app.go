@@ -717,8 +717,8 @@ func (a *App) Startup(ctx context.Context) {
 	a.replyContent = replycontent.NewService(replycontent.ServiceOptions{})
 	a.virtualFolderStore = virtualfolder.NewStore(db)
 	a.filterStore = mailfilter.NewStore(db)
-	a.filterRouter = mailfilter.NewAutomaticRouter(a.filterStore, a.folderStore, func(rule *mailfilter.Rule, destination *folder.Folder, msg *message.Message) {
-		go a.applyFilterRule(rule, destination, msg)
+	a.filterRouter = mailfilter.NewAutomaticRouter(a.filterStore, a.folderStore, func(rule *mailfilter.Rule, _ *folder.Folder, msg *message.Message) {
+		go a.applyMatchedFilterRule(rule, msg)
 	})
 	a.attachmentStore = message.NewAttachmentStore(db)
 	a.contactStore = contact.NewStore(db.DB)

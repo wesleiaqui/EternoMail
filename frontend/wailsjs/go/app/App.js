@@ -650,6 +650,18 @@ export function GetFilterRules() {
   return window['go']['app']['App']['GetFilterRules']();
 }
 
+export function PreviewFilterRule(arg1) {
+  return window['go']['app']['App']['PreviewFilterRule'](arg1);
+}
+
+export function ApplyFilterRuleToExisting(arg1) {
+  return window['go']['app']['App']['ApplyFilterRuleToExisting'](arg1);
+}
+
+export function GetMessageListID(arg1) {
+  return window['go']['app']['App']['GetMessageListID'](arg1);
+}
+
 export function GetFolderContentPolicy(arg1, arg2) {
   return window['go']['app']['App']['GetFolderContentPolicy'](arg1, arg2);
 }

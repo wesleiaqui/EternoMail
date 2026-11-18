@@ -7,27 +7,24 @@ import (
 	"github.com/hkdb/aerion/internal/message"
 )
 
-// Match reports whether rule routes message m to a folder that lives on
-// destAccountID. Matching is case-insensitive substring matching:
+// Match reports whether the rule matches message m. Matching is
+// case-insensitive substring matching and is independent of any action
+// destination:
 //
-//   - an empty account scope (rule.AccountID) matches any account;
+//   - an empty account scope matches any account;
 //   - an empty folder scope (rule.FolderIDs) matches any folder;
 //   - each non-empty criterion list passes when at least one of its patterns
 //     is a substring of the corresponding header data (from: sender address
-//     and name; to: every To and Cc address and name; subject: subject line);
-//   - a message already on the destination account never matches, because
-//     cross-account routing is the only supported action.
-func Match(rule *Rule, m *Message, destAccountID string) bool {
+//     and name; to: every To and Cc address and name; subject: subject line;
+//     list-id: the message's List-ID header value).
+func Match(rule *Rule, m *Message) bool {
 	if rule == nil || m == nil {
 		return false
 	}
 	if !rule.Enabled {
 		return false
 	}
-	if m.AccountID == destAccountID {
-		return false
-	}
-	if rule.AccountID != "" && rule.AccountID != m.AccountID {
+	if scope := rule.ScopeAccountIDs(); len(scope) > 0 && !containsFold(scope, m.AccountID) {
 		return false
 	}
 	if len(rule.FolderIDs) > 0 && !containsFold(rule.FolderIDs, m.FolderID) {
@@ -42,10 +39,17 @@ func Match(rule *Rule, m *Message, destAccountID string) bool {
 	if len(rule.SubjectContains) > 0 && !anyContainsFold(rule.SubjectContains, strings.ToLower(m.Subject)) {
 		return false
 	}
+	if len(rule.ListIDContains) > 0 && !anyContainsFold(rule.ListIDContains, strings.ToLower(m.ListID)) {
+		return false
+	}
 	return true
 }
 
-// FromMessage builds matcher criteria from a persisted message.
+// FromMessage builds matcher criteria from a persisted message. The List-ID
+// criterion uses the message's transient ListID field, populated by sync
+// when headers were parsed for this message; stored messages match List-ID
+// rules through the SQL preview/apply path, which joins the persisted
+// message_list_ids table instead.
 func FromMessage(m *message.Message) *Message {
 	out := &Message{
 		AccountID: m.AccountID,
@@ -53,6 +57,7 @@ func FromMessage(m *message.Message) *Message {
 		FromName:  m.FromName,
 		FromEmail: m.FromEmail,
 		Subject:   m.Subject,
+		ListID:    m.ListID,
 	}
 	for _, list := range []string{m.ToList, m.CcList} {
 		for _, addr := range parseAddressList(list) {
@@ -105,6 +110,7 @@ func containsFold(values []string, target string) bool {
 // haystack; both sides are compared case-insensitively.
 func anyContainsFold(patterns []string, haystack string) bool {
 	for _, pattern := range patterns {
+		pattern = strings.TrimSpace(pattern)
 		if pattern == "" {
 			continue
 		}

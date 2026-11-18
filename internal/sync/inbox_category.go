@@ -8,6 +8,45 @@ import (
 	"github.com/hkdb/aerion/internal/message"
 )
 
+// extractListID reads the RFC 2919 List-ID header from raw message headers
+// and normalizes it to the bracketed list identifier when one is present.
+// Unlike category classification, the filter feature needs the value itself.
+func extractListID(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	parsed, err := mail.ReadMessage(bytes.NewReader(raw))
+	if err != nil {
+		return ""
+	}
+	return normalizeListID(parsed.Header.Get("List-Id"))
+}
+
+// persistListID stores the parsed List-ID beside the message so List-ID
+// filter rules match stored mail. Best-effort: the envelope is already saved
+// and the value can be recaptured from headers later.
+func (e *Engine) persistListID(m *message.Message) {
+	if e == nil || e.messageStore == nil || m == nil || m.ID == "" {
+		return
+	}
+	if err := e.messageStore.SetListID(m.ID, m.ListID); err != nil {
+		e.log.Warn().Err(err).Str("message_id", m.ID).Msg("Failed to persist List-ID header")
+	}
+}
+
+// normalizeListID trims a List-ID header value to its identifier: the
+// bracketed machine token when present ("Announce <list.example.com>" gives
+// "list.example.com"), otherwise the trimmed raw value.
+func normalizeListID(value string) string {
+	value = strings.TrimSpace(value)
+	if open := strings.Index(value, "<"); open >= 0 {
+		if close := strings.Index(value[open+1:], ">"); close > 0 {
+			return strings.TrimSpace(value[open+1 : open+1+close])
+		}
+	}
+	return value
+}
+
 // classifyInboxCategory uses standard RFC 5322 and widely deployed mailing-list
 // headers. It deliberately stores only the conclusion, never the header values.
 // Header signals take precedence over the lightweight sender fallback in the UI.
@@ -76,3 +115,6 @@ func classifyBodyCategory(bodyText, bodyHTML string) string {
 	}
 	return ""
 }
+
+// ExtractListID returns the normalized List-ID from an RFC 5322 message.
+func ExtractListID(raw []byte) string { return extractListID(raw) }
