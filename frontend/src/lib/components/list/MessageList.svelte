@@ -2354,9 +2354,14 @@
     }
   }
 
+  // latestDate is a UTC ISO-8601 string (Go time.Time marshalled with "Z"),
+  // so it sorts chronologically with a plain string comparison. Parsing it with
+  // new Date() on every sort comparison is O(n log n) date parsing for every
+  // search result reload / sort toggle, which is pure overhead on the search
+  // results hot path.
   function sortSearchRows(rows: any[]) {
     const direction = searchSort === 'oldest' ? 1 : -1
-    return [...rows].sort((a, b) => direction * (new Date(a.latestDate).getTime() - new Date(b.latestDate).getTime()))
+    return [...rows].sort((a, b) => direction * (a.latestDate < b.latestDate ? -1 : +(a.latestDate > b.latestDate)))
   }
 
   export function startAllMailSearch(query: string) {
